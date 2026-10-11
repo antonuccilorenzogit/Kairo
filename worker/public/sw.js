@@ -1,6 +1,6 @@
 // Kairo service worker: caches the app shell so it opens instantly and offline.
 // API calls always go to the network (health data is never cached here).
-const CACHE = "kairo-shell-v1.3.0";
+const CACHE = "kairo-shell-v1.4.0";
 const SHELL = ["./", "index.html", "app.css", "app.js", "import-worker.js", "manifest.webmanifest", "fonts/nunito-latin.woff2", "icons/icon-192.png", "icons/icon-180.png"];
 
 self.addEventListener("install", (e) => {
@@ -22,4 +22,19 @@ self.addEventListener("fetch", (e) => {
       return res;
     }).catch(() => caches.match(e.request))
   );
+});
+
+// Notifications sent by your Kairo server (morning recovery, evening bedtime)
+self.addEventListener("push", (e) => {
+  let m = {};
+  try { m = e.data ? e.data.json() : {}; } catch { m = { body: e.data && e.data.text() }; }
+  e.waitUntil(self.registration.showNotification(m.title || "Kairo", { body: m.body || "", icon: "icons/icon-192.png", badge: "icons/icon-192.png", data: { url: m.url || "/#/oggi" }, tag: m.tag || "kairo" }));
+});
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const url = e.notification.data && e.notification.data.url ? e.notification.data.url : "/#/oggi";
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+    for (const c of list) if ("focus" in c) { c.navigate(url); return c.focus(); }
+    return self.clients.openWindow(url);
+  }));
 });

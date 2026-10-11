@@ -1,4 +1,6 @@
-// Calcolo delle metriche: sonno, valori notturni, baseline personali, Score di Recupero.
+// Calcolo delle metriche: sonno, valori notturni, baseline personali, Score di Recupero,
+// carico di allenamento, allenamento consigliato, allarmi e fabbisogno di sonno.
+import { getProfile, hrMax, DEFAULT_SLEEP_NEED } from "./profile.js";
 //
 // Metodi e fonti (nessuna app pubblica la formula esatta dei suoi punteggi: qui si usano i metodi
 // pubblicati e validati che quelle app dichiarano di usare, con soglie tratte dalla letteratura):
@@ -10,6 +12,10 @@
 // - Punteggio del sonno con i contributi di Oura (durata, efficienza, profondo, REM, regolarità, orario)
 //   e le soglie di AASM/NSF: 7-9 h (Watson 2015), efficienza >= 85% (Ohayon 2017), profondo ~15-20%
 //   e REM ~20-25% (Oura; Ohayon 2004), punto medio del sonno tra 00:00 e 03:00 (Oura).
+// - Carico: TRIMP di Edwards (1993) dalla frequenza cardiaca, minuti × zona (50-60% FCmax = 1 … 90-100% = 5),
+//   FCmax misurata o stimata con Tanaka et al. (2001): 208 − 0,7 × età. Per la palestra, dove la FC sottostima
+//   la fatica, session-RPE di Foster (2001): RPE × minuti, riportato alla scala TRIMP con un fattore personale.
+//   Rapporto acuto:cronico (media 7 giorni / media 28 giorni, Gabbett 2016): zona ottimale 0,8-1,3.
 // - Regolarità: Sleep Regularity Index (Phillips et al. 2017) su 7 giorni; riferimento UK Biobank
 //   (Windred 2024): mediana 81, intervallo interquartile 73,8-86,3.
 
@@ -41,10 +47,13 @@ const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 
 async function load(db, from, to) {
   const r = await db.batch([
-    db.prepare("SELECT metric, ts, value FROM samples WHERE ts >= ? AND ts < ? ORDER BY ts").bind(from, addDays(to, 1)),
+    // la FC grezza (migliaia di valori al giorno) non serve qui: il carico arriva già calcolato in daily.trimp
+    db.prepare("SELECT metric, ts, value FROM samples WHERE ts >= ? AND ts < ? AND metric != 'fc' ORDER BY ts").bind(from, addDays(to, 1)),
     db.prepare("SELECT start, end, stage FROM sleep WHERE end >= ? AND start < ? ORDER BY start").bind(from, addDays(to, 1)),
     db.prepare("SELECT metric, day, value FROM daily WHERE day >= ? AND day <= ?").bind(from, to),
-    db.prepare("SELECT * FROM checkin WHERE day >= ? AND day <= ?").bind(from, to),
+    db.prepare("SELECT * FROM checkin WHERE day >= ? AND day <= ?").bind(from, addDays(to, 1)),
+    // sedute di forza: durata e RPE medio per il session-RPE
+    db.prepare("SELECT start, max(end) end, avg(rpe) rpe, count(*) n FROM sets WHERE start >= ? AND start < ? GROUP BY start").bind(from, addDays(to, 1)),
   ]);
   const samples = {};
   for (const s of r[0].results) (samples[s.metric] ||= []).push({ ts: s.ts, ms: t(s.ts), v: s.value });
@@ -52,7 +61,12 @@ async function load(db, from, to) {
   for (const d of r[2].results) (daily[d.day] ||= {})[d.metric] = d.value;
   const checkin = {};
   for (const c of r[3].results) checkin[c.day] = c;
-  return { samples, sleepRows: r[1].results, daily, checkin };
+  const gym = {};
+  for (const w of r[4].results) {
+    const min = w.end ? (t(w.end) - t(w.start)) / 60e3 : null;
+    if (min > 0 && min < 300 && w.rpe) (gym[w.start.slice(0, 10)] ||= []).push(min * w.rpe);
+  }
+  return { samples, sleepRows: r[1].results, daily, checkin, gym };
 }
 
 // Le fasi possono arrivare da più fonti (Watch, iPhone, altre app) e sovrapporsi: le fondo in una
@@ -168,6 +182,12 @@ function rawDay(day, data, sessionsByDay) {
       },
     };
   }
+  // notte senza Watch: le ore dichiarate nel check-in del mattino (solo la durata è nota)
+  const ck = data.checkin[day];
+  if (!sleep && ck && ck.sonno_min) {
+    sleep = { manuale: true, durata_min: ck.sonno_min, fasi_min: null, efficienza: null,
+      _contributi: { durata: pw(ck.sonno_min, [[240, 0], [420, 85], [480, 100]]) } };
+  }
   const d = data.daily[day] || {};
   return {
     giorno: day,
@@ -175,7 +195,7 @@ function rawDay(day, data, sessionsByDay) {
       resp_rpm: r1(resp), spo2_media: r1(mean(spo2)), spo2_min: spo2.length ? Math.min(...spo2) : null },
     sonno: sleep,
     attivita: { passi: d.passi ?? null, kcal_attive: r1(d.kcal_attive, 0), kcal_riposo: r1(d.kcal_riposo, 0),
-      dist_km: r1(d.dist_piedi, 2), piani: d.piani ?? null },
+      dist_km: r1(d.dist_piedi, 2), piani: d.piani ?? null, trimp: d.trimp ?? null },
     checkin: data.checkin[day] || null,
   };
 }
@@ -208,7 +228,11 @@ function finalize(days, idx, maskOf) {
   const week = days.slice(Math.max(0, idx - 6), idx + 1);
 
   // ---- punteggio del sonno (contributi stile Oura, soglie AASM/NSF) ----
-  if (today.sonno) {
+  if (today.sonno && today.sonno.manuale) {
+    // notte dichiarata nel check-in: conta solo la durata
+    today.sonno.punteggio = Math.round(today.sonno._contributi.durata);
+    today.sonno.contributi = { durata: today.sonno.punteggio };
+  } else if (today.sonno) {
     const masks = week.map((d) => (d.sonno ? maskOf(d.giorno) : null));
     const s = sri(masks);
     const beds = week.map((d) => d.sonno && d.sonno._bed).filter((x) => x != null);
@@ -282,7 +306,12 @@ function finalize(days, idx, maskOf) {
   const wSum = usable.reduce((s, c) => s + c.peso, 0);
   let score = null;
   if (usable.length && (comp.hrv.punteggio != null || comp.fc_riposo.punteggio != null)) {
-    score = Math.round(clamp(usable.reduce((s, c) => s + c.peso * c.punteggio, 0) / wSum, 0, 100));
+    score = usable.reduce((s, c) => s + c.peso * c.punteggio, 0) / wSum;
+    // un buon sonno non può compensare un sistema nervoso in allarme: il recupero non supera
+    // di oltre 20 punti il segnale fisiologico (HRV e FC a riposo), che per Whoop e Oura è l'indicatore principale
+    const phys = [comp.hrv, comp.fc_riposo].filter((c) => c.punteggio != null);
+    if (phys.length) score = Math.min(score, phys.reduce((s, c) => s + c.peso * c.punteggio, 0) / phys.reduce((s, c) => s + c.peso, 0) + 20);
+    score = Math.round(clamp(score, 0, 100));
   }
   const giorniDati = Math.min(bHrv.n, bFcr.n);
   for (const c of Object.values(comp)) if (c.punteggio != null) c.punteggio = Math.round(c.punteggio);
@@ -294,6 +323,75 @@ function finalize(days, idx, maskOf) {
     componenti: comp,
   };
   return today;
+}
+
+// ---- carico, allenamento consigliato, allarmi e fabbisogno di sonno (dopo il recupero) ----
+const LOAD_LEVELS = [
+  { min: 1.4, key: "dura", titolo: "Seduta dura", testo: "puoi spingere: intervalli in bici o a nuoto, pesi pesanti" },
+  { min: 0.95, key: "normale", titolo: "Seduta normale", testo: "il tuo allenamento abituale, a intensità piena" },
+  { min: 0.6, key: "leggera", titolo: "Seduta leggera", testo: "tecnica, nuoto o bici facili, pesi leggeri" },
+  { min: 0, key: "riposo", titolo: "Riposo attivo", testo: "camminata, mobilità o stretching: oggi si recupera" },
+];
+function enrich(days, data, profile, from) {
+  // session-RPE del giorno: check-in del giorno dopo ("cosa hai fatto ieri") e sedute di forza registrate
+  const srpe = days.map((d, i) => {
+    const next = data.checkin[addDays(d.giorno, 1)];
+    const fromCheckin = next && next.rpe && next.durata_min && !/^riposo$/.test(next.attivita || "") ? next.rpe * next.durata_min : 0;
+    const fromGym = (data.gym[d.giorno] || []).reduce((a, x) => a + x, 0);
+    return Math.max(fromCheckin, fromGym) || null;
+  });
+  // fattore personale tra session-RPE e TRIMP (giorni con entrambi), altrimenti 2 (valore tipico)
+  const ratios = days.map((d, i) => (srpe[i] && d.attivita.trimp > 20 ? srpe[i] / d.attivita.trimp : null)).filter((x) => x);
+  ratios.sort((a, b) => a - b);
+  const k = ratios.length >= 3 ? clamp(ratios[Math.floor(ratios.length / 2)], 1, 6) : 2;
+  const load = days.map((d, i) => (d.attivita.trimp == null && !srpe[i] ? null : Math.round(Math.max(d.attivita.trimp || 0, srpe[i] ? srpe[i] / k : 0))));
+  const need0 = profile.sonno_min || DEFAULT_SLEEP_NEED;
+
+  days.forEach((d, i) => {
+    if (d.giorno < from) return;
+    // medie fino a ieri (oggi è ancora in corso)
+    const win = (n) => load.slice(Math.max(0, i - n), i).filter((x) => x != null);
+    const a7 = win(7), c28 = win(28);
+    const acute = a7.length >= 4 ? mean(a7) : null, chronic = c28.length >= 14 ? mean(c28) : null;
+    const ratio = acute != null && chronic ? acute / chronic : null;
+    const stato = ratio == null ? "calibrazione" : ratio < 0.8 ? "scarico" : ratio <= 1.0 ? "mantenimento" : ratio <= 1.3 ? "costruzione" : ratio <= 1.5 ? "attenzione" : "eccesso";
+    // fascia consigliata per oggi: recupero (verde/giallo/rosso) e rapporto acuto:cronico
+    let target = null;
+    if (chronic) {
+      const sc = d.recupero.score;
+      let [lo, hi] = sc == null ? [0.6, 1.1] : sc >= 67 ? [0.9, 1.5] : sc >= 34 ? [0.5, 1.0] : [0, 0.5];
+      if (ratio != null && ratio > 1.3) hi = Math.min(hi, 0.8), lo = Math.min(lo, 0.4);   // già troppo: si scarica
+      if (ratio != null && ratio < 0.8 && sc != null && sc >= 67) hi = Math.max(hi, 1.6);  // margine per costruire
+      const lvl = LOAD_LEVELS.find((l) => hi >= l.min) || LOAD_LEVELS[3];
+      target = { min: Math.round(lo * chronic), max: Math.round(hi * chronic), livello: lvl.key, titolo: lvl.titolo, testo: lvl.testo };
+    }
+    d.carico = { oggi: load[i], acuto: r1(acute, 0), cronico: r1(chronic, 0), rapporto: r1(ratio, 2), stato, consiglio: target,
+      trimp: d.attivita.trimp, srpe: srpe[i], fattore_srpe: r1(k, 2), fc_max: hrMax(profile) };
+
+    // allarmi: due giorni di fila con HRV bassa e FC a riposo o respirazione alte → stanchezza o malanno in arrivo
+    const bad = (x) => x && x.recupero && x.recupero.componenti.hrv.z != null && x.recupero.componenti.hrv.z <= -1 &&
+      ((x.recupero.componenti.fc_riposo.z != null && x.recupero.componenti.fc_riposo.z <= -1) || (x.recupero.componenti.respirazione.z != null && x.recupero.componenti.respirazione.z >= 1));
+    const hrvLow = d.recupero.componenti.hrv.normale && days.slice(Math.max(0, i - 2), i + 1).every((x) => x.notte.hrv_ms != null && x.notte.hrv_ms < d.recupero.componenti.hrv.normale[0]);
+    if (bad(d) && bad(days[i - 1])) d.allarme = { tipo: "malanno", titolo: "Segnali di stanchezza o di un malanno", testo: "Da due giorni HRV bassa e frequenza cardiaca (o respirazione) alta rispetto al tuo solito. Due giorni leggeri, sonno abbondante e idratazione; se ti senti male, fermati." };
+    else if (hrvLow && ratio != null && ratio > 1.3) d.allarme = { tipo: "sovraccarico", titolo: "Stai accumulando fatica", testo: "Da tre giorni l'HRV è sotto il tuo intervallo normale e il carico è sopra il solito. Inserisci 2-3 giorni leggeri prima della prossima seduta dura." };
+
+    // fabbisogno di sonno per stanotte (come Whoop: base + carico del giorno + recupero del debito)
+    const last7 = days.slice(Math.max(0, i - 6), i + 1).filter((x) => x.sonno);
+    const debt = last7.reduce((a, x) => a + Math.max(0, need0 - x.sonno.durata_min), 0);
+    const strainAdd = chronic && load[i] != null ? clamp((load[i] / chronic - 1) * 30, 0, 45) : 0;
+    const debtAdd = clamp(debt / 7, 0, 60);
+    const needTonight = Math.round(need0 + strainAdd + debtAdd);
+    // sveglia: dal profilo, altrimenti l'orario medio di risveglio delle ultime 14 notti registrate
+    let wake = profile.sveglia ? Number(profile.sveglia.slice(0, 2)) * 60 + Number(profile.sveglia.slice(3)) : null;
+    if (wake == null) {
+      const ends = days.slice(Math.max(0, i - 13), i + 1).filter((x) => x.sonno && x.sonno.fine).map((x) => Number(x.sonno.fine.slice(11, 13)) * 60 + Number(x.sonno.fine.slice(14, 16)));
+      if (ends.length >= 3) wake = Math.round(mean(ends));
+    }
+    const bed = wake == null ? null : (wake - needTonight - 15 + 1440 * 2) % 1440; // 15 minuti per addormentarsi
+    d.sonno_stanotte = { fabbisogno_min: needTonight, base_min: need0, per_carico_min: Math.round(strainAdd), per_debito_min: Math.round(debtAdd), debito_7g_min: Math.round(debt),
+      sveglia: wake == null ? null : `${String(Math.floor(wake / 60)).padStart(2, "0")}:${String(wake % 60).padStart(2, "0")}`,
+      a_letto: bed == null ? null : `${String(Math.floor(bed / 60)).padStart(2, "0")}:${String(bed % 60).padStart(2, "0")}` };
+  });
 }
 
 export async function computeHistory(db, endDay, nDays) {
@@ -317,6 +415,8 @@ export async function computeHistory(db, endDay, nDays) {
     return (maskCache[day] = m);
   };
   for (let i = 0; i < days.length; i++) finalize(days, i, maskOf);
+  const profile = await getProfile(db);
+  enrich(days, data, profile, start);
   const out = days.filter((d) => d.giorno >= start);
   for (const d of out) if (d.sonno) { delete d.sonno._bed; delete d.sonno._wake; delete d.sonno._midH; delete d.sonno._contributi; }
   return out;

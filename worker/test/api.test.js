@@ -164,7 +164,7 @@ test("backup automatico dal cron settimanale", async () => {
   const env = makeEnv(); await setup(env);
   const { default: worker } = await import("../src/index.js");
   const waits = [];
-  await worker.scheduled({}, env, { waitUntil: (p) => waits.push(p) });
+  await worker.scheduled({ cron: "17 3 * * 1" }, env, { waitUntil: (p) => waits.push(p) });
   await Promise.all(waits);
   assert.equal((await call(env, "/api/backup", { code: CODE })).data.backup[0].motivo, "automatico settimanale");
 });
@@ -181,7 +181,7 @@ test("migrazione da un database della versione 1 senza perdere dati", async () =
   await setup(env);
   assert.equal(await count(env, "samples"), 2, "il doppione con fuso diverso viene unito");
   assert.equal(await count(env, "sleep"), 1);
-  assert.equal((await db.prepare("SELECT value FROM settings WHERE key='schema_version'").first()).value, "2");
+  assert.equal((await db.prepare("SELECT value FROM settings WHERE key='schema_version'").first()).value, "3");
 });
 
 test("richieste OPTIONS e pagine dell'app", async () => {

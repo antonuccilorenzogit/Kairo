@@ -11,6 +11,7 @@ export const METRICS = {
   dist_nuoto: ["daily", 0, 50000], bracciate: ["daily", 0, 100000],
   kcal_cibo: ["daily", 0, 20000], proteine: ["daily", 0, 1000], carboidrati: ["daily", 0, 2000],
   grassi: ["daily", 0, 1000], acqua: ["daily", 0, 20000],
+  trimp: ["daily", 0, 3000], // training load already computed (history imported from Health)
   kcal_ora: ["hourly", 0, 5000],
   sonno: ["sleep"],
 };
@@ -87,7 +88,7 @@ export function cleanCheckin(c, fallbackDay) {
   const out = {
     day,
     energia: int(c?.energia, 1, 5), dolori: int(c?.dolori, 1, 5), umore: int(c?.umore, 1, 5),
-    rpe: int(c?.rpe, 1, 10), durata_min: int(c?.durata_min, 0, 900),
+    rpe: int(c?.rpe, 1, 10), durata_min: int(c?.durata_min, 0, 900), sonno_min: int(c?.sonno_min, 60, 900),
     attivita: c?.attivita == null ? null : String(c.attivita).split(",").map((x) => x.trim()).filter((x) => ACTIVITIES.has(x)).join(",") || null,
     note: c?.note == null ? null : String(c.note).slice(0, 1000),
   };

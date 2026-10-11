@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.3.0";
+const APP_VERSION = "1.4.0";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -151,43 +151,86 @@ const sheetHead = (t) => `<div class="row between"><div class="h2">${t}</div><bu
 const views = {};
 
 views.oggi = async (el) => {
-  const p = cfg().profilo;
+  const p = store.get("profilo", null) || (await loadProfile());
   el.innerHTML = `${header(`Ciao${p.nome ? ",<br>" + esc(p.nome) : ""}`, { sub: fmtDate(todayStr()) })}${loading(3)}`;
-  const [hist] = await Promise.all([api("/api/history?days=2")]);
+  const hist = await api("/api/history?days=2");
   const d = hist[hist.length - 1], y = hist[0];
-  const r = d.recupero, st = state(r.score);
+  const r = d.recupero, st = state(r.score), c = d.carico || {}, cs = c.consiglio, sn = d.sonno_stanotte;
   const delta = r.score != null && y.recupero.score != null ? r.score - y.recupero.score : null;
-  const hrv = r.componenti.hrv, fcr = r.componenti.fc_riposo;
-  const cmp = (v, b, invert) => (v == null || b == null ? '<span class="muted">nessun dato</span>'
-    : ((invert ? v < b : v > b) ? `<span class="good">${invert ? "▼" : "▲"} media ${fmtNum(b)}</span>` : `<span class="mid">${invert ? "▲" : "▼"} media ${fmtNum(b)}</span>`));
+  const hour = new Date().getHours();
+  const STATO = { calibrazione: ["In calibrazione", "muted"], scarico: ["Sotto il tuo solito", "mid"], mantenimento: ["Stai mantenendo", "good"], costruzione: ["Stai costruendo", "good"], attenzione: ["Carico alto", "mid"], eccesso: ["Troppo carico", "bad"] };
+  const [stLabel, stCls] = STATO[c.stato] || STATO.calibrazione;
+  // where today's load sits in the suggested range
+  const loadBar = cs ? (() => {
+    const top = Math.max(cs.max * 1.3, (c.oggi || 0) * 1.1, 1), at = (v) => Math.min(100, (v / top) * 100);
+    return `<div class="col" style="gap:6px"><div class="track" style="height:12px"><div class="bar" style="left:${at(cs.min)}%;width:${Math.max(2, at(cs.max) - at(cs.min))}%;background:#CDEBDB;height:12px"></div>
+      <div class="bar" style="left:0;width:${at(c.oggi || 0)}%;background:var(--orange);height:12px;opacity:.9"></div></div>
+      <div class="row between small muted"><span>Oggi finora: <b style="color:var(--ink)">${c.oggi ?? 0}</b></span><span>obiettivo ${cs.min}–${cs.max}</span></div></div>`;
+  })() : "";
+  const sleepNow = d.sonno ? `${fmtMin(d.sonno.durata_min)}${d.sonno.manuale ? " (dichiarate)" : ` · ${d.sonno.punteggio} punti`}` : null;
   el.innerHTML = `${header(`Ciao${p.nome ? ",<br>" + esc(p.nome) : ""}`, { sub: fmtDate(d.giorno) })}
-    <div class="card col center" style="padding:16px 20px 20px;gap:4px">
-      ${bean(r.score)}
-      ${r.score == null
-        ? `<div class="h2">In calibrazione</div><div class="muted small" style="max-width:280px">Sto imparando il tuo normale: servono almeno 5 notti con HRV e FC a riposo (ne ho ${r.giorni_baseline}).</div>`
-        : `<div class="huge">${r.score}</div><div class="h2 ${st.cls}">${st.label}</div>
-           ${delta != null ? `<div class="muted small">${delta >= 0 ? "▲" : "▼"} ${Math.abs(delta)} da ieri</div>` : ""}
-           ${r.calibrazione ? `<div class="muted small">Stima provvisoria · baseline di ${r.giorni_baseline} giorni</div>` : ""}`}
-    </div>
-    <div class="grid3">
-      <a class="mini" href="#/sonno" style="text-decoration:none;color:inherit"><div class="label">Sonno</div><div class="big">${d.sonno ? fmtMin(d.sonno.durata_min) : "–"}</div><div class="small ${d.sonno ? "good" : "muted"}" style="font-weight:700">${d.sonno ? d.sonno.punteggio + " punti" : "nessun dato"}</div></a>
-      <a class="mini" href="#/recupero" style="text-decoration:none;color:inherit"><div class="label">HRV</div><div class="big">${d.notte.hrv_ms != null ? fmtNum(d.notte.hrv_ms) + " ms" : "–"}</div><div class="small" style="font-weight:700">${cmp(d.notte.hrv_ms, hrv.baseline)}</div></a>
-      <a class="mini" href="#/recupero" style="text-decoration:none;color:inherit"><div class="label">FC riposo</div><div class="big">${d.notte.fcr_bpm != null ? fmtNum(d.notte.fcr_bpm) : "–"}</div><div class="small" style="font-weight:700">${cmp(d.notte.fcr_bpm, fcr.baseline, true)}</div></a>
-    </div>
+    ${d.allarme ? `<div class="card col" style="background:#FDE2DF;gap:4px"><div style="font-weight:900;color:var(--red-ink)">⚠︎ ${esc(d.allarme.titolo)}</div><div class="small" style="line-height:1.5">${esc(d.allarme.testo)}</div></div>` : ""}
+    <a class="card row" href="#/recupero" style="text-decoration:none;color:inherit;gap:14px;padding:14px 18px">
+      ${bean(r.score, 70)}
+      <div class="col" style="gap:2px;flex:1">${r.score == null
+        ? `<div class="h2">In calibrazione</div><div class="muted small">Servono almeno 5 notti con HRV e FC a riposo (ne ho ${r.giorni_baseline}).</div>`
+        : `<div class="row" style="gap:8px;align-items:baseline"><span style="font-size:42px;font-weight:900;line-height:1">${r.score}</span><span class="h2 ${st.cls}">${st.label}</span></div>
+           <div class="muted small">Recupero${delta != null ? ` · ${delta >= 0 ? "▲" : "▼"} ${Math.abs(delta)} da ieri` : ""}${r.calibrazione ? " · stima provvisoria" : ""}</div>`}</div>${ico.chevron}</a>
+    <button class="card col" id="loadCard" style="border:0;text-align:left;cursor:pointer;gap:10px">
+      <div class="row between" style="width:100%"><div class="label">Allenamento di oggi</div><span class="small ${stCls}" style="font-weight:800">${stLabel}</span></div>
+      ${cs ? `<div><div class="h2">${esc(cs.titolo)}</div><div class="small" style="color:var(--text);line-height:1.45;margin-top:2px">${esc(cs.testo)}.</div></div>${loadBar}`
+        : `<div class="small" style="color:var(--text);line-height:1.5">${r.score == null ? "Appena Kairo conosce il tuo recupero ti dico quanto spingere." : r.score >= 67 ? "<b>Recuperato:</b> via libera a una seduta impegnativa." : r.score >= 34 ? "<b>Recupero parziale:</b> allenamento normale, senza strafare." : "<b>Recupero basso:</b> meglio un giorno leggero."} Il carico preciso arriva dopo 2 settimane di dati del Watch.</div>`}
+    </button>
+    <a class="card row between" href="#/sonno" style="text-decoration:none;color:inherit;gap:12px">
+      <div class="col" style="gap:2px"><div class="label">Sonno</div>
+        <div style="font-weight:800">${sleepNow ? `Stanotte ${sleepNow}` : "Nessun sonno registrato"}</div>
+        ${sn && sn.a_letto && hour >= 15 ? `<div class="small" style="color:var(--orange-ink);font-weight:700">Stasera: ${fmtMin(sn.fabbisogno_min)} di sonno, a letto entro le ${sn.a_letto}</div>` : !d.sonno ? `<div class="small muted">Senza Watch? Segna le ore nel check-in.</div>` : ""}</div>${ico.chevron}</a>
     <a class="card soft row" href="#/coach" style="text-decoration:none;color:inherit;gap:12px">
-      ${ico.sun(30)}<div class="col" style="gap:2px;flex:1"><div style="font-weight:900">Consiglio di oggi</div><div id="advice" class="small" style="color:var(--text);line-height:1.45"><div class="skeleton" style="width:90%"></div></div></div>${ico.chevron}
+      ${ico.sun(30)}<div class="col" style="gap:2px;flex:1"><div style="font-weight:900">Il coach</div><div id="advice" class="small" style="color:var(--text);line-height:1.45"><div class="skeleton" style="width:90%"></div></div></div>${ico.chevron}
     </a>
     ${d.checkin
-      ? `<button class="card row between" data-checkin style="border:0;text-align:left;cursor:pointer"><div class="col" style="gap:2px"><div style="font-weight:900">Check-in fatto ✓</div><div class="small muted">Energia ${d.checkin.energia}/5 · Dolori ${d.checkin.dolori}/5 · ${esc(d.checkin.attivita || "riposo")}</div></div>${ico.chevron}</button>`
+      ? `<button class="card row between" data-checkin style="border:0;text-align:left;cursor:pointer"><div class="col" style="gap:2px"><div style="font-weight:900">Check-in fatto ✓</div><div class="small muted">Energia ${d.checkin.energia ?? "–"}/5 · Indolenzimento ${d.checkin.dolori ?? "–"}/5 · ${esc(d.checkin.attivita || "riposo")}</div></div>${ico.chevron}</button>`
       : `<button class="btn orange block" data-checkin style="justify-content:space-between;min-height:64px;border-radius:22px"><span class="col" style="gap:0;text-align:left"><span style="font-weight:900">Check-in del mattino</span><span class="small" style="font-weight:600">Com'è andata ieri? 10 secondi</span></span>${ico.arrow}</button>`}
-    <div class="row between small muted" style="padding:0 4px"><div>Ieri: ${fmtNum(y.attivita.passi)} passi · ${fmtNum(y.attivita.kcal_attive)} kcal attive</div><div>Oggi: ${fmtNum(d.attivita.passi)} passi</div></div>`;
-  el.querySelectorAll("[data-checkin]").forEach((b) => b.addEventListener("click", () => checkinSheet(d.checkin)));
+    <a class="card row between" href="#/settimana" style="text-decoration:none;color:inherit;${new Date().getDay() === 1 ? "background:var(--soft)" : ""}"><div class="col" style="gap:2px"><div style="font-weight:900">La tua settimana</div><div class="small muted">${new Date().getDay() === 1 ? "Il resoconto della settimana è pronto" : "Carico, recupero, sonno e forma degli ultimi 7 giorni"}</div></div>${ico.chevron}</a>`;
+  el.querySelectorAll("[data-checkin]").forEach((b) => b.addEventListener("click", () => checkinSheet(d.checkin, !d.sonno || d.sonno.manuale)));
+  $("#loadCard").onclick = () => loadSheet();
   // the advice arrives asynchronously so the page is usable immediately
-  api("/api/coach/oggi", { method: "POST", body: { profilo: profiloText() } })
-    .then((a) => { const box = $("#advice"); if (box) box.textContent = a.errore ? a.errore : a.testo; })
+  api("/api/coach/oggi", { method: "POST", body: {} })
+    .then((a) => { const box = $("#advice"); if (box) box.innerHTML = md(a.errore ? a.errore : a.testo); })
     .catch((e) => { const box = $("#advice"); if (box) box.textContent = e.message; });
 };
 
+// Training load: last 28 days and how to read it
+async function loadSheet() {
+  const w = openSheet(`${sheetHead("Carico di allenamento")}<div class="skeleton" style="height:120px"></div>`, "Carico");
+  let h;
+  try { h = await api("/api/history?days=28"); } catch (e) { w.querySelector(".sheet").innerHTML = `<div class="grab"></div>${sheetHead("Carico di allenamento")}<div class="bad">${esc(e.message)}</div>`; return; }
+  const c = h[h.length - 1].carico || {};
+  const max = Math.max(1, ...h.map((d) => d.carico?.oggi || 0));
+  const bars = h.map((d) => { const v = d.carico?.oggi; return `<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:90px" title="${d.giorno}: ${v ?? "n/d"}"><div style="height:${v == null ? 2 : Math.max(3, (v / max) * 90)}px;background:${v == null ? "#E2E5EC" : d.giorno === h[h.length - 1].giorno ? "var(--orange)" : "#7DB7F0"};border-radius:3px"></div></div>`; }).join("");
+  w.querySelector(".sheet").innerHTML = `<div class="grab"></div>${sheetHead("Carico di allenamento")}
+    <div class="card col" style="gap:6px"><div class="row" style="gap:2px;align-items:flex-end">${bars}</div><div class="row between small muted"><span>${fmtDate(h[0].giorno, { day: "numeric", month: "short" })}</span><span>oggi</span></div></div>
+    <div class="grid3"><div class="mini" style="cursor:default"><span class="label">7 giorni</span><span class="big">${c.acuto ?? "–"}</span><span class="small muted">media al giorno</span></div>
+      <div class="mini" style="cursor:default"><span class="label">28 giorni</span><span class="big">${c.cronico ?? "–"}</span><span class="small muted">il tuo solito</span></div>
+      <div class="mini" style="cursor:default"><span class="label">Rapporto</span><span class="big">${c.rapporto != null ? fmtNum(c.rapporto, 2) : "–"}</span><span class="small muted">ideale 0,8–1,3</span></div></div>
+    <div style="line-height:1.55;color:var(--text)">Il <b>carico</b> misura quanto hai fatto lavorare il corpo: minuti passati nelle zone di frequenza cardiaca, pesati per l'intensità (TRIMP di Edwards). Per la palestra, dove il battito sottostima la fatica, Kairo usa anche la fatica percepita × la durata del check-in (session-RPE di Foster).</div>
+    <div style="line-height:1.55;color:var(--text)">Il <b>rapporto</b> confronta l'ultima settimana con le ultime 4: tra 0,8 e 1,3 stai migliorando in sicurezza; sopra 1,5 il rischio di infortuni e sovrallenamento sale (Gabbett 2016); sotto 0,8 stai perdendo forma o scaricando.</div>
+    <div class="small muted">FC massima usata: ${c.fc_max ?? "–"} bpm (stimata dall'età con la formula di Tanaka, oppure quella che imposti nel profilo).</div>`;
+}
+
+// Profile lives on the server (same on every device); a copy is kept here for offline use.
+async function loadProfile() {
+  try {
+    const srv = await api("/api/profilo");
+    const local = store.get("profilo", null);
+    // one-time move of a profile saved only on this device
+    if (local && (local.nome || local.obiettivi || local.note || local.eta) && !srv.nome && !srv.obiettivi && !srv.note && !srv.eta) {
+      const saved = await api("/api/profilo", { method: "POST", body: { ...srv, ...local, tz: tz() } });
+      store.set("profilo", saved); return saved;
+    }
+    store.set("profilo", srv); return srv;
+  } catch { return cfg().profilo; }
+}
 function profiloText() {
   const p = cfg().profilo;
   return [p.nome ? `Si chiama ${p.nome}.` : "", p.eta ? `Ha ${p.eta} anni.` : "", p.sesso ? (p.sesso === "F" ? "È una donna." : "È un uomo.") : "", p.note ? `Di sé dice: ${p.note}` : "", p.obiettivi ? `I suoi obiettivi: ${p.obiettivi}` : "Non ha ancora indicato i suoi obiettivi."].filter(Boolean).join("\n");
@@ -241,7 +284,7 @@ function infoSheet(kind, d) {
       + body("Stessi ingredienti del punteggio di Oura, con le soglie delle linee guida sul sonno:")
       + `<div class="card list">${[["Durata", "durata", "35%", "7–9 h raccomandate (AASM); pieno punteggio da 8 h"], ["Efficienza", "efficienza", "20%", "≥ 85% del tempo a letto dormendo (National Sleep Foundation)"], ["Sonno profondo", "profondo", "10%", "almeno 15% del sonno"], ["REM", "rem", "10%", "almeno 20% del sonno"], ["Regolarità", "regolarita", "15%", "Sleep Regularity Index sugli ultimi 7 giorni"], ["Orario", "orario", "10%", "punto medio del sonno tra 00:00 e 03:00"]]
           .map(([l, k, w, why]) => `<div class="item"><div class="col" style="gap:2px"><b>${l} <span class="small muted">${w}</span></b><span class="small muted">${why}</span></div><b>${s && s.contributi && s.contributi[k] != null ? s.contributi[k] : "–"}</b></div>`).join("")}</div>`
-      + you(s ? `${s.punteggio}/100 · ${fmtMin(s.durata_min)} di sonno, efficienza ${s.efficienza}%, profondo ${s.quota_profondo}%, REM ${s.quota_rem}%${s.sri != null ? `, regolarità (SRI) ${s.sri}` : ""}.` : "nessuna notte registrata: dormi con il Watch per avere questo dato.")
+      + you(s && s.manuale ? `${s.punteggio}/100 · ${fmtMin(s.durata_min)} dichiarate nel check-in: senza il Watch conta solo la durata.` : s ? `${s.punteggio}/100 · ${fmtMin(s.durata_min)} di sonno, efficienza ${s.efficienza}%, profondo ${s.quota_profondo}%, REM ${s.quota_rem}%${s.sri != null ? `, regolarità (SRI) ${s.sri}` : ""}.` : "nessuna notte registrata: dormi con il Watch per avere questo dato.")
       + tip("Il sonno profondo si concentra nella prima metà della notte, il REM verso il mattino: andare a letto tardi taglia soprattutto il profondo, quello che ripara i muscoli.");
   } else if (kind === "bilancio") {
     const v = c.bilancio_sonno.valore;
@@ -253,7 +296,7 @@ function infoSheet(kind, d) {
     const w = Object.entries(c).map(([k, x]) => [k, x.peso, x.punteggio]);
     const names = { hrv: "HRV", fc_riposo: "FC a riposo", sonno: "Sonno della notte", bilancio_sonno: "Bilancio di sonno (14 giorni)", respirazione: "Respirazione notturna" };
     html = sheetHead("Come si calcola il Recupero")
-      + body("Ogni ingrediente riceve un punteggio da 0 a 100, dove 60 significa «come al solito per te». Il Recupero è la loro media pesata; se un dato manca, gli altri si ridistribuiscono il peso. Le fasce sono quelle di Whoop: 67–100 verde, 34–66 giallo, 0–33 rosso.")
+      + body("Ogni ingrediente riceve un punteggio da 0 a 100, dove 60 significa «come al solito per te». Il Recupero è la loro media pesata; se un dato manca, gli altri si ridistribuiscono il peso. Un buon sonno però non può compensare HRV e FC a riposo in allarme: il Recupero non supera di oltre 20 punti il loro segnale. Le fasce sono quelle di Whoop: 67–100 verde, 34–66 giallo, 0–33 rosso.")
       + `<div class="card list">${w.map(([k, p, sc]) => `<div class="item"><span>${names[k]} <span class="small muted">${Math.round(p * 100)}%</span></span><b>${sc ?? "–"}</b></div>`).join("")}</div>`
       + body("La struttura segue la Readiness di Oura (FC a riposo e HRV confrontate con le tue medie, sonno e bilancio di sonno); l'HRV usa il metodo di Plews e HRV4Training; la respirazione notturna è un segnale usato da Whoop. Nessuna di queste app pubblica la formula esatta: i pesi sono di Kairo e il codice è pubblico su GitHub.");
   } else {
@@ -276,7 +319,7 @@ views.recupero = async (el) => {
     ["sonno", "Sonno", d.sonno ? `${d.sonno.punteggio} pt` : "–", r.componenti.sonno],
     ["bilancio_sonno", "Bilancio sonno 14 gg", r.componenti.bilancio_sonno.valore != null ? (r.componenti.bilancio_sonno.valore >= 0 ? "in pari" : `−${fmtMin(-r.componenti.bilancio_sonno.valore)}/notte`) : "–", r.componenti.bilancio_sonno],
     ["respirazione", "Respirazione", d.notte.resp_rpm != null ? fmtNum(d.notte.resp_rpm, 1) : "–", r.componenti.respirazione],
-  ];
+  ].filter(([k, , , c]) => k !== "respirazione" || (c.punteggio != null && c.punteggio < 60)); // shown only when it pulls the score down
   const compRow = ([k, name, val, c]) => {
     // ogni contributo vale 0-100; 60 = come al solito: la barra mostra quanto si discosta
     const z = c.punteggio == null ? 0 : (c.punteggio - 60) / 20;
@@ -324,7 +367,11 @@ views.sonno = async (el) => {
   el.innerHTML = header("Sonno") + loading(3);
   const today = todayStr();
   const [hist, stages] = await Promise.all([api("/api/history?days=7"), api(`/api/sonno?d=${today}`)]);
-  const d = hist[hist.length - 1], s = d.sonno;
+  const d = hist[hist.length - 1], sAll = d.sonno, s = sAll && !sAll.manuale ? sAll : null, sn = d.sonno_stanotte;
+  const tonight = sn ? `<div class="card col" style="gap:8px"><div class="label">Stanotte</div>
+      <div class="row between"><div class="col" style="gap:2px"><div style="font-size:30px;font-weight:900;line-height:1">${fmtMin(sn.fabbisogno_min)}</div><div class="small muted">di sonno ti servono</div></div>
+        ${sn.a_letto ? `<div class="col" style="gap:2px;text-align:right"><div style="font-size:30px;font-weight:900;line-height:1;color:var(--orange-ink)">${sn.a_letto}</div><div class="small muted">a letto entro${sn.sveglia ? ` · sveglia ${sn.sveglia}` : ""}</div></div>` : ""}</div>
+      <div class="small" style="color:var(--text);line-height:1.5">Base ${fmtMin(sn.base_min)}${sn.per_carico_min ? ` + ${sn.per_carico_min} min per il carico di oggi` : ""}${sn.per_debito_min ? ` + ${sn.per_debito_min} min per recuperare il debito della settimana` : ""}.${sn.a_letto ? "" : " Imposta la sveglia nel profilo per l'orario consigliato."}</div></div>` : "";
   const level = { awake: 6, rem: 39, core: 72, asleep: 72, deep: 105, inbed: 6 };
   const color = { awake: "#FF8A1F", rem: "#9B7BEA", core: "#7DB7F0", asleep: "#7DB7F0", deep: "#2F4A8C", inbed: "#E2E5EC" };
   let hyp = "";
@@ -340,7 +387,8 @@ views.sonno = async (el) => {
     const m = h.sonno ? h.sonno.durata_min : null;
     return `<div class="col" style="align-items:center;gap:4px;flex:1"><div class="small" style="font-size:11px;font-weight:800">${m ? fmtMin(m).replace(" ", "") : ""}</div><div style="height:80px;width:100%;display:flex;align-items:flex-end;justify-content:center;position:relative"><div style="width:60%;max-width:22px;border-radius:6px;height:${m ? Math.min(80, m / 600 * 80) : 4}px;background:${m ? "#7DB7F0" : "#E2E5EC"}"></div></div><div class="small muted" style="font-size:11px">${fmtDate(h.giorno, { weekday: "narrow" })}</div></div>`;
   }).join("");
-  const debt = hist.filter((h) => h.sonno).reduce((a, h) => a + (h.sonno.durata_min - 480), 0);
+  const need = (cfg().profilo.sonno_min || 480);
+  const debt = hist.filter((h) => h.sonno).reduce((a, h) => a + (h.sonno.durata_min - need), 0);
   const nNights = hist.filter((h) => h.sonno).length;
   el.innerHTML = `${header("Sonno", { sub: s ? `notte ${fmtDate(shiftDay(d.giorno, -1), { day: "numeric" })} → ${fmtDate(d.giorno, { day: "numeric", month: "short" })}` : "" })}
     ${s ? `<div class="card dark row between" style="align-items:flex-end">
@@ -353,15 +401,17 @@ views.sonno = async (el) => {
       <div class="grid2" style="grid-template-columns:repeat(4,minmax(0,1fr));gap:8px">
         ${[["Leggero", s.fasi_min.leggero, "#7DB7F0"], ["Profondo", s.fasi_min.profondo, "#2F4A8C"], ["REM", s.fasi_min.rem, "#9B7BEA"], ["Sveglio", s.fasi_min.veglia, "#FF8A1F"]].map(([l, m, c]) => `<div class="mini" style="cursor:default"><span class="status-dot" style="background:${c}"></span><div class="small muted">${l}</div><div style="font-weight:900;font-size:17px">${m >= 60 ? fmtMin(m) : m + " min"}</div></div>`).join("")}
       </div>`
+      : sAll ? `<div class="card dark col" style="gap:4px"><div class="label" style="color:#FFB27A">Dormito</div><div style="font-size:44px;font-weight:900;line-height:1">${fmtMin(sAll.durata_min)}</div><div class="small" style="color:#C9CEDB">dichiarato nel check-in · senza il Watch non ho fasi, HRV e respirazione notturna</div></div>`
       : `<div class="card col center" style="gap:8px">${bean(null, 90)}<div class="h2">Nessun dato del sonno stanotte</div><div class="muted small" style="max-width:300px">Per avere sonno, respirazione e HRV notturna indossa il Watch mentre dormi. Carica il Watch mentre fai colazione o la doccia.</div></div>`}
-    <div class="card"><div class="row between" style="margin-bottom:8px"><div class="label">Ultimi 7 giorni</div>${nNights ? `<div class="small ${debt < 0 ? "bad" : "good"}" style="font-weight:800">${debt < 0 ? "Debito" : "Surplus"} ${fmtMin(Math.abs(debt))} su 8 h</div>` : ""}</div><div class="row" style="gap:2px;align-items:flex-end">${week}</div></div>
+    ${tonight}
+    <div class="card"><div class="row between" style="margin-bottom:8px"><div class="label">Ultimi 7 giorni</div>${nNights ? `<div class="small ${debt < 0 ? "bad" : "good"}" style="font-weight:800">${debt < 0 ? "Debito" : "Surplus"} ${fmtMin(Math.abs(debt))} su ${fmtMin(need)}</div>` : ""}</div><div class="row" style="gap:2px;align-items:flex-end">${week}</div></div>
     ${s && s.sri != null ? `<div class="card soft"><div style="line-height:1.45"><b>Regolarità ${s.sri}/100</b> (Sleep Regularity Index). ${s.sri >= 86 ? "Sei tra il quarto più regolare della popolazione: ottimo." : s.sri >= 74 ? "Nella media della popolazione (mediana 81)." : "Sotto la media della popolazione (mediana 81): orari più costanti aiutano recupero e sonno profondo."}</div></div>`
       : s && s.regolarita_min != null ? `<div class="card soft"><div style="line-height:1.45">Il tuo orario di addormentamento varia di circa <b>${s.regolarita_min} minuti</b> da una sera all'altra. ${s.regolarita_min > 60 ? "Più regolarità di solito significa sonno più profondo." : "Ottima regolarità."}</div></div>` : ""}`;
   el.querySelectorAll("[data-info]").forEach((b) => b.addEventListener("click", () => infoSheet("sonno", d)));
 };
 
 views.coach = async (el) => {
-  const msgs = store.get("chat", []);
+  let msgs = [];
   const suggest = ["Fammi una valutazione della mia forma", "Su cosa devo lavorare questo mese?", "Posso allenarmi duro oggi?", "Come sta andando il mio sonno?"];
   const render = (busy = false) => {
     el.innerHTML = `${header("Coach", { sub: "Il tuo allenatore personale" })}
@@ -370,23 +420,47 @@ views.coach = async (el) => {
       <div class="chat" id="chat">${msgs.map((m) => `<div class="msg ${m.role === "user" ? "user" : "bot md"}">${m.role === "user" ? esc(m.content) : md(m.content)}${m.meta ? `<span class="meta">${esc(m.meta)}</span>` : ""}</div>`).join("")}${busy ? '<div class="msg bot"><div class="skeleton" style="width:180px"></div></div>' : ""}</div>
       ${msgs.length ? '<button class="btn ghost" id="clear" style="align-self:center;min-height:40px;font-size:14px">Nuova conversazione</button>' : ""}
       <div style="height:70px"></div>
-      <div class="composer"><form id="f"><label class="sr" for="q" style="position:absolute;left:-9999px">Messaggio</label><input id="q" class="input" placeholder="Scrivi una domanda…" autocomplete="off" ${busy ? "disabled" : ""}><button class="btn primary" ${busy ? "disabled" : ""}>Invia</button></form></div>`;
+      <div class="composer"><form id="f"><label for="q" style="position:absolute;left:-9999px">Messaggio</label><input id="q" class="input" placeholder="Scrivi una domanda…" autocomplete="off" maxlength="2000" ${busy ? "disabled" : ""}><button class="btn primary" ${busy ? "disabled" : ""}>Invia</button></form></div>`;
     window.scrollTo(0, document.body.scrollHeight);
     el.querySelectorAll("[data-q]").forEach((b) => b.addEventListener("click", () => send(b.dataset.q)));
     $("#f").addEventListener("submit", (e) => { e.preventDefault(); const v = $("#q").value.trim(); if (v) send(v); });
-    const c = $("#clear"); if (c) c.addEventListener("click", () => { msgs.length = 0; store.set("chat", msgs); render(); });
+    const c = $("#clear"); if (c) c.addEventListener("click", async () => { try { await api("/api/chat", { method: "DELETE" }); msgs = []; render(); } catch (e) { toast(e.message); } });
   };
   const send = async (q) => {
-    msgs.push({ role: "user", content: q }); store.set("chat", msgs); render(true);
-    try {
-      const r = await api("/api/coach/chat", { method: "POST", body: { messaggi: msgs.map(({ role, content }) => ({ role, content })), profilo: profiloText() } });
-      msgs.push({ role: "assistant", content: r.errore || r.testo, meta: r.errore ? "errore" : `${r.provider === "groq" ? "Groq" : "Modello di riserva"} · ${r.model}${r.avviso ? " · " + r.avviso : ""}` });
-    } catch (e) { msgs.push({ role: "assistant", content: e.message, meta: "errore" }); }
-    store.set("chat", msgs.slice(-40)); render();
+    msgs.push({ role: "user", content: q }); render(true);
+    try { const r = await api("/api/coach/chat", { method: "POST", body: { domanda: q } }); msgs.push({ role: "assistant", content: r.errore || r.testo, meta: r.meta }); }
+    catch (e) { msgs.push({ role: "assistant", content: e.message, meta: "errore" }); }
+    render();
   };
+  el.innerHTML = header("Coach") + loading(2);
+  try { msgs = await api("/api/chat"); } catch { msgs = []; }
+  store.del("chat");
   render();
 };
 
+/* ---------- weekly report ---------- */
+views.settimana = async (el) => {
+  el.innerHTML = header("La tua settimana", { back: "oggi" }) + loading(3);
+  const w = await api("/api/settimana");
+  const a = w.settimana, b = w.precedente;
+  const arrow = (x, y, goodUp = true, d = 0) => (x == null || y == null || Math.abs(x - y) < (d ? 0.5 : 1) ? `<span class="muted">come la settimana prima</span>` : `<span class="${(x > y) === goodUp ? "good" : "bad"}">${x > y ? "▲" : "▼"} ${fmtNum(Math.abs(x - y), d)} rispetto alla settimana prima</span>`);
+  const STATO = { calibrazione: "in calibrazione", scarico: "sotto il tuo solito", mantenimento: "stai mantenendo", costruzione: "stai costruendo bene", attenzione: "carico alto, attenzione", eccesso: "troppo carico" };
+  const maxLoad = Math.max(1, ...w.giorni.map((g) => g.carico || 0));
+  const days = w.giorni.map((g) => { const sc = state(g.recupero); return `<div class="col" style="flex:1;align-items:center;gap:4px"><div style="height:70px;width:100%;display:flex;align-items:flex-end;justify-content:center"><div style="width:60%;max-width:22px;border-radius:5px;height:${g.carico == null ? 3 : Math.max(4, (g.carico / maxLoad) * 70)}px;background:${g.carico == null ? "#E2E5EC" : "#7DB7F0"}"></div></div><span class="status-dot" style="background:${g.recupero == null ? "#E2E5EC" : sc.fill}"></span><span class="small muted" style="font-size:11px">${fmtDate(g.giorno, { weekday: "narrow" })}</span></div>`; }).join("");
+  const row = (label, value, sub) => `<div class="item"><div class="col" style="gap:2px"><b>${label}</b><span class="small">${sub}</span></div><div class="big" style="font-size:20px">${value}</div></div>`;
+  el.innerHTML = `${header("La tua settimana", { back: "oggi", sub: `${fmtDate(w.da, { day: "numeric", month: "short" })} – ${fmtDate(w.a, { day: "numeric", month: "short" })}` })}
+    <div class="card soft row" style="gap:12px;align-items:flex-start">${ico.sun(30)}<div id="wcoach" class="small md" style="line-height:1.5;color:var(--text);flex:1"><div class="skeleton" style="width:95%"></div><div class="skeleton" style="width:70%;margin-top:6px"></div></div></div>
+    <div class="card col" style="gap:6px"><div class="row" style="gap:4px">${days}</div><div class="small muted center" style="display:flex;justify-content:center;gap:12px"><span><span class="status-dot" style="background:#7DB7F0"></span> carico</span><span><span class="status-dot" style="background:#5DC796"></span> recupero</span></div></div>
+    <div class="card list">
+      ${row("Allenamento", `${a.giorni_allenamento} giorni`, `${STATO[w.stato_carico] || ""} · carico ${fmtNum(a.carico)} ${arrow(a.carico, b.carico)}`)}
+      ${row("Recupero medio", a.recupero ?? "–", arrow(a.recupero, b.recupero))}
+      ${row("Sonno medio", a.sonno_min ? fmtMin(a.sonno_min) : "–", `${a.notti} notti registrate · ${arrow(a.sonno_min, b.sonno_min)}`)}
+      ${row("HRV", a.hrv != null ? `${fmtNum(a.hrv)} ms` : "–", w.hrv_media_personale ? `${a.hrv >= w.hrv_media_personale ? '<span class="good">sopra</span>' : '<span class="mid">sotto</span>'} la tua media (${fmtNum(w.hrv_media_personale)})` : "")}
+      ${row("FC a riposo", a.fcr != null ? `${fmtNum(a.fcr)} bpm` : "–", w.fcr_media_personale ? `${a.fcr <= w.fcr_media_personale ? '<span class="good">sotto</span>' : '<span class="mid">sopra</span>'} la tua media (${fmtNum(w.fcr_media_personale)})` : "")}
+      ${w.vo2max ? row("VO₂max", fmtNum(w.vo2max.valore, 1), w.vo2max.quattro_settimane_fa ? arrow(w.vo2max.valore, w.vo2max.quattro_settimane_fa, true, 1).replace("settimana prima", "4 settimane fa") : "") : ""}
+    </div>`;
+  api("/api/settimana/coach", { method: "POST" }).then((r) => { const b2 = $("#wcoach"); if (b2) b2.innerHTML = md(r.errore || r.testo); }).catch((e) => { const b2 = $("#wcoach"); if (b2) b2.textContent = e.message; });
+};
 
 /* ---------- body ---------- */
 const fatKg = (m) => (m && m.peso != null && m.grasso_pct != null ? (m.peso * m.grasso_pct) / 100 : null);
@@ -498,7 +572,7 @@ function vo2InfoSheet(vo2, age, sex) {
 
 views.corpo = async (el) => {
   el.innerHTML = header("Corpo") + loading(3);
-  const data = await api("/api/corpo");
+  const [data, forza] = await Promise.all([api("/api/corpo"), api("/api/forza").catch(() => null)]);
   const prof = cfg().profilo, age = Number(prof.eta) || null, sex = prof.sesso || "";
   const ms = data.misure, last = ms[ms.length - 1];
   const today = todayStr();
@@ -571,6 +645,22 @@ views.corpo = async (el) => {
     </div>`;
   }
 
+  // strength: the main lifts, estimated one-rep max (Epley)
+  if (forza && forza.esercizi.length) {
+    const top = forza.esercizi.slice(0, 3);
+    const maxSets = Math.max(1, ...forza.serie_per_settimana);
+    html += `<div class="card col" style="gap:10px"><div class="row between"><div class="label">Forza</div><span class="small muted">massimale stimato</span></div>
+      <div class="list">${top.map((e, i) => {
+        const cur = e.max_4_settimane, prev = e.max_4_precedenti, d = cur != null && prev != null ? cur - prev : null;
+        const stuck = e.settimane_dal_record != null && e.settimane_dal_record >= 4;
+        return `<button class="item" data-ex="${i}"><div class="col" style="gap:2px;text-align:left"><b>${esc(e.esercizio)}</b><span class="small ${stuck ? "mid" : "muted"}">${stuck ? `nessun record da ${e.settimane_dal_record} settimane` : `record ${fmtNum(e.record, 1)} kg`}</span></div>
+          <div style="text-align:right"><div class="big" style="font-size:20px">${cur != null ? fmtNum(cur, 1) : "–"} <span class="small muted">kg</span></div>${d != null ? `<span class="small ${d >= 0 ? "good" : "bad"}">${signed(d, 1)} in 4 settimane</span>` : ""}</div></button>`; }).join("")}</div>
+      <div class="col" style="gap:4px"><div class="small muted">Serie per settimana (ultime 8)</div><div class="row" style="gap:4px;align-items:flex-end;height:44px">${forza.serie_per_settimana.map((n, i) => `<div style="flex:1;height:${Math.max(3, (n / maxSets) * 44)}px;background:${i === 7 ? "var(--orange)" : "#C9CEDB"};border-radius:4px" title="${n} serie"></div>`).join("")}</div></div>
+    </div>`;
+  } else {
+    html += `<a class="card row between" href="#/importa" style="text-decoration:none;color:inherit"><div class="col" style="gap:2px"><div class="label">Forza</div><div class="small" style="color:var(--text)">Importa i tuoi allenamenti da Hevy per vedere i progressi sugli esercizi principali.</div></div>${ico.chevron}</a>`;
+  }
+
   // 3 · measurement diary
   if (ms.length) {
     const rows = [...ms].reverse().slice(0, 60);
@@ -603,6 +693,11 @@ views.corpo = async (el) => {
     el.querySelectorAll("#qseg button").forEach((b) => (b.onclick = () => drawQuad(Number(b.dataset.q))));
     $("#fatInfo").onclick = () => fatInfoSheet(last, sex);
   }
+  el.querySelectorAll("[data-ex]").forEach((b) => (b.onclick = () => {
+    const e = forza.esercizi[Number(b.dataset.ex)];
+    openSheet(`${sheetHead(esc(e.esercizio))}<div class="small muted">Massimale stimato (formula di Epley) della serie migliore di ogni seduta</div>${timeChart(e.storico, "#FF8A1F", "")}
+      <div style="line-height:1.55;color:var(--text)">${e.settimane_dal_record >= 4 ? `Nessun nuovo record da <b>${e.settimane_dal_record} settimane</b>. Di solito aiuta una settimana di scarico (−40% di serie) e poi ripartire con un piccolo aumento di carico o un cambio di ripetizioni.` : `Ultimo record il ${fmtDate(e.record_il, { day: "numeric", month: "long" })}: la progressione sta funzionando.`}</div>`, "Esercizio");
+  }));
   const vi = $("#vo2Info"); if (vi) vi.onclick = () => vo2InfoSheet(vo2[vo2.length - 1][1], age, sex || "M");
   // compare two measurements
   const picked = [];
@@ -626,8 +721,8 @@ views.corpo = async (el) => {
 };
 
 /* ---------- check-in ---------- */
-function checkinSheet(existing) {
-  const s = { energia: existing?.energia ?? 3, dolori: existing?.dolori ?? 2, umore: existing?.umore ?? 3, act: new Set((existing?.attivita || "").split(",").filter(Boolean)), rpe: existing?.rpe ?? 6, durata: existing?.durata_min ?? 60 };
+function checkinSheet(existing, askSleep = false) {
+  const s = { energia: existing?.energia ?? 3, dolori: existing?.dolori ?? 2, umore: existing?.umore ?? 3, act: new Set((existing?.attivita || "").split(",").filter(Boolean)), rpe: existing?.rpe ?? 6, durata: existing?.durata_min ?? 60, sonno: existing?.sonno_min ?? 450 };
   const ACTS = [["palestra", "Palestra"], ["nuoto", "Nuoto"], ["bici", "Bici"], ["calcio", "Calcio"], ["corsa", "Corsa"], ["camminata", "Camminata"], ["altro", "Altro"], ["riposo", "Riposo"]];
   const scale = (k, label, hint) => `<div class="col"><div class="row between"><div style="font-weight:800">${label}</div><div class="small muted">${hint}</div></div>
     <div class="scale" role="group" aria-label="${label}">${[1, 2, 3, 4, 5].map((n) => `<button class="choice" data-k="${k}" data-v="${n}" aria-pressed="${s[k] === n}">${n}</button>`).join("")}</div></div>`;
@@ -635,6 +730,7 @@ function checkinSheet(existing) {
     const sport = [...s.act].some((a) => a !== "riposo");
     w.querySelector(".sheet").innerHTML = `<div class="grab"></div>${sheetHead("Check-in")}
       <div class="muted">Com'è andata ieri, e come ti senti oggi?</div>
+      ${askSleep ? `<div class="card col"><label class="row between" for="slp" style="font-weight:800"><span>Quanto hai dormito? <span class="small muted" style="font-weight:600">(senza Watch)</span></span><span style="color:var(--orange-ink)">${fmtMin(s.sonno)}</span></label><input id="slp" type="range" min="180" max="720" step="15" value="${s.sonno}"></div>` : ""}
       ${scale("energia", "Energia", "1 a terra · 5 al top")}${scale("dolori", "Indolenzimento", "1 niente · 5 tanto")}${scale("umore", "Umore", "1 giù · 5 alle stelle")}
       <div class="col"><div style="font-weight:800">Cosa hai fatto ieri</div><div class="acts" style="grid-template-columns:repeat(4,minmax(0,1fr))">${ACTS.map(([k, l]) => `<button class="choice" data-a="${k}" aria-pressed="${s.act.has(k)}">${l}</button>`).join("")}</div></div>
       ${sport ? `<div class="card col"><label class="row between" for="rpe" style="font-weight:800"><span>Quanto è stata dura?</span><span style="color:var(--orange-ink)">RPE ${s.rpe}</span></label><input id="rpe" type="range" min="1" max="10" value="${s.rpe}">
@@ -648,12 +744,13 @@ function checkinSheet(existing) {
       draw();
     }));
     const rpe = w.querySelector("#rpe"); if (rpe) rpe.addEventListener("input", (e) => { s.rpe = Number(e.target.value); e.target.previousElementSibling.lastElementChild.textContent = "RPE " + s.rpe; });
+    const slp = w.querySelector("#slp"); if (slp) slp.addEventListener("input", (e) => { s.sonno = Number(e.target.value); e.target.previousElementSibling.lastElementChild.textContent = fmtMin(s.sonno); });
     const dur = w.querySelector("#dur"); if (dur) dur.addEventListener("input", (e) => { s.durata = Number(e.target.value); e.target.previousElementSibling.lastElementChild.textContent = s.durata + " min"; });
     w.querySelector("#save").addEventListener("click", async (e) => {
       e.target.disabled = true;
       try {
         const sportNow = [...s.act].some((a) => a !== "riposo");
-        await api("/api/checkin", { method: "POST", body: { day: todayStr(), energia: s.energia, dolori: s.dolori, umore: s.umore, attivita: [...s.act].join(","), rpe: sportNow ? s.rpe : null, durata_min: sportNow ? s.durata : null } });
+        await api("/api/checkin", { method: "POST", body: { day: todayStr(), energia: s.energia, dolori: s.dolori, umore: s.umore, attivita: [...s.act].join(","), rpe: sportNow ? s.rpe : null, durata_min: sportNow ? s.durata : null, sonno_min: askSleep ? s.sonno : existing?.sonno_min ?? null } });
         closeSheet(); toast("Check-in salvato"); router();
       } catch (err) { e.target.disabled = false; toast(err.message); }
     });
@@ -664,15 +761,27 @@ function checkinSheet(existing) {
 
 /* ---------- settings ---------- */
 views.impostazioni = async (el) => {
+  el.innerHTML = header("Impostazioni", { back: "oggi", gear: false }) + loading(2);
+  await loadProfile();
   const c = cfg();
+  const sleepOpts = [[420, "7 h"], [450, "7 h 30"], [480, "8 h"], [510, "8 h 30"], [540, "9 h"]];
   el.innerHTML = `${header("Impostazioni", { back: "oggi", gear: false })}
     <div class="card col" style="gap:12px"><div class="h2">Profilo</div>
       <label class="field">Nome<input class="input" id="nome" value="${esc(c.profilo.nome)}" autocomplete="given-name"></label>
       <div class="grid2"><label class="field">Età<input class="input" id="eta" type="number" inputmode="numeric" min="12" max="99" value="${esc(c.profilo.eta || "")}"></label>
         <label class="field">Sesso<select class="input" id="sesso"><option value="">–</option><option value="M" ${c.profilo.sesso === "M" ? "selected" : ""}>Uomo</option><option value="F" ${c.profilo.sesso === "F" ? "selected" : ""}>Donna</option></select></label></div>
       <label class="field">I tuoi obiettivi<textarea class="input" id="obiettivi" rows="2" style="padding:12px;min-height:64px" placeholder="Es. scendere al 12% di grasso, nuotare 2 km senza fermarmi">${esc(c.profilo.obiettivi || "")}</textarea></label>
-      <label class="field">Chi sei e come ti alleni<textarea class="input" id="note" rows="3" style="padding:12px;min-height:84px" placeholder="Es. 21 anni, palestra 3 volte a settimana, nuoto 1-2 volte, bici nel weekend">${esc(c.profilo.note)}</textarea><span class="hint">Restano su questo dispositivo e vengono inviate al coach insieme alle domande.</span></label>
+      <label class="field">Chi sei e come ti alleni<textarea class="input" id="note" rows="3" style="padding:12px;min-height:84px" placeholder="Es. palestra 3 volte a settimana, nuoto 1-2 volte, bici nel weekend">${esc(c.profilo.note)}</textarea></label>
+      <div class="grid2"><label class="field">Sveglia abituale<input class="input" id="sveglia" type="time" value="${esc(c.profilo.sveglia || "")}"><span class="hint">Per l'orario consigliato per andare a letto.</span></label>
+        <label class="field">Sonno che ti serve<select class="input" id="sonnomin">${sleepOpts.map(([v, l]) => `<option value="${v}" ${(c.profilo.sonno_min || 480) === v ? "selected" : ""}>${l}</option>`).join("")}</select></label></div>
+      <label class="field">FC massima (se la conosci)<input class="input" id="fcmax" type="number" inputmode="numeric" min="120" max="230" placeholder="${c.profilo.eta ? `stimata ${Math.round(208 - 0.7 * c.profilo.eta)} bpm` : "es. 195"}" value="${esc(c.profilo.fc_max || "")}"><span class="hint">Serve a calcolare il carico. Se la lasci vuota uso la stima dall'età (Tanaka: 208 − 0,7 × età).</span></label>
+      <div class="hint">Il profilo è salvato sul tuo server: vale su iPhone e PC e il coach lo usa per i consigli.</div>
       <button class="btn ghost" id="saveProfilo">Salva profilo</button></div>
+
+    <div class="card col" style="gap:10px"><div class="h2">Notifiche</div>
+      <div id="pushInfo" class="small" style="line-height:1.5;color:var(--text)">Due notifiche al giorno, niente di più: <b>la mattina</b> recupero e allenamento consigliato, <b>la sera</b> l'orario per andare a letto.</div>
+      <div class="row"><button class="btn primary" id="pushOn" style="flex:2">Attiva</button><button class="btn ghost" id="pushTest" style="flex:1" disabled>Prova</button></div>
+      <div id="pushOut" class="small"></div></div>
 
     <div class="card col" style="gap:12px"><div class="h2">Intelligenza artificiale</div>
       <label class="field">Chiave API Groq<input class="input" id="gk" type="password" value="${esc(c.groqKey)}" placeholder="gsk_…" autocomplete="off"><span class="hint">Gratuita su <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com</a>. Resta solo su questo dispositivo. Senza chiave Kairo usa il modello di riserva di Cloudflare.</span></label>
@@ -707,7 +816,41 @@ views.impostazioni = async (el) => {
     </div>
     <div class="small muted center" style="display:flex;justify-content:center">Kairo ${APP_VERSION} · <a href="${GITHUB_URL}" target="_blank" rel="noopener" style="margin-left:4px">open source</a></div>`;
 
-  $("#saveProfilo").onclick = () => { store.set("profilo", { nome: $("#nome").value.trim(), eta: $("#eta").value.trim(), sesso: $("#sesso").value, note: $("#note").value.trim(), obiettivi: $("#obiettivi").value.trim() }); toast("Profilo salvato"); };
+  $("#saveProfilo").onclick = async () => {
+    const body = { nome: $("#nome").value.trim(), eta: $("#eta").value.trim(), sesso: $("#sesso").value, note: $("#note").value.trim(), obiettivi: $("#obiettivi").value.trim(),
+      sveglia: $("#sveglia").value, sonno_min: Number($("#sonnomin").value), fc_max: $("#fcmax").value.trim(), tz: tz() };
+    try { const saved = await api("/api/profilo", { method: "POST", body }); store.set("profilo", saved); toast("Profilo salvato"); }
+    catch (e) { toast(e.message); }
+  };
+  // ---- notifications (web push; on iPhone only for the app added to the Home Screen) ----
+  const pushOk = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  const pushState = async () => {
+    if (!pushOk) { $("#pushOn").disabled = true; $("#pushOut").innerHTML = /iPhone|iPad/.test(navigator.userAgent) && !standalone ? "Su iPhone le notifiche funzionano solo con Kairo aggiunto alla schermata Home: aprilo dall'icona e torna qui." : "Questo browser non supporta le notifiche."; return null; }
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    $("#pushOn").textContent = sub ? "Disattiva" : "Attiva"; $("#pushTest").disabled = !sub;
+    return sub;
+  };
+  pushState().catch(() => {});
+  $("#pushOn").onclick = async () => {
+    const out = $("#pushOut");
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const cur = await reg.pushManager.getSubscription();
+      if (cur) { await api("/api/push/iscrivi", { method: "DELETE", body: { endpoint: cur.endpoint } }); await cur.unsubscribe(); out.textContent = "Notifiche disattivate."; return pushState(); }
+      if ((await Notification.requestPermission()) !== "granted") { out.textContent = "Permesso negato: puoi attivarlo nelle impostazioni del telefono."; return; }
+      const { chiave } = await api("/api/push/chiave");
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: Uint8Array.from(atob(chiave.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((chiave.length + 3) % 4)), (ch) => ch.charCodeAt(0)) });
+      await api("/api/push/iscrivi", { method: "POST", body: sub.toJSON() });
+      out.innerHTML = '<span class="good">Notifiche attive su questo dispositivo.</span>';
+      pushState();
+    } catch (e) { out.textContent = e.message; }
+  };
+  $("#pushTest").onclick = async () => {
+    try { const r = await api("/api/push/prova", { method: "POST" }); $("#pushOut").textContent = r.inviate ? "Inviata: arriva tra qualche secondo." : "Nessun dispositivo ha ricevuto la notifica."; }
+    catch (e) { $("#pushOut").textContent = e.message; }
+  };
   $("#saveAi").onclick = () => { if (!validKey($("#gk").value)) return; store.set("groqKey", $("#gk").value.trim()); store.set("groqModel", $("#gm").value); toast("Impostazioni IA salvate"); };
   $("#loadModels").onclick = async () => {
     store.set("groqKey", $("#gk").value.trim());
@@ -978,7 +1121,8 @@ const GUIDE = [
   { t: "Kairo sulla schermata Home", body: () => `
     <ol class="steps"><li>In <b>Safari</b> tocca <b>Condividi</b> (quadrato con la freccia ↑).</li>
       <li>Scorri → <b>Aggiungi alla schermata Home</b> → <b>Aggiungi</b>.</li>
-      <li>Apri Kairo dall'icona e inserisci di nuovo il <b>codice di accesso</b> (l'app sulla Home ha una memoria separata da Safari).</li></ol>
+      <li>Apri Kairo dall'icona e inserisci di nuovo il <b>codice di accesso</b> (l'app sulla Home ha una memoria separata da Safari).</li>
+      <li>Dall'icona, vai in <b>Impostazioni → Notifiche → Attiva</b>: la mattina ti arriva il recupero con l'allenamento consigliato, la sera l'orario per andare a letto.</li></ol>
     <div class="small muted" style="line-height:1.5"><b>Sul PC:</b> apri <span class="code">${esc(location.origin)}</span> in Chrome o Edge, accedi con il codice e clicca <b>Installa</b> nella barra degli indirizzi.</div>` },
   { t: "Fatto", body: () => `
     <div class="col center" style="gap:8px">${bean(90, 110)}<div class="h2">Kairo è pronto</div></div>
@@ -1042,7 +1186,13 @@ views.importa = async (el) => {
       <button class="btn primary" id="go" disabled>Analizza il file</button>
       <div class="small muted">Il file viene letto <b>su questo dispositivo</b>: al tuo server arrivano solo i valori che Kairo usa (non ECG, non posizioni GPS, non documenti clinici).</div>
       <div id="prog"></div></div>
-    <div id="result"></div>`;
+    <div id="result"></div>
+    <div class="card col" style="gap:12px"><div class="h2">Allenamenti di forza da Hevy</div>
+      <ol class="steps"><li>Apri <b>Hevy</b> → <b>Profilo</b> → ⚙️ <b>Impostazioni</b> → <b>Esporta e importa dati</b> → <b>Esporta allenamenti</b>.</li>
+        <li>Salva il file <b>.csv</b> su File e sceglilo qui sotto. Puoi ripeterlo quando vuoi: le serie già importate non vengono duplicate.</li></ol>
+      <input type="file" id="hevyFile" accept=".csv,text/csv" class="input" style="padding:10px">
+      <div id="hevyOut" class="small"></div></div>`;
+  $("#hevyFile").onchange = (e) => importHevy(e.target.files[0], $("#hevyOut"));
   const file = $("#file"), go = $("#go"), prog = $("#prog"), result = $("#result");
   file.onchange = () => { go.disabled = !file.files.length; };
   const bar = (pct, text) => `<div class="col" style="gap:6px"><div class="track"><div class="bar" style="left:0;width:${pct}%;background:var(--orange)"></div></div><div class="small muted">${text}</div></div>`;
@@ -1059,9 +1209,9 @@ views.importa = async (el) => {
     };
     w.onerror = (e) => { go.disabled = false; prog.innerHTML = `<div class="small bad">Errore: ${esc(e.message || "lettura non riuscita")}</div>`; };
     const days = Number($("#period").value);
-    w.postMessage({ file: f, since: cutoff(days), fcSince: cutoff(14) });
+    w.postMessage({ file: f, since: cutoff(days), fcSince: cutoff(14), hrmax: cfg().profilo.fc_max || (cfg().profilo.eta ? Math.round(208 - 0.7 * cfg().profilo.eta) : 190) });
   };
-  const NAMES = { hrv: "HRV", fcr: "FC a riposo", fc: "Frequenza cardiaca (14 giorni)", fc_camminata: "FC camminata", resp: "Respirazione", spo2: "Ossigeno", vo2max: "VO₂max", peso: "Peso", grasso_pct: "% grasso", massa_magra: "Massa magra", bmi: "BMI", passi: "Passi (giorni)", kcal_attive: "Calorie attive (giorni)", kcal_riposo: "Calorie a riposo (giorni)", dist_piedi: "Distanza a piedi (giorni)", piani: "Piani (giorni)", dist_bici: "Bici (giorni)", dist_nuoto: "Nuoto (giorni)", bracciate: "Bracciate (giorni)", kcal_cibo: "Calorie cibo (giorni)", proteine: "Proteine (giorni)", carboidrati: "Carboidrati (giorni)", grassi: "Grassi (giorni)", acqua: "Acqua (giorni)" };
+  const NAMES = { hrv: "HRV", fcr: "FC a riposo", fc: "Frequenza cardiaca (14 giorni)", fc_camminata: "FC camminata", resp: "Respirazione", spo2: "Ossigeno", vo2max: "VO₂max", peso: "Peso", grasso_pct: "% grasso", massa_magra: "Massa magra", bmi: "BMI", trimp: "Carico di allenamento (giorni)", passi: "Passi (giorni)", kcal_attive: "Calorie attive (giorni)", kcal_riposo: "Calorie a riposo (giorni)", dist_piedi: "Distanza a piedi (giorni)", piani: "Piani (giorni)", dist_bici: "Bici (giorni)", dist_nuoto: "Nuoto (giorni)", bracciate: "Bracciate (giorni)", kcal_cibo: "Calorie cibo (giorni)", proteine: "Proteine (giorni)", carboidrati: "Carboidrati (giorni)", grassi: "Grassi (giorni)", acqua: "Acqua (giorni)" };
   function showResult(m) {
     const rows = Object.entries(m.data).filter(([, v]) => v.length);
     const total = rows.reduce((a, [, v]) => a + v.length, 0) + m.sleep.length;
@@ -1094,6 +1244,62 @@ views.importa = async (el) => {
     }
   }
 };
+// Hevy CSV export → sets. Columns: title, start_time, end_time, description, exercise_title, superset_id,
+// exercise_notes, set_index, set_type, weight_kg (or weight_lbs), reps, distance_km, duration_seconds, rpe
+function parseCsv(text) {
+  const rows = []; let row = [], cell = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) { if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ",") { row.push(cell); cell = ""; }
+    else if (ch === "\n" || ch === "\r") { if (ch === "\r" && text[i + 1] === "\n") i++; row.push(cell); rows.push(row); row = []; cell = ""; }
+    else cell += ch;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter((r) => r.some((c) => c.trim()));
+}
+const MESI = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11, gen: 0, mag: 4, giu: 5, lug: 6, ago: 7, set: 8, ott: 9, dic: 11 };
+function hevyDate(s) {
+  s = String(s || "").trim();
+  let d;
+  const m = s.match(/^(\d{1,2}) ([A-Za-z]{3})[a-z]* (\d{4}),? (\d{1,2}):(\d{2})/);
+  if (m && MESI[m[2].toLowerCase()] != null) d = new Date(Number(m[3]), MESI[m[2].toLowerCase()], Number(m[1]), Number(m[4]), Number(m[5]));
+  else if (/^\d{4}-\d{2}-\d{2}/.test(s)) d = new Date(s.replace(" ", "T"));
+  if (!d || isNaN(d)) return null;
+  const off = -d.getTimezoneOffset(), pad = (n) => String(Math.abs(n)).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00${off >= 0 ? "+" : "-"}${pad(Math.trunc(off / 60))}:${pad(off % 60)}`;
+}
+async function importHevy(f, out) {
+  if (!f) return;
+  try {
+    out.textContent = "Leggo il file…";
+    const rows = parseCsv(await f.text());
+    const head = rows.shift().map((h) => h.trim().toLowerCase());
+    const col = (n) => head.indexOf(n);
+    if (col("exercise_title") < 0 || col("start_time") < 0) throw new Error("Non sembra un export di Hevy (mancano le colonne exercise_title e start_time).");
+    const lbs = col("weight_kg") < 0 && col("weight_lbs") >= 0;
+    const sets = [];
+    let bad = 0;
+    for (const r of rows) {
+      const start = hevyDate(r[col("start_time")]), end = hevyDate(r[col("end_time")]);
+      if (!start) { bad++; continue; }
+      const w = r[col(lbs ? "weight_lbs" : "weight_kg")];
+      sets.push({ start, end, workout: r[col("title")], exercise: r[col("exercise_title")], set_index: Number(r[col("set_index")]) || 0, set_type: r[col("set_type")] || "normal",
+        weight: w === "" || w == null ? null : Math.round(Number(w) * (lbs ? 0.45359237 : 1) * 100) / 100, reps: r[col("reps")] === "" ? null : Number(r[col("reps")]),
+        rpe: col("rpe") >= 0 && r[col("rpe")] !== "" ? Number(r[col("rpe")]) : null, fonte: "hevy" });
+    }
+    let saved = 0, discarded = bad;
+    for (const [i, part] of chunks(sets, 2000).entries()) {
+      out.textContent = `Invio ${i + 1} di ${Math.ceil(sets.length / 2000)}…`;
+      const r = await api("/api/forza", { method: "POST", body: { serie: part } });
+      saved += r.righe; discarded += r.scartate;
+    }
+    const workouts = new Set(sets.map((x) => x.start)).size;
+    out.innerHTML = `<span class="good">Importate ${fmtNum(saved)} serie da ${fmtNum(workouts)} allenamenti.</span>${discarded ? ` <span class="muted">${fmtNum(discarded)} righe scartate.</span>` : ""} <a href="#/corpo">Vedi i progressi</a>`;
+  } catch (e) { out.innerHTML = `<span class="bad">${esc(e.message)}</span>`; }
+}
+
 const chunks = (a, n) => { const o = []; for (let i = 0; i < a.length; i += n) o.push(a.slice(i, i + n)); return o; };
 
 /* ---------- onboarding / access ---------- */
@@ -1172,6 +1378,7 @@ views["configura-ia"] = async (el) => {
 /* ---------- router ---------- */
 const PUBLIC = new Set(["benvenuto", "accesso"]);
 function route(name) { location.hash = "#/" + name; }
+let profileLoaded = false;
 async function router() {
   closeSheet();
   const name = (location.hash.replace(/^#\/?/, "") || "oggi").split("?")[0];
@@ -1184,6 +1391,7 @@ async function router() {
     const info = await api("/api/info").catch(() => null);
     return route(info && info.setup_richiesto ? "benvenuto" : "accesso");
   }
+  if (!profileLoaded) { profileLoaded = true; loadProfile(); }
   const view = views[name] || views.oggi;
   renderTabs(TABS.some(([k]) => k === name) ? name : null);
   window.scrollTo(0, 0);

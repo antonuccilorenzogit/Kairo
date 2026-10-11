@@ -97,7 +97,7 @@ async function locate(file) {
 }
 
 self.onmessage = async (ev) => {
-  const { file, since, fcSince } = ev.data;
+  const { file, since, fcSince, hrmax = 190 } = ev.data;
   try {
     const src = await locate(file);
     // count compressed bytes for the progress bar
@@ -105,7 +105,7 @@ self.onmessage = async (ev) => {
     const counter = new TransformStream({ transform(chunk, ctl) { read += chunk.byteLength; ctl.enqueue(chunk); } });
     let stream = src.raw.pipeThrough(counter);
     if (src.method === 8) stream = stream.pipeThrough(new DecompressionStream("deflate-raw"));
-    const samples = {}, daily = {}, sleep = [];
+    const samples = {}, daily = {}, sleep = [], hrDays = {};
     let records = 0, kept = 0, first = null, last = null, tick = 0;
     const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
     let buf = "";
@@ -125,8 +125,10 @@ self.onmessage = async (ev) => {
       const m = MAP[type];
       if (!m) return;
       const [key, kind] = m;
-      if (key === "fc" && sd < fcSince) return;
       let v = Number(attr(s, "value"));
+      // heart rate: every day goes into the training load (TRIMP); raw values only for the last 14 days
+      if (key === "fc" && Number.isFinite(v)) (hrDays[sd.slice(0, 10)] ||= []).push(Date.parse(iso(sd)) / 1000, v);
+      if (key === "fc" && sd < fcSince) return;
       if (!Number.isFinite(v)) return;
       const conv = UNIT[key];
       if (conv) { const f = conv[attr(s, "unit")]; if (f == null) return; v *= f; }
@@ -169,6 +171,18 @@ self.onmessage = async (ev) => {
       out[key] = Object.entries(days).map(([d, bySrc]) => [d + "T12:00:00", Math.round(Math.max(...Object.values(bySrc)) * 100) / 100]).filter((r) => r[1] > 0);
     }
     for (const [key, map] of Object.entries(samples)) out[key] = [...map.entries()];
+    // Edwards TRIMP per day (same formula as the server): minutes in zone × zone weight, gaps capped at 5 min
+    out.trimp = [];
+    for (const [day, flat] of Object.entries(hrDays)) {
+      const pts = []; for (let i = 0; i < flat.length; i += 2) pts.push([flat[i], flat[i + 1]]);
+      pts.sort((a, b) => a[0] - b[0]);
+      let tr = 0;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const dt = Math.min((pts[i + 1][0] - pts[i][0]) / 60, 5), pct = pts[i][1] / hrmax;
+        if (dt > 0 && pct >= 0.5) tr += dt * Math.min(5, Math.floor((pct - 0.5) * 10) + 1);
+      }
+      if (pts.length > 1) out.trimp.push([day + "T12:00:00", Math.round(tr)]);
+    }
     self.postMessage({ type: "done", data: out, sleep: sleepOut, records, first, last, file: src.name });
   } catch (e) {
     self.postMessage({ type: "error", message: e.message || String(e) });

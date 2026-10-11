@@ -14,8 +14,13 @@ Open source, gratuito, i dati restano nel <i>tuo</i> account.</p>
 
 È un'alternativa personale e open source ad app come Bevel, Whoop o Athlytic:
 
+- **Allenamento consigliato ogni giorno**: dal recupero e dal tuo carico di allenamento, una sola indicazione (seduta dura, normale, leggera o riposo)
+- **Carico di allenamento** dalla frequenza cardiaca (TRIMP) e dalla fatica percepita in palestra, con il rapporto settimana/mese per migliorare senza esagerare
+- **Allarmi** quando HRV, frequenza cardiaca e respirazione segnalano fatica accumulata o un malanno in arrivo
 - **Score di Recupero 0–100** con Bean, la batteria che si riempie
-- **Sonno**: fasi (ipnogramma), efficienza, regolarità, debito di sonno
+- **Sonno**: fasi, efficienza, regolarità, debito e **quanto ti serve stanotte**, con l'orario per andare a letto
+- **Corpo e forza**: composizione corporea, VO₂max, età del cuore e progressi sugli esercizi principali (import da Hevy)
+- **Report settimanale** e **notifiche** essenziali: la mattina e la sera
 - **Spiegazioni a richiesta**: tocca un dato per capire cos'è e come ti posizioni
 - **Coach IA**: consiglio del giorno e chat che risponde con i tuoi numeri
 - **Check-in in 10 secondi**: energia, indolenzimento, umore, cosa hai fatto ieri

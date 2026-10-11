@@ -51,6 +51,14 @@ La pagina *Impostazioni → Diagnostica* ti dice se c'è una versione nuova.
 
 ---
 
+## Notifiche
+
+Apri Kairo **dall'icona sulla schermata Home** (su iPhone le notifiche funzionano solo così, iOS 16.4 o successivo), vai in *Impostazioni → Notifiche → Attiva* e consenti. Ricevi solo due notifiche al giorno: la mattina, appena arrivano i dati della notte, recupero e allenamento consigliato; la sera, circa 30 minuti prima dell'orario consigliato per andare a letto (imposta la sveglia abituale nel profilo).
+
+## Allenamenti di forza da Hevy
+
+In Hevy: *Profilo → Impostazioni → Esporta e importa dati → Esporta allenamenti*. Poi in Kairo: *Impostazioni → Importa dati da Salute → Allenamenti di forza da Hevy* e scegli il file `.csv`. Ripetilo quando vuoi (per esempio una volta al mese): le serie già importate non vengono duplicate. I progressi compaiono nella pagina *Corpo*.
+
 ## Backup
 
 Kairo salva da solo una copia dei tuoi dati **ogni lunedì** e **prima di ogni cancellazione**, e tiene le ultime 8. In *Impostazioni → Backup* puoi:

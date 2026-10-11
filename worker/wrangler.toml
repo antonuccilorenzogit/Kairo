@@ -19,9 +19,9 @@ database_name = "kairo"
 [[kv_namespaces]]
 binding = "BACKUP"
 
-# Weekly backup every Monday at 03:17 UTC
+# Weekly backup (Monday 03:17 UTC) and bedtime-reminder check every 30 minutes
 [triggers]
-crons = ["17 3 * * 1"]
+crons = ["17 3 * * 1", "*/30 * * * *"]
 
 # Free fallback model when Groq is not configured or unavailable
 [ai]

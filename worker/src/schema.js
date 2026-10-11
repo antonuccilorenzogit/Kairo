@@ -1,6 +1,6 @@
 // Database schema. Applied automatically on the first request (idempotent),
 // so a fresh deployment needs no manual migration step.
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const SCHEMA = [
   // Point samples (HRV, resting HR, SpO2, respiration, weight, heart rate…).
@@ -27,7 +27,7 @@ export const SCHEMA = [
   // Daily check-in
   `CREATE TABLE IF NOT EXISTS checkin (
      day TEXT PRIMARY KEY, energia INTEGER, dolori INTEGER, umore INTEGER,
-     attivita TEXT, rpe INTEGER, durata_min INTEGER, note TEXT, updated TEXT)`,
+     attivita TEXT, rpe INTEGER, durata_min INTEGER, note TEXT, updated TEXT, sonno_min INTEGER)`,
   // Import log
   `CREATE TABLE IF NOT EXISTS imports (
      id INTEGER PRIMARY KEY AUTOINCREMENT, received TEXT NOT NULL,
@@ -37,6 +37,17 @@ export const SCHEMA = [
      day TEXT PRIMARY KEY, text TEXT NOT NULL, provider TEXT, model TEXT, created TEXT)`,
   // Key/value settings (access-code hash, sync token, AI usage counters, schema version)
   `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`,
+  // Coach conversation (shared by all your devices)
+  `CREATE TABLE IF NOT EXISTS chat (
+     id INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT NOT NULL, content TEXT NOT NULL, meta TEXT, created TEXT NOT NULL)`,
+  // Strength training sets (imported from Hevy or logged in Kairo)
+  `CREATE TABLE IF NOT EXISTS sets (
+     start TEXT NOT NULL, exercise TEXT NOT NULL, set_index INTEGER NOT NULL,
+     set_type TEXT, weight REAL, reps INTEGER, rpe REAL, workout TEXT, end TEXT, fonte TEXT,
+     PRIMARY KEY (start, exercise, set_index))`,
+  // Web-push subscriptions (one per device that enabled notifications)
+  `CREATE TABLE IF NOT EXISTS push_subs (
+     endpoint TEXT PRIMARY KEY, p256dh TEXT NOT NULL, auth TEXT NOT NULL, created TEXT NOT NULL)`,
   // Failed access attempts per client, for the temporary lock-out
   `CREATE TABLE IF NOT EXISTS auth_fail (
      ip TEXT PRIMARY KEY, n INTEGER NOT NULL, first INTEGER NOT NULL,
@@ -57,6 +68,8 @@ const MIGRATIONS = {
     "ALTER TABLE sleep_v2 RENAME TO sleep",
     "CREATE INDEX IF NOT EXISTS idx_sleep_end ON sleep(end)",
   ],
+  // v2 -> v3: hours slept declared in the check-in (nights without the Watch)
+  3: ["ALTER TABLE checkin ADD COLUMN sonno_min INTEGER"],
 };
 
 const ready = new WeakSet();

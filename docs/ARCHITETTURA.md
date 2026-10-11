@@ -54,6 +54,11 @@
 | GET | `/api/backup/file?chiave=` | scarica un backup (`.json.gz`) |
 | POST | `/api/ripristina` | unisce i dati di un backup o di un'esportazione |
 | GET | `/api/corpo` | misure corporee, VO₂max e FC per la pagina Corpo |
+| GET/POST | `/api/profilo` | profilo (età, sesso, obiettivi, FC max, sveglia, sonno necessario, fuso) |
+| GET/DELETE | `/api/chat` | conversazione con il coach (salvata sul server) |
+| GET | `/api/settimana?a=` | report dei 7 giorni fino ad `a` · POST `/api/settimana/coach` resoconto del coach |
+| GET/POST | `/api/forza` | progressi di forza · importa serie (`{"serie":[…]}`) |
+| GET | `/api/push/chiave` · POST/DELETE `/api/push/iscrivi` · POST `/api/push/prova` | notifiche push |
 
 ## Formato dei dati
 HealthSync invia un oggetto piatto. Per ogni metrica `<chiave>`:
@@ -89,6 +94,12 @@ Nessuna app (Whoop, Oura, Garmin, Bevel) pubblica la formula esatta dei suoi pun
   - bilancio di sonno 10%: media delle ultime 14 notti rispetto a 8 h (Oura "Sleep balance");
   - respirazione notturna 10%: penalizza solo l'aumento rispetto alla media (segnale usato da Whoop).
   
-  Contributo = `60 + 20 × z` (limitato a 0–100). Se un dato manca, gli altri si ridistribuiscono il peso. Fasce: 67–100 verde, 34–66 giallo, 0–33 rosso (Whoop). È "provvisorio" finché la baseline ha meno di 14 giorni.
+  Contributo = `60 + 20 × z` (limitato a 0–100). Se un dato manca, gli altri si ridistribuiscono il peso. Il risultato non supera di oltre 20 punti la media di HRV e FC a riposo: il sonno non compensa un sistema nervoso in allarme. Fasce: 67–100 verde, 34–66 giallo, 0–33 rosso (Whoop). È "provvisorio" finché la baseline ha meno di 14 giorni.
+- **Carico di allenamento:** TRIMP di Edwards (1993) dalla FC grezza: minuti in zona × peso (50–60% FCmax = 1 … 90–100% = 5), ogni campione vale fino al successivo (massimo 5 minuti); FCmax misurata o stimata con Tanaka et al. (2001), 208 − 0,7 × età. Calcolato all'arrivo dei dati e salvato in `daily.trimp`. Per la palestra, session-RPE di Foster (2001): RPE × minuti dal check-in del giorno dopo o dalle serie con RPE, riportato alla scala TRIMP con un fattore personale (mediana dei giorni con entrambi, altrimenti 2). Carico del giorno = il maggiore dei due.
+- **Rapporto acuto:cronico** (Gabbett 2016): media degli ultimi 7 giorni / media degli ultimi 28 (fino a ieri; almeno 4 e 14 giorni con dati). < 0,8 scarico, 0,8–1,0 mantenimento, 1,0–1,3 costruzione, 1,3–1,5 attenzione, > 1,5 eccesso.
+- **Allenamento consigliato:** fascia di carico per oggi in multipli della media a 28 giorni: recupero verde 0,9–1,5, giallo 0,5–1,0, rosso 0–0,5; con rapporto > 1,3 il massimo scende a 0,8, con rapporto < 0,8 e recupero verde sale a 1,6. Livello: seduta dura (massimo ≥ 1,4), normale (≥ 0,95), leggera (≥ 0,6), riposo attivo.
+- **Allarmi:** "malanno" se per due giorni di fila l'HRV è ≥ 1 DS sotto la media e la FC a riposo ≥ 1 DS sopra (o la respirazione ≥ 1 DS sopra); "sovraccarico" se da tre giorni l'HRV è sotto l'intervallo normale e il rapporto acuto:cronico supera 1,3.
+- **Fabbisogno di sonno stanotte** (principio di Whoop): base (profilo, predefinito 8 h) + fino a 45 minuti se il carico di oggi supera il solito + un settimo del debito degli ultimi 7 giorni (massimo 60 minuti). Orario per andare a letto = sveglia − fabbisogno − 15 minuti per addormentarsi. Notti senza Watch: le ore dichiarate nel check-in (conta solo la durata).
+- **Forza:** massimale stimato con la formula di Epley, peso × (1 + ripetizioni/30), sulla serie migliore di ogni seduta (1–12 ripetizioni, riscaldamento escluso).
 - **VO₂max:** classificazione con le tabelle della Cooper Institute (le stesse di Garmin). **Età del cuore:** l'età in cui il tuo VO₂max sarebbe al 50° percentile (media tra 40° e 60°), interpolata tra le decadi, minimo 20 anni, come la Fitness Age di Garmin.
 - **Composizione corporea:** categorie di massa grassa dell'American Council on Exercise; BMI secondo l'OMS; FC a riposo secondo l'American Heart Association (60–100 normale, 40–60 sportivi).

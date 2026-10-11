@@ -2,10 +2,15 @@
 // talks to the AI coach and serves the web app (static assets in /public).
 import { computeDay, computeHistory, mergeStages } from "./metrics.js";
 import { ensureSchema, SCHEMA_VERSION } from "./schema.js";
-import { dailyAdvice, chat, testAI, groqModels, DEFAULT_GROQ_MODEL, FALLBACK_MODEL } from "./coach.js";
+import { dailyAdvice, chat, testAI, groqModels, weeklyCoach, DEFAULT_GROQ_MODEL, FALLBACK_MODEL } from "./coach.js";
+import { saveSets, strengthSummary } from "./strength.js";
+import { weeklyReport } from "./report.js";
 import { sha256, safeEqual, clientIp, lockedFor, recordFailure, clearFailures, pruneFailures, codeProblem } from "./security.js";
 import { parsePayload, cleanCheckin, MAX_BODY_BYTES } from "./validate.js";
-import { exportData, createBackup, listBackups, readBackup, restoreData, gunzip } from "./backup.js";
+import { exportData, createBackup, listBackups, readBackup, restoreData } from "./backup.js";
+import { getProfile, saveProfile, hrMax, profileText } from "./profile.js";
+import { recomputeTrimp } from "./load.js";
+import { getVapid, sendPush, validEndpoint } from "./push.js";
 
 const VERSION = "1.4.0";
 
@@ -55,7 +60,43 @@ const locked = (sec) => json({ errore: `Troppi tentativi sbagliati: riprova tra 
 
 // Writes validated rows. Every table has a natural key, so sending the same data again
 // (or overlapping periods) never creates duplicates.
-async function ingest(payload, env) {
+// Morning notification: the first time today's recovery is available (after the wake-up sync).
+async function morningPush(env, origin) {
+  const subs = await env.DB.prepare("SELECT count(*) n FROM push_subs").first();
+  if (!subs.n) return;
+  const prof = await getProfile(env.DB);
+  const day = todayLocal(prof.tz), hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: prof.tz, hour: "2-digit", hourCycle: "h23" }).format(new Date()));
+  if (hour < 4 || hour > 13) return;
+  const d = await computeDay(env.DB, day);
+  if (d.recupero.score == null) return;
+  // claim today's slot atomically, so two syncs at the same time do not send two notifications
+  const r = await env.DB.prepare("INSERT INTO settings(key,value) VALUES('push_mattina',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE settings.value != excluded.value").bind(day).run();
+  if (!r.meta?.changes) return;
+  const label = d.recupero.score >= 67 ? "Recuperato" : d.recupero.score >= 34 ? "Recupero parziale" : "Recupero basso";
+  const body = d.allarme ? `${d.allarme.titolo}: oggi vai leggero.` : d.carico?.consiglio ? `Oggi: ${d.carico.consiglio.titolo.toLowerCase()} — ${d.carico.consiglio.testo}.` : "Apri Kairo per il consiglio di oggi.";
+  await sendPush(env, { title: `${label} · ${d.recupero.score}`, body, url: "/#/oggi" }, origin);
+}
+
+// Evening notification: about 30 minutes before the suggested bedtime.
+async function eveningPush(env, origin) {
+  const subs = await env.DB.prepare("SELECT count(*) n FROM push_subs").first();
+  if (!subs.n) return;
+  const prof = await getProfile(env.DB);
+  const day = todayLocal(prof.tz);
+  const d = await computeDay(env.DB, day);
+  const st = d.sonno_stanotte;
+  if (!st || !st.a_letto) return;
+  const [h, m] = new Intl.DateTimeFormat("en-GB", { timeZone: prof.tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date()).split(":").map(Number);
+  const now = h * 60 + m, bed = Number(st.a_letto.slice(0, 2)) * 60 + Number(st.a_letto.slice(3));
+  let diff = bed - now; if (diff < -720) diff += 1440; if (diff > 720) diff -= 1440;
+  if (diff < 10 || diff > 45) return;
+  const r = await env.DB.prepare("INSERT INTO settings(key,value) VALUES('push_sera',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE settings.value != excluded.value").bind(day).run();
+  if (!r.meta?.changes) return;
+  const fmt = (min) => `${Math.floor(min / 60)}h${String(min % 60).padStart(2, "0")}`;
+  await sendPush(env, { title: `A letto entro le ${st.a_letto}`, body: `Stanotte ti servono ${fmt(st.fabbisogno_min)} di sonno${st.per_carico_min || st.per_debito_min ? " (oggi un po' di più per recuperare)" : ""}.`, url: "/#/sonno" }, origin);
+}
+
+async function ingest(payload, env, origin) {
   const db = env.DB, rows = parsePayload(payload), stmts = [];
   for (const [m, ts, t, v] of rows.samples) stmts.push(db.prepare("INSERT OR REPLACE INTO samples(metric,ts,t,value) VALUES(?,?,?,?)").bind(m, ts, t, v));
   // daily and hourly totals arrive already summed by Health: keep the highest value seen (a day only grows)
@@ -63,11 +104,15 @@ async function ingest(payload, env) {
   for (const [m, h, v] of rows.hourly) stmts.push(db.prepare("INSERT INTO hourly(metric,hour,value) VALUES(?,?,?) ON CONFLICT(metric,hour) DO UPDATE SET value=max(value,excluded.value)").bind(m, h, v));
   for (const [s, e, st] of rows.sleep) stmts.push(db.prepare("INSERT OR IGNORE INTO sleep(start,end,stage) VALUES(?,?,?)").bind(s, e, st));
   for (let i = 0; i < stmts.length; i += 400) await db.batch(stmts.slice(i, i + 400));
+  // new heart-rate samples → recompute the training load of those days
+  const fcDays = rows.samples.filter((r) => r[0] === "fc").map((r) => r[1].slice(0, 10));
+  if (fcDays.length) await recomputeTrimp(db, fcDays, hrMax(await getProfile(db)));
   const clip = (x, n) => (x == null ? null : String(x).slice(0, n));
   await db.prepare("INSERT INTO imports(received,modulo,esportato,righe,versione) VALUES(?,?,?,?,?)")
     .bind(new Date().toISOString(), clip(payload?.modulo, 60), clip(payload?.esportato, 40), stmts.length, clip(payload?.versione, 20)).run();
   // keep the import log short
   await db.prepare("DELETE FROM imports WHERE id <= (SELECT max(id) - 500 FROM imports)").run();
+  try { await morningPush(env, origin); } catch (e) { console.warn("push mattina", e); }
   return { righe: stmts.length, scartati: rows.discarded, sconosciuti: rows.unknown };
 }
 
@@ -153,7 +198,7 @@ async function api(req, env, url) {
     if (req.method !== "POST") return json({ ok: true, app: "kairo", messaggio: "Link valido" });
     const b = await readIngestBody(req);
     if (b.errore) return json({ errore: b.errore }, 400);
-    return json({ ok: true, ...(await ingest(b.payload, env)) });
+    return json({ ok: true, ...(await ingest(b.payload, env, url.origin)) });
   }
 
   // ---- everything else needs the access code ----
@@ -167,6 +212,40 @@ async function api(req, env, url) {
   await clearFailures(env.DB, ip);
   if (Math.random() < 0.02) await pruneFailures(env.DB);
 
+  if (p === "/api/profilo") {
+    if (req.method === "GET") return json(await getProfile(env.DB));
+    const before = await getProfile(env.DB);
+    const saved = await saveProfile(env.DB, await readJson(req));
+    if (saved.errore) return json(saved, 400);
+    // age or max heart rate changed → the heart-rate zones change: recompute the training load
+    if (hrMax(before) !== hrMax(saved)) {
+      const since = new Date(Date.now() - 120 * 86400e3).toISOString().slice(0, 10);
+      const r = await env.DB.prepare("SELECT DISTINCT substr(ts,1,10) d FROM samples WHERE metric='fc' AND ts >= ?").bind(since).all();
+      await recomputeTrimp(env.DB, r.results.map((x) => x.d), hrMax(saved));
+    }
+    return json(saved);
+  }
+  if (p === "/api/chat") {
+    if (req.method === "DELETE") { await env.DB.prepare("DELETE FROM chat").run(); return json({ ok: true }); }
+    const r = await env.DB.prepare("SELECT role, content, meta, created FROM (SELECT * FROM chat ORDER BY id DESC LIMIT 40) ORDER BY id").all();
+    return json(r.results);
+  }
+  if (p === "/api/push/chiave") return json({ chiave: (await getVapid(env.DB)).publicKey });
+  if (p === "/api/push/iscrivi" && req.method === "POST") {
+    const b = await readJson(req);
+    const endpoint = b?.endpoint, key = b?.keys?.p256dh, auth = b?.keys?.auth;
+    if (!validEndpoint(endpoint) || !/^[A-Za-z0-9_-]{80,100}$/.test(key || "") || !/^[A-Za-z0-9_-]{16,32}$/.test(auth || "")) return json({ errore: "Iscrizione non valida" }, 400);
+    await env.DB.prepare("INSERT OR REPLACE INTO push_subs(endpoint,p256dh,auth,created) VALUES(?,?,?,?)").bind(endpoint, key, auth, new Date().toISOString()).run();
+    return json({ ok: true });
+  }
+  if (p === "/api/push/iscrivi" && req.method === "DELETE") {
+    const b = await readJson(req);
+    await env.DB.prepare("DELETE FROM push_subs WHERE endpoint = ?").bind(String(b?.endpoint || "")).run();
+    return json({ ok: true });
+  }
+  if (p === "/api/push/prova" && req.method === "POST") {
+    return json(await sendPush(env, { title: "Kairo", body: "Le notifiche funzionano. Ti scriverò la mattina e prima di dormire.", url: "/#/oggi" }, url.origin));
+  }
   if (p === "/api/collegamento") {
     const t = await syncToken(env.DB, req.method === "POST");
     return json({ link: `${url.origin}/api/sync/${t}` });
@@ -174,7 +253,7 @@ async function api(req, env, url) {
   if (p === "/api/ingest" && req.method === "POST") {
     const b = await readIngestBody(req);
     if (b.errore) return json({ errore: b.errore }, 400);
-    return json({ ok: true, ...(await ingest(b.payload, env)) });
+    return json({ ok: true, ...(await ingest(b.payload, env, url.origin)) });
   }
   if (p === "/api/day") return json(await computeDay(env.DB, validDay(url.searchParams.get("d")) || todayLocal(tz)));
   if (p === "/api/history") {
@@ -188,6 +267,20 @@ async function api(req, env, url) {
     const r = await env.DB.prepare("SELECT start, end, stage FROM sleep WHERE end > ? AND start < ? ORDER BY start")
       .bind(prev + "T18:00", d + "T18:00").all();
     return json(mergeStages(r.results).filter((x) => x.end > prev + "T18:00" && x.end <= d + "T18:00"));
+  }
+  if (p === "/api/settimana" || p === "/api/settimana/coach") {
+    const yesterday = new Date(Date.parse(todayLocal(tz) + "T12:00:00Z") - 86400e3).toISOString().slice(0, 10);
+    const rep = await weeklyReport(env.DB, validDay(url.searchParams.get("a")) || yesterday);
+    if (p === "/api/settimana") return json(rep);
+    return json(await weeklyCoach(env, req, rep, profileText(await getProfile(env.DB))));
+  }
+  if (p === "/api/forza") {
+    if (req.method === "POST") {
+      const b = await readIngestBody(req);
+      if (b.errore) return json({ errore: b.errore }, 400);
+      return json({ ok: true, ...(await saveSets(env.DB, b.payload.serie)) });
+    }
+    return json(await strengthSummary(env.DB, todayLocal(tz)));
   }
   if (p === "/api/corpo") {
     // Body page: measurements grouped per day, VO2max history, resting and walking heart rate per day
@@ -216,10 +309,10 @@ async function api(req, env, url) {
       const c = cleanCheckin(await readJson(req), todayLocal(tz));
       if (c.errore) return json({ errore: c.errore }, 400);
       const day = c.day;
-      await env.DB.prepare(`INSERT INTO checkin(day,energia,dolori,umore,attivita,rpe,durata_min,note,updated) VALUES(?,?,?,?,?,?,?,?,?)
+      await env.DB.prepare(`INSERT INTO checkin(day,energia,dolori,umore,attivita,rpe,durata_min,note,updated,sonno_min) VALUES(?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(day) DO UPDATE SET energia=excluded.energia, dolori=excluded.dolori, umore=excluded.umore, attivita=excluded.attivita,
-        rpe=excluded.rpe, durata_min=excluded.durata_min, note=excluded.note, updated=excluded.updated`)
-        .bind(day, c.energia ?? null, c.dolori ?? null, c.umore ?? null, c.attivita ?? null, c.rpe ?? null, c.durata_min ?? null, c.note ?? null, new Date().toISOString()).run();
+        rpe=excluded.rpe, durata_min=excluded.durata_min, note=excluded.note, updated=excluded.updated, sonno_min=excluded.sonno_min`)
+        .bind(day, c.energia ?? null, c.dolori ?? null, c.umore ?? null, c.attivita ?? null, c.rpe ?? null, c.durata_min ?? null, c.note ?? null, new Date().toISOString(), c.sonno_min ?? null).run();
       await env.DB.prepare("DELETE FROM advice WHERE day = ?").bind(day).run(); // advice must take the check-in into account
       return json({ ok: true });
     }
@@ -227,11 +320,20 @@ async function api(req, env, url) {
   }
   if (p === "/api/coach/oggi" && req.method === "POST") {
     const b = (await readJson(req)) || {};
-    return json(await dailyAdvice(env, req, todayLocal(tz), !!b.forza, String(b.profilo || "").slice(0, 2000)));
+    return json(await dailyAdvice(env, req, todayLocal(tz), !!b.forza, profileText(await getProfile(env.DB))));
   }
   if (p === "/api/coach/chat" && req.method === "POST") {
     const b = (await readJson(req, 512 * 1024)) || {};
-    return json(await chat(env, req, todayLocal(tz), Array.isArray(b.messaggi) ? b.messaggi.slice(-20) : [], String(b.profilo || "").slice(0, 2000)));
+    const q = String(b.domanda || "").trim().slice(0, 2000);
+    if (!q) return json({ errore: "Domanda vuota" }, 400);
+    const now = () => new Date().toISOString();
+    await env.DB.prepare("INSERT INTO chat(role,content,created) VALUES('user',?,?)").bind(q, now()).run();
+    const hist = (await env.DB.prepare("SELECT role, content FROM (SELECT * FROM chat ORDER BY id DESC LIMIT 10) ORDER BY id").all()).results;
+    const r = await chat(env, req, todayLocal(tz), hist, profileText(await getProfile(env.DB)));
+    const meta = r.errore ? "errore" : `${r.provider === "groq" ? "Groq" : "Modello di riserva"} · ${r.model}${r.avviso ? " · " + r.avviso : ""}`;
+    await env.DB.prepare("INSERT INTO chat(role,content,meta,created) VALUES('assistant',?,?,?)").bind(r.errore || r.testo, meta, now()).run();
+    await env.DB.prepare("DELETE FROM chat WHERE id <= (SELECT max(id) - 200 FROM chat)").run();
+    return json({ ...r, meta });
   }
   if (p === "/api/ai/test" && req.method === "POST") return json(await testAI(env, req));
   if (p === "/api/ai/modelli") return json(await groqModels(req, env));
@@ -287,9 +389,10 @@ export default {
       return json({ errore: "Errore interno del server. Riprova; se continua apri la Diagnostica." }, 500);
     }
   },
-  // weekly automatic backup (cron in wrangler.toml)
+  // cron (wrangler.toml): weekly backup on Monday, bedtime reminder check every 30 minutes
   async scheduled(event, env, ctx) {
     await ensureSchema(env.DB);
-    ctx.waitUntil(createBackup(env, VERSION, "automatico settimanale").then((r) => r.errore && console.warn(r.errore)));
+    if (event.cron === "17 3 * * 1") ctx.waitUntil(createBackup(env, VERSION, "automatico settimanale").then((r) => r.errore && console.warn(r.errore)));
+    else ctx.waitUntil(eveningPush(env, env.ORIGIN || "mailto:kairo@users.noreply.github.com").catch((e) => console.warn("push sera", e)));
   },
 };

@@ -5,12 +5,22 @@ Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https
 ## [Non pubblicato]
 
 ### Aggiunto
+- **Allenamento consigliato del giorno** nella pagina Oggi: una sola indicazione (seduta dura, normale, leggera, riposo attivo) e la fascia di carico per oggi, calcolate da recupero e carico.
+- **Carico di allenamento**: TRIMP di Edwards dalla frequenza cardiaca (FC max misurata o stimata con Tanaka) e session-RPE di Foster per la palestra; rapporto acuto:cronico 7/28 giorni con stato (scarico, mantenimento, costruzione, attenzione, eccesso) e grafico di 28 giorni.
+- **Allarmi** di malanno in arrivo o fatica accumulata, mostrati solo quando servono.
+- **Sonno: quanto ti serve stanotte** e a che ora andare a letto (base + carico del giorno + debito); **notti senza Watch** con le ore dichiarate nel check-in.
+- **Report settimanale** con il resoconto del coach.
+- **Forza**: import dei tuoi allenamenti da Hevy (CSV), massimale stimato con Epley, record e serie per settimana nella pagina Corpo; le sedute con RPE entrano nel carico.
+- **Notifiche** (solo due al giorno): recupero e allenamento consigliato la mattina, orario per andare a letto la sera. Web Push senza servizi esterni.
+- **Profilo e conversazione con il coach salvati sul server**: uguali su iPhone e PC; nuovi campi FC massima, sveglia, sonno necessario.
 - **Pagina Corpo**: composizione corporea, qualità del cambiamento (ricomposizione, definizione…), "Motore" con VO₂max, età del cuore e frequenza cardiaca, diario e confronto di due misure.
 - Profilo con età e sesso (per età del cuore e riferimenti).
 - **Backup automatici** ogni settimana e prima di ogni cancellazione (ultime 8 copie), con download e **ripristino** dalle Impostazioni.
-- **23 test automatici** e controllo su GitHub a ogni modifica.
+- **39 test automatici** e controllo su GitHub a ogni modifica.
 
 ### Migliorato
+- **Pagina Oggi essenziale**: recupero, allenamento di oggi, sonno, coach, check-in. I dettagli (HRV, FC, passi) sono nelle pagine dedicate; la respirazione compare solo quando abbassa il recupero.
+- Il recupero non supera di oltre 20 punti il segnale di HRV e FC a riposo: un buon sonno non compensa un sistema nervoso in allarme.
 - **Calcoli basati su metodi pubblicati**: Recupero con la struttura della Readiness di Oura e l'HRV secondo Plews/HRV4Training (media 7 giorni, normal range a 60 giorni); punteggio del sonno con le soglie AASM/NSF e il Sleep Regularity Index; VO₂max con le tabelle della Cooper Institute ed età del cuore come Garmin; riferimenti AHA, ACE e OMS. Nuova scheda "Come si calcola?".
 - **Sicurezza**: blocco dopo 5 tentativi sbagliati (15 minuti, poi sempre più a lungo), confronti a tempo costante, codici di almeno 10 caratteri, link di collegamento più lungo con contatore separato, validazione di tutti i dati in ingresso, limiti di dimensione, niente CORS, Content-Security-Policy e altri header di sicurezza.
 - **Niente doppioni**: misure con chiave sull'istante (anche con fusi orari diversi), totali giornalieri che non si sommano tra più invii, sonno di più fonti fuso in un'unica linea temporale.
