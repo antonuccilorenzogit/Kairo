@@ -61,6 +61,10 @@ Apri Kairo **dall'icona sulla schermata Home** (su iPhone le notifiche funzionan
 - In *Palestra* tocca **✨ Crea con il coach** e descrivi i tuoi allenamenti (es. «Scheda A petto: panca 4x8-10, croci 3x12…»): controlla l'anteprima e salva. Puoi anche crearle o modificarle a mano.
 - **Inizia allenamento**: segna kg e ripetizioni di ogni serie e tocca ✓. La seduta resta sul telefono anche senza rete; a fine allenamento indica quanto è stato duro (1–10).
 
+## Modalità infortunio
+
+Ti sei fatto male? Nella pagina Oggi tocca **Ti sei fatto male? Attiva la modalità infortunio** (oppure *Impostazioni → I tuoi sport → 🩹 Infortunio*), scrivi cosa è successo (dove, come, cosa fa male, cosa ti ha detto il medico) e da quando. Ogni mattina segna **quanto ti fa male da 0 a 10**: il coach ti dice se oggi riposare, quali esercizi riabilitativi fare o come allenare il resto del corpo. Quando stai bene tocca **Sono guarito**. I consigli non sostituiscono medico e fisioterapista.
+
 ## Il coach che ricorda
 
 Nella chat racconta al coach quello che conta: una gara con la data, un dolore, un obiettivo, quando preferisci allenarti. Se lo segna da solo (sotto la risposta compare **📌 Me lo segno: …**) e lo usa nei consigli dei giorni dopo, anche nell'allenamento del giorno. Quando gli dici che una cosa non vale più (es. «la spalla è guarita») la dimentica. In *Impostazioni → Cosa ricorda il coach* puoi vedere tutto, aggiungere a mano ed eliminare.

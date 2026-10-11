@@ -11,9 +11,15 @@ import { parsePayload, cleanCheckin, MAX_BODY_BYTES } from "./validate.js";
 import { exportData, createBackup, listBackups, readBackup, restoreData } from "./backup.js";
 import { getProfile, saveProfile, hrMax, profileText } from "./profile.js";
 import { listMemory, addMemory, deleteMemory, memoryText } from "./memory.js";
+import { injuryPlan, injuryText, savePain, clearPain } from "./injury.js";
 
 // What every coach prompt knows about the person: profile + remembered facts.
-const coachProfile = async (db, profile) => profileText(profile || (await getProfile(db))) + memoryText(await listMemory(db));
+const coachProfile = async (db, profile) => {
+  const p = profile || (await getProfile(db));
+  return profileText(p) + (await injuryText(db, p)) + memoryText(await listMemory(db));
+};
+// Today's coach texts depend on the injury: drop them when it changes.
+const dropTodayAdvice = (db, day) => db.prepare("DELETE FROM advice WHERE day IN (?, ?)").bind(day, "A:" + day).run();
 import { recomputeTrimp } from "./load.js";
 import { getVapid, sendPush, validEndpoint } from "./push.js";
 
@@ -77,6 +83,7 @@ async function morningPush(env, origin) {
   // claim today's slot atomically, so two syncs at the same time do not send two notifications
   const r = await env.DB.prepare("INSERT INTO settings(key,value) VALUES('push_mattina',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE settings.value != excluded.value").bind(day).run();
   if (!r.meta?.changes) return;
+  if (prof.infortunio?.attivo) return sendPush(env, { title: "Modalità infortunio", body: "Segna quanto ti fa male oggi: il coach ti dice se riposare o quali esercizi fare.", url: "/#/oggi" }, origin);
   const label = d.recupero.score >= 67 ? "Recuperato" : d.recupero.score >= 34 ? "Recupero parziale" : "Recupero basso";
   const body = d.allarme ? `${d.allarme.titolo}: oggi vai leggero.` : d.carico?.consiglio ? `Oggi: ${d.carico.consiglio.titolo.toLowerCase()} — ${d.carico.consiglio.testo}.` : "Apri Kairo per il consiglio di oggi.";
   await sendPush(env, { title: `${label} · ${d.recupero.score}`, body, url: "/#/oggi" }, origin);
@@ -224,7 +231,9 @@ async function api(req, env, url) {
   if (p === "/api/profilo") {
     if (req.method === "GET") return json(await getProfile(env.DB));
     const before = await getProfile(env.DB);
-    const saved = await saveProfile(env.DB, await readJson(req));
+    const body = (await readJson(req)) || {};
+    if (body.infortunio === undefined) body.infortunio = before.infortunio; // older apps don't send it
+    const saved = await saveProfile(env.DB, body);
     if (saved.errore) return json(saved, 400);
     // age or max heart rate changed → the heart-rate zones change: recompute the training load
     if (hrMax(before) !== hrMax(saved)) {
@@ -232,6 +241,22 @@ async function api(req, env, url) {
       const r = await env.DB.prepare("SELECT DISTINCT substr(ts,1,10) d FROM samples WHERE metric='fc' AND ts >= ?").bind(since).all();
       await recomputeTrimp(env.DB, r.results.map((x) => x.d), hrMax(saved));
     }
+    if (JSON.stringify(before.infortunio) !== JSON.stringify(saved.infortunio)) {
+      if (saved.infortunio.attivo && !before.infortunio?.attivo) await clearPain(env.DB);
+      await dropTodayAdvice(env.DB, todayLocal(tz));
+    }
+    return json(saved);
+  }
+  // Injury mode on/off without touching the rest of the profile
+  if (p === "/api/infortunio" && req.method === "POST") {
+    const b = (await readJson(req)) || {};
+    const before = await getProfile(env.DB);
+    const inj = { ...before.infortunio, ...b };
+    if (b.attivo === true && !before.infortunio?.attivo && !b.dal) inj.dal = todayLocal(tz);
+    const saved = await saveProfile(env.DB, { ...before, infortunio: inj });
+    if (saved.errore) return json(saved, 400);
+    if (saved.infortunio.attivo && !before.infortunio?.attivo) await clearPain(env.DB);
+    await dropTodayAdvice(env.DB, todayLocal(tz));
     return json(saved);
   }
   if (p === "/api/chat") {
@@ -287,6 +312,15 @@ async function api(req, env, url) {
     const b = (await readJson(req)) || {};
     const profile = await getProfile(env.DB);
     const hist = await computeHistory(env.DB, todayLocal(tz), 8);
+    if (profile.infortunio?.attivo) {
+      const day = todayLocal(tz);
+      if (b.dolore != null) {
+        const sp = await savePain(env.DB, day, b.dolore);
+        if (sp.errore) return json(sp, 400);
+        await env.DB.prepare("DELETE FROM advice WHERE day = ?").bind(day).run(); // the coach's message follows the pain
+      }
+      return json(await injuryPlan(env, req, { day, today: hist[hist.length - 1], profile, profileText: await coachProfile(env.DB, profile), force: !!b.forza }));
+    }
     return json(await recommendWorkout(env, req, { hist, profile, profileText: await coachProfile(env.DB, profile), schede: await getSchede(env.DB),
       force: !!b.forza || !!b.altro, exclude: b.altro && ["palestra", "nuoto", "bici", "corsa"].includes(b.escludi) ? b.escludi : null }));
   }

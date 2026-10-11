@@ -30,6 +30,12 @@
 - Da *Impostazioni → Backup* si crea un backup, si scarica (`.json.gz`) o si ripristina da un file (backup o esportazione JSON).
 - In più D1 conserva da sé la cronologia del database (Time Travel) per gli ultimi giorni: `npx wrangler d1 time-travel restore kairo --timestamp=…`.
 
+## Modalità infortunio
+- Nel profilo: `infortunio = {attivo, descrizione, dal}`; il dolore di ogni giorno (0–10) in `settings.infortunio_dolore` (ultimi 60 giorni). `POST /api/infortunio` lo attiva/modifica/disattiva senza toccare il resto del profilo.
+- `POST /api/allenamento/oggi` con l'infortunio attivo restituisce `{infortunio:true, modalita, titolo, struttura, perche, attenzione, dolore, giorni, area}` invece della seduta; `{"dolore":N}` registra il dolore di oggi e rigenera il piano.
+- Limite di sicurezza (`allowedMode`): riposo se dolore ≥ 7/10 o nei primi 3 giorni (PEACE & LOVE, Dubois & Esculier 2020); resto del corpo con dolore 4–6 o non indicato; riabilitazione con dolore ≤ 3 (pain-monitoring model, Silbernagel 2007). L'IA sceglie entro il limite (riposo < resto del corpo < riabilitazione), altrimenti valgono le sedute di regola per zona (gambe, braccia/spalle, schiena), ricavata dalla descrizione.
+- Il testo dell'infortunio e l'andamento del dolore entrano in ogni prompt del coach.
+
 ## Memoria del coach
 - Tabella `memoria` (testo unico, fonte `coach` o `utente`, data). Al massimo 60 ricordi: quando è piena escono prima i più vecchi scritti dal coach, mai quelli aggiunti a mano.
 - In chat il modello può chiudere la risposta con `[[RICORDA: …]]` o `[[DIMENTICA: parole chiave]]` (massimo 2-3 per risposta). Il server applica i tag e li toglie dal testo; `DIMENTICA` cancella al massimo 3 ricordi che contengono tutte le parole chiave.
@@ -61,6 +67,7 @@
 | GET | `/api/corpo` | misure corporee, VO₂max e FC per la pagina Corpo |
 | GET/POST | `/api/profilo` | profilo (età, sesso, obiettivi, FC max, sveglia, sonno necessario, fuso) |
 | GET/DELETE | `/api/chat` | conversazione con il coach (salvata sul server) |
+| POST | `/api/infortunio` | modalità infortunio (`{"attivo":true,"descrizione":"…","dal":"AAAA-MM-GG"}`, `{"attivo":false}` per disattivarla) |
 | GET/POST/DELETE | `/api/memoria` | ricordi del coach · POST `{"testo":"…"}` aggiunge · DELETE `?id=N` (o `?id=tutto`) elimina |
 | GET | `/api/settimana?a=` | report dei 7 giorni fino ad `a` · POST `/api/settimana/coach` resoconto del coach |
 | GET/POST | `/api/forza` | progressi di forza · salva serie (`{"serie":[…]}`: import da Hevy/Strong o allenamento fatto in Kairo) |

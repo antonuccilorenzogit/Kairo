@@ -2,6 +2,11 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [Non pubblicato]
+
+### Aggiunto
+- **Modalità infortunio**: in *Impostazioni → I tuoi sport* (o dalla pagina Oggi, «Ti sei fatto male?») attivi **🩹 Infortunio** e descrivi cosa ti è successo e da quando. Finché è attiva il coach non propone allenamenti normali: ogni giorno, in cima alla pagina Oggi, ti dice se **riposare**, quali **esercizi riabilitativi** fare o come **allenare il resto del corpo**, in base a quanto ti fa male (0–10) e ai giorni passati. Regole di sicurezza da PEACE & LOVE (Dubois & Esculier 2020) e dal pain-monitoring model (Silbernagel 2007): riposo nei primi giorni o con dolore da 7/10 in su, esercizi solo con dolore fino a 3/10; l'IA può essere più prudente delle regole, mai meno. Il coach, la chat e la notifica del mattino ne tengono conto; «Sono guarito» la disattiva.
+
 ## [1.5.0] — 2026-10-11
 
 ### Aggiunto

@@ -177,7 +177,7 @@ views.oggi = async (el) => {
         ? `<div class="h2">In calibrazione</div><div class="muted small">Servono almeno 5 notti con HRV e FC a riposo (ne ho ${r.giorni_baseline}).</div>`
         : `<div class="row" style="gap:8px;align-items:baseline"><span style="font-size:42px;font-weight:900;line-height:1">${r.score}</span><span class="h2 ${st.cls}">${st.label}</span></div>
            <div class="muted small">Recupero${delta != null ? ` · ${delta >= 0 ? "▲" : "▼"} ${Math.abs(delta)} da ieri` : ""}${r.calibrazione ? " · stima provvisoria" : ""}</div>`}</div>${ico.chevron}</a>
-    <div class="card col" id="workout" style="gap:10px"><div class="row between"><div class="label">Allenamento di oggi</div><button class="small ${stCls}" id="loadCard" style="font-weight:800;background:none;border:0;cursor:pointer;padding:0">${stLabel} ⓘ</button></div>
+    <div class="card col" id="workout" style="gap:10px"><div class="row between"><div class="label">${p.infortunio?.attivo ? "Infortunio · cosa fare oggi" : "Allenamento di oggi"}</div>${p.infortunio?.attivo ? "" : `<button class="small ${stCls}" id="loadCard" style="font-weight:800;background:none;border:0;cursor:pointer;padding:0">${stLabel} ⓘ</button>`}</div>
       <div class="skeleton" style="height:22px;width:60%"></div><div class="skeleton" style="height:60px"></div></div>
     <a class="card row between" href="#/sonno" style="text-decoration:none;color:inherit;gap:12px">
       <div class="col" style="gap:2px"><div class="label">Sonno</div>
@@ -191,7 +191,7 @@ views.oggi = async (el) => {
       : `<button class="btn orange block" data-checkin style="justify-content:space-between;min-height:64px;border-radius:22px"><span class="col" style="gap:0;text-align:left"><span style="font-weight:900">Check-in del mattino</span><span class="small" style="font-weight:600">Com'è andata ieri? 10 secondi</span></span>${ico.arrow}</button>`}
     <a class="card row between" href="#/settimana" style="text-decoration:none;color:inherit;${new Date().getDay() === 1 ? "background:var(--soft)" : ""}"><div class="col" style="gap:2px"><div style="font-weight:900">La tua settimana</div><div class="small muted">${new Date().getDay() === 1 ? "Il resoconto della settimana è pronto" : "Carico, recupero, sonno e forma degli ultimi 7 giorni"}</div></div>${ico.chevron}</a>`;
   el.querySelectorAll("[data-checkin]").forEach((b) => b.addEventListener("click", () => checkinSheet(d.checkin, !d.sonno || d.sonno.manuale)));
-  $("#loadCard").onclick = () => loadSheet();
+  const lc = $("#loadCard"); if (lc) lc.onclick = () => loadSheet();
   loadWorkout(false);
   // the advice arrives asynchronously so the page is usable immediately
   api("/api/coach/oggi", { method: "POST", body: {} })
@@ -202,24 +202,73 @@ views.oggi = async (el) => {
 // Today's workout proposed by the AI within the limits of recovery and load
 const SPORT = { palestra: "Palestra", nuoto: "Nuoto", bici: "Bici", corsa: "Corsa" };
 const INT_LABEL = { leggero: ["Leggero", "good"], medio: ["Medio", "mid"], intenso: ["Intenso", "bad"] };
-async function loadWorkout(force, escludi) {
+async function loadWorkout(force, escludi, extra) {
   const box = $("#workout"); if (!box) return;
   const head = box.firstElementChild.outerHTML;
   if (force) box.innerHTML = head + '<div class="skeleton" style="height:22px;width:60%"></div><div class="skeleton" style="height:60px"></div>';
   let w;
-  try { w = await api("/api/allenamento/oggi", { method: "POST", body: force ? { altro: !!escludi, escludi, forza: true } : {} }); }
+  try { w = await api("/api/allenamento/oggi", { method: "POST", body: extra || (force ? { altro: !!escludi, escludi, forza: true } : {}) }); }
   catch (e) { if ($("#workout")) $("#workout").innerHTML = head + `<div class="small bad">${esc(e.message)}</div>`; return; }
   if (!$("#workout")) return;
+  // the injury may have been switched on/off from another device: the card title follows the server
+  const fixed = head.replace(/(<div class="label">)[^<]*/, `$1${w.infortunio ? "Infortunio · cosa fare oggi" : "Allenamento di oggi"}`);
+  if (w.infortunio) return renderInjury(w, fixed.replace(/<button[^>]*id="loadCard"[\s\S]*?<\/button>/, ""));
   const [il, ic] = INT_LABEL[w.intensita] || ["", "muted"];
-  $("#workout").innerHTML = head + `
+  $("#workout").innerHTML = fixed + `
     <div class="row between" style="align-items:flex-start;gap:10px"><div class="col" style="gap:2px"><div class="h2">${esc(SPORT[w.sport])} · ${esc(w.titolo)}</div>
       <div class="small muted">${w.durata_min} min circa${w.scheda ? ` · <b style="color:var(--ink)">${esc(w.scheda)}</b>` : ""}</div></div><span class="pill ${ic}">${il}</span></div>
     <div class="col" style="gap:8px">${w.struttura.map((x) => `<div class="small" style="line-height:1.45"><b>${esc(x.fase)}</b> · ${esc(x.dettaglio)}</div>`).join("")}</div>
     <div class="small muted" style="line-height:1.45">${esc(w.perche)}</div>
     <div class="row" style="gap:8px">${w.sport === "palestra" && w.scheda ? `<button class="btn primary" id="wStart" style="flex:2;min-height:44px">Inizia ${esc(w.scheda)}</button>` : ""}<button class="btn ghost" id="wOther" style="flex:1;min-height:44px">Altra proposta</button></div>`;
-  $("#loadCard").onclick = () => loadSheet();
+  const lc = $("#loadCard"); if (lc) lc.onclick = () => loadSheet();
   $("#wOther").onclick = () => loadWorkout(true, w.sport);
+  const hurt = document.createElement("button");
+  hurt.className = "small muted"; hurt.style.cssText = "background:none;border:0;cursor:pointer;padding:0;text-align:left;text-decoration:underline";
+  hurt.textContent = "Ti sei fatto male? Attiva la modalità infortunio";
+  hurt.onclick = () => injurySheet(); $("#workout").appendChild(hurt);
   const st = $("#wStart"); if (st) st.onclick = async () => { const { schede } = await api("/api/schede"); const sc = schede.find((x) => x.nome === w.scheda); if (sc) startSession(sc); };
+}
+
+// Injury mode: today's plan (rest, rehab or the healthy parts), with today's pain 0-10
+const MOD_LABEL = { riposo: ["Riposo", "bad"], "resto del corpo": ["Resto del corpo", "mid"], riabilitazione: ["Riabilitazione", "good"] };
+function renderInjury(w, head) {
+  const [ml, mc] = MOD_LABEL[w.modalita] || ["", "muted"];
+  const p = store.get("profilo", {}) || {};
+  $("#workout").innerHTML = head + `
+    <div class="col" style="gap:6px"><div class="small" style="font-weight:800">Quanto ti fa male oggi? <span class="muted" style="font-weight:600">0 = niente · 10 = fortissimo</span></div>
+      <div class="pain">${Array.from({ length: 11 }, (_, i) => `<button class="choice" data-pain="${i}" aria-pressed="${w.dolore === i}">${i}</button>`).join("")}</div></div>
+    ${w.dolore == null ? `<div class="small muted">Segna il dolore: il coach adatta il piano di oggi.</div>` : ""}
+    <div class="row between" style="align-items:flex-start;gap:10px"><div class="col" style="gap:2px"><div class="h2">${esc(w.titolo)}</div>
+      <div class="small muted">${w.durata_min} min circa${w.giorni != null ? ` · giorno ${w.giorni + 1} dall'infortunio` : ""}</div></div><span class="pill ${mc}">${ml}</span></div>
+    <div class="col" style="gap:8px">${w.struttura.map((x) => `<div class="small" style="line-height:1.45"><b>${esc(x.fase)}</b> · ${esc(x.dettaglio)}</div>`).join("")}</div>
+    <div class="small muted" style="line-height:1.45">${esc(w.perche)}</div>
+    <div class="warnbox">${esc(w.attenzione)}</div>
+    <div class="row" style="gap:8px"><button class="btn ghost" id="injEdit" style="flex:1;min-height:44px">Modifica infortunio</button><button class="btn primary" id="injOff" style="flex:1;min-height:44px">Sono guarito</button></div>`;
+  $("#workout").querySelectorAll("[data-pain]").forEach((b) => (b.onclick = async () => {
+    await loadWorkout(true, null, { dolore: Number(b.dataset.pain) });
+    api("/api/coach/oggi", { method: "POST", body: {} }).then((a) => { const box = $("#advice"); if (box) box.innerHTML = md(a.errore || a.testo); }).catch(() => {});
+  }));
+  $("#injEdit").onclick = async () => injurySheet((await loadProfile()).infortunio || p.infortunio);
+  $("#injOff").onclick = async () => {
+    try { const saved = await api("/api/infortunio", { method: "POST", body: { attivo: false } }); store.set("profilo", saved); toast("Bentornato! Si riparte con calma"); router(); }
+    catch (e) { toast(e.message); }
+  };
+}
+
+// Describe the injury (from Oggi): what happened, where, since when
+function injurySheet(cur) {
+  const today = todayStr();
+  openSheet(`${sheetHead(cur?.attivo ? "Il tuo infortunio" : "Modalità infortunio")}
+    <div class="small" style="line-height:1.5;color:var(--text)">Finché è attiva, il coach non ti propone allenamenti normali: ogni giorno ti dice se riposare, quali esercizi riabilitativi fare o come allenare il resto del corpo.</div>
+    <label class="field">Che infortunio hai?<textarea class="input" id="injD" rows="4" maxlength="1000" style="padding:12px;min-height:110px" placeholder="Es. distorsione alla caviglia destra giocando a calcio, è un po' gonfia, appoggio il piede ma fa male girare. Il fisioterapista mi ha detto 2 settimane senza corsa.">${esc(cur?.descrizione || "")}</textarea><span class="hint">Più dettagli dai (dove, come è successo, cosa fa male, cosa ti ha detto il medico), più i consigli sono precisi.</span></label>
+    <label class="field">Da quando<input class="input" id="injDal" type="date" max="${today}" value="${esc(cur?.dal || today)}"></label>
+    <button class="btn primary" id="injSave">${cur?.attivo ? "Salva" : "Attiva modalità infortunio"}</button>`, "Infortunio");
+  $("#injSave").onclick = async () => {
+    const descrizione = $("#injD").value.trim();
+    if (descrizione.length < 3) { toast("Descrivi in breve l'infortunio"); return; }
+    try { const saved = await api("/api/infortunio", { method: "POST", body: { attivo: true, descrizione, dal: $("#injDal").value } }); store.set("profilo", saved); closeSheet(); router(); }
+    catch (e) { toast(e.message); }
+  };
 }
 
 // Training load: last 28 days and how to read it
@@ -772,6 +821,7 @@ views.palestra = async (el) => {
   let html = header("Palestra");
   if (sent) html += `<div class="card soft small">Inviati ${sent} allenamenti salvati senza rete ✓</div>`;
   if (queued) html += `<div class="card soft small">${queued} allenamenti in attesa di connessione: li invio appena c'è rete.</div>`;
+  if ((store.get("profilo", {}) || {}).infortunio?.attivo) html += `<a class="card col" href="#/oggi" style="gap:4px;background:#FDE2DF;text-decoration:none;color:inherit"><div style="font-weight:900;color:var(--red-ink)">🩹 Sei in modalità infortunio</div><div class="small" style="line-height:1.5">Le schede normali per ora sono in pausa: nella pagina Oggi trovi cosa fare per riabilitazione e resto del corpo.</div></a>`;
   if (cur) html += `<a class="btn orange block" href="#/sessione" style="justify-content:space-between;min-height:60px;border-radius:20px"><span class="col" style="gap:0;text-align:left"><span style="font-weight:900">Allenamento in corso</span><span class="small" style="font-weight:600">${esc(cur.nome)} · ${Math.round((Date.now() - cur.inizioMs) / 60000)} min</span></span>${ico.arrow}</a>`;
   html += `<div class="row between" style="padding:0 2px"><div class="label">Le tue schede</div><button class="small" id="aiSchede" style="background:none;border:0;color:var(--orange-ink);font-weight:800;cursor:pointer">✨ Crea con il coach</button></div>`;
   html += schede.length ? schede.map((sc, i) => `<div class="card col" style="gap:10px">
@@ -967,7 +1017,10 @@ views.impostazioni = async (el) => {
       <label class="field">Nome<input class="input" id="nome" value="${esc(c.profilo.nome)}" autocomplete="given-name"></label>
       <div class="grid2"><label class="field">Età<input class="input" id="eta" type="number" inputmode="numeric" min="12" max="99" value="${esc(c.profilo.eta || "")}"></label>
         <label class="field">Sesso<select class="input" id="sesso"><option value="">–</option><option value="M" ${c.profilo.sesso === "M" ? "selected" : ""}>Uomo</option><option value="F" ${c.profilo.sesso === "F" ? "selected" : ""}>Donna</option></select></label></div>
-      <div class="field"><span>I tuoi sport</span><div class="acts" style="grid-template-columns:repeat(4,minmax(0,1fr))" id="sports">${[["palestra", "Palestra"], ["nuoto", "Nuoto"], ["bici", "Bici"], ["corsa", "Corsa"]].map(([k, l]) => `<button type="button" class="choice" data-sport="${k}" aria-pressed="${(c.profilo.sport || ["palestra", "nuoto", "bici", "corsa"]).includes(k)}">${l}</button>`).join("")}</div><span class="hint">L'allenamento consigliato ogni giorno sceglie solo tra questi.</span></div>
+      <div class="field"><span>I tuoi sport</span><div class="acts" style="grid-template-columns:repeat(3,minmax(0,1fr))" id="sports">${[["palestra", "Palestra"], ["nuoto", "Nuoto"], ["bici", "Bici"], ["corsa", "Corsa"]].map(([k, l]) => `<button type="button" class="choice" data-sport="${k}" aria-pressed="${(c.profilo.sport || ["palestra", "nuoto", "bici", "corsa"]).includes(k)}">${l}</button>`).join("")}<button type="button" class="choice inj" id="injChip" aria-pressed="${!!c.profilo.infortunio?.attivo}" style="grid-column:span 2">🩹 Infortunio</button></div><span class="hint">L'allenamento consigliato ogni giorno sceglie solo tra questi. Con <b>Infortunio</b> attivo il coach ti propone solo riposo, riabilitazione o esercizi per il resto del corpo.</span></div>
+      <div class="col" id="injBox" style="gap:12px;${c.profilo.infortunio?.attivo ? "" : "display:none"}">
+        <label class="field">Che infortunio hai?<textarea class="input" id="injD" rows="3" maxlength="1000" style="padding:12px;min-height:84px" placeholder="Es. distorsione alla caviglia destra, un po' gonfia, il fisioterapista dice 2 settimane senza corsa">${esc(c.profilo.infortunio?.descrizione || "")}</textarea></label>
+        <label class="field">Da quando<input class="input" id="injDal" type="date" max="${todayStr()}" value="${esc(c.profilo.infortunio?.dal || todayStr())}"></label></div>
       <label class="field">I tuoi obiettivi<textarea class="input" id="obiettivi" rows="2" style="padding:12px;min-height:64px" placeholder="Es. scendere al 12% di grasso, nuotare 2 km senza fermarmi">${esc(c.profilo.obiettivi || "")}</textarea></label>
       <label class="field">Chi sei e come ti alleni<textarea class="input" id="note" rows="3" style="padding:12px;min-height:84px" placeholder="Es. palestra 3 volte a settimana, nuoto 1-2 volte, bici nel weekend">${esc(c.profilo.note)}</textarea></label>
       <div class="grid2"><label class="field">Sveglia abituale<input class="input" id="sveglia" type="time" value="${esc(c.profilo.sveglia || "")}"><span class="hint">Per l'orario consigliato per andare a letto.</span></label>
@@ -1022,8 +1075,10 @@ views.impostazioni = async (el) => {
   $("#saveProfilo").onclick = async () => {
     const body = { nome: $("#nome").value.trim(), eta: $("#eta").value.trim(), sesso: $("#sesso").value, note: $("#note").value.trim(), obiettivi: $("#obiettivi").value.trim(),
       sveglia: $("#sveglia").value, sonno_min: Number($("#sonnomin").value), fc_max: $("#fcmax").value.trim(), tz: tz(),
-      sport: [...el.querySelectorAll("[data-sport]")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.dataset.sport) };
+      sport: [...el.querySelectorAll("[data-sport]")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.dataset.sport),
+      infortunio: { attivo: $("#injChip").getAttribute("aria-pressed") === "true", descrizione: $("#injD").value.trim(), dal: $("#injDal").value } };
     if (!body.sport.length) { toast("Scegli almeno uno sport"); return; }
+    if (body.infortunio.attivo && body.infortunio.descrizione.length < 3) { toast("Descrivi in breve l'infortunio"); $("#injD").focus(); return; }
     try { const saved = await api("/api/profilo", { method: "POST", body }); store.set("profilo", saved); toast("Profilo salvato"); }
     catch (e) { toast(e.message); }
   };
@@ -1042,6 +1097,7 @@ views.impostazioni = async (el) => {
     const t = $("#memNew").value.trim(); if (!t) return;
     try { const r = await api("/api/memoria", { method: "POST", body: { testo: t } }); if (r.errore) return toast(r.errore); $("#memNew").value = ""; memLoad(); } catch (e) { toast(e.message); }
   };
+  $("#injChip").onclick = () => { const on = $("#injChip").getAttribute("aria-pressed") !== "true"; $("#injChip").setAttribute("aria-pressed", on); $("#injBox").style.display = on ? "" : "none"; if (on) $("#injD").focus(); };
   el.querySelectorAll("[data-sport]").forEach((b) => (b.onclick = () => b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") !== "true")));
   // ---- notifications (web push; on iPhone only for the app added to the Home Screen) ----
   const pushOk = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;

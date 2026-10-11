@@ -74,6 +74,10 @@ label.field { display: flex; flex-direction: column; gap: 6px; font-weight: 800;
 .choice[aria-pressed="true"] { background: var(--ink); color: #FFFFFF; border-color: var(--ink); }
 .acts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .acts .choice { font-size: 14px; }
+.choice.inj[aria-pressed="true"] { background: var(--red); border-color: var(--red); }
+.pain { display: grid; grid-template-columns: repeat(11, minmax(0, 1fr)); gap: 4px; }
+.pain .choice { min-height: 40px; border-radius: 12px; font-size: 14px; padding: 0; }
+.warnbox { background: #FDE2DF; color: var(--red-ink); border-radius: 16px; padding: 10px 12px; font-size: 13px; line-height: 1.45; }
 input[type="range"] { width: 100%; accent-color: var(--orange); }
 
 .sheet-wrap { position: fixed; inset: 0; background: rgba(28, 35, 64, 0.38); z-index: 30; display: flex; align-items: flex-end; justify-content: center; }
