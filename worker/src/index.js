@@ -185,6 +185,24 @@ async function api(req, env, url) {
       .bind(prev + "T18:00", d + "T18:00").all();
     return json(r.results);
   }
+  if (p === "/api/corpo") {
+    // Body page: measurements grouped per day, VO2max history, resting and walking heart rate per day
+    const since = new Date(Date.now() - 400 * 86400e3).toISOString().slice(0, 10);
+    const [body, vo2, fc] = await env.DB.batch([
+      env.DB.prepare("SELECT metric, ts, value FROM samples WHERE metric IN ('peso','grasso_pct','massa_magra','bmi') ORDER BY ts"),
+      env.DB.prepare("SELECT substr(ts,1,10) d, avg(value) v FROM samples WHERE metric='vo2max' GROUP BY d ORDER BY d"),
+      env.DB.prepare("SELECT metric, substr(ts,1,10) d, avg(value) v FROM samples WHERE metric IN ('fcr','fc_camminata') AND ts >= ? GROUP BY metric, d ORDER BY d").bind(since),
+    ]);
+    const byDay = new Map();
+    for (const r of body.results) {
+      const d = r.ts.slice(0, 10);
+      if (!byDay.has(d)) byDay.set(d, { giorno: d });
+      byDay.get(d)[r.metric] = Math.round(r.value * 100) / 100; // last value of the day wins
+    }
+    const misure = [...byDay.values()].filter((m) => m.peso != null || m.grasso_pct != null);
+    const serie = (m) => fc.results.filter((r) => r.metric === m).map((r) => [r.d, Math.round(r.v * 10) / 10]);
+    return json({ misure, vo2max: vo2.results.map((r) => [r.d, Math.round(r.v * 10) / 10]), fcr: serie("fcr"), fc_camminata: serie("fc_camminata") });
+  }
   if (p === "/api/hrv-mensile") {
     const r = await env.DB.prepare("SELECT substr(ts,1,7) mese, avg(value) media, count(*) n FROM samples WHERE metric='hrv' GROUP BY mese ORDER BY mese DESC LIMIT 13").all();
     return json(r.results.reverse());

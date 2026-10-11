@@ -75,6 +75,7 @@ const ico = {
   oggi: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 17a8 8 0 0 1 16 0"/><path d="M2 17h20M12 4v3M5 8l2 2M19 8l-2 2"/></svg>',
   recupero: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>',
   sonno: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',
+  corpo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="4.5" r="2.5"/><path d="M12 8v7M7 10.5l5-2 5 2M9 21l3-6 3 6"/></svg>',
   coach: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>',
   gear: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
   back: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>',
@@ -114,7 +115,7 @@ function bean(score, size = 150) {
 }
 
 /* ---------- layout ---------- */
-const TABS = [["oggi", "Oggi"], ["recupero", "Recupero"], ["sonno", "Sonno"], ["coach", "Coach"]];
+const TABS = [["oggi", "Oggi"], ["recupero", "Recupero"], ["sonno", "Sonno"], ["corpo", "Corpo"], ["coach", "Coach"]];
 function renderTabs(active) {
   const nav = $("#tabbar");
   if (!active) { nav.hidden = true; return; }
@@ -188,7 +189,7 @@ views.oggi = async (el) => {
 
 function profiloText() {
   const p = cfg().profilo;
-  return [p.nome ? `Si chiama ${p.nome}.` : "", p.note ? `Di sé dice: ${p.note}` : "", p.obiettivi ? `I suoi obiettivi: ${p.obiettivi}` : "Non ha ancora indicato i suoi obiettivi."].filter(Boolean).join("\n");
+  return [p.nome ? `Si chiama ${p.nome}.` : "", p.eta ? `Ha ${p.eta} anni.` : "", p.sesso ? (p.sesso === "F" ? "È una donna." : "È un uomo.") : "", p.note ? `Di sé dice: ${p.note}` : "", p.obiettivi ? `I suoi obiettivi: ${p.obiettivi}` : "Non ha ancora indicato i suoi obiettivi."].filter(Boolean).join("\n");
 }
 // minimal, safe markdown for coach messages: **bold**, *italic*, bullet lists, paragraphs
 function md(text) {
@@ -365,6 +366,223 @@ views.coach = async (el) => {
   render();
 };
 
+
+/* ---------- body ---------- */
+const fatKg = (m) => (m && m.peso != null && m.grasso_pct != null ? (m.peso * m.grasso_pct) / 100 : null);
+const leanKg = (m) => (m ? (m.massa_magra ?? (fatKg(m) != null ? m.peso - fatKg(m) : null)) : null);
+const daysBetween = (a, b) => Math.round((Date.parse(b + "T12:00:00Z") - Date.parse(a + "T12:00:00Z")) / 86400e3);
+const signed = (x, d = 1, unit = "") => (x == null ? "–" : `${x > 0 ? "▲" : x < 0 ? "▼" : "="} ${fmtNum(Math.abs(x), d)}${unit}`);
+// reference VO2max (approximate population median by age and sex, from ACSM-style norms)
+const vo2Median = (age, sex) => (sex === "F" ? 39 - 0.35 * (age - 25) : 48 - 0.42 * (age - 25));
+const fitnessAge = (vo2, sex) => Math.max(18, Math.min(90, Math.round(25 + (( sex === "F" ? 39 : 48) - vo2) / (sex === "F" ? 0.35 : 0.42))));
+function vo2Level(vo2, age, sex) {
+  const m = vo2Median(age, sex);
+  if (vo2 >= m + 7) return ["eccellente per la tua età", "good"];
+  if (vo2 >= m + 3) return ["buono per la tua età", "good"];
+  if (vo2 >= m - 3) return ["nella media per la tua età", "mid"];
+  if (vo2 >= m - 8) return ["sotto la media per la tua età", "mid"];
+  return ["basso per la tua età", "bad"];
+}
+const fcrLevel = (v) => (v < 50 ? "livello da atleta" : v < 60 ? "ottimo" : v < 70 ? "buono" : v < 80 ? "nella media" : "alto");
+// average of the last n days up to `day`; null when there are too few values to be meaningful
+const avgUpTo = (series, day, n = 7, min = 3) => { const from = shiftDay(day, -(n - 1)); const v = series.filter(([d]) => d >= from && d <= day).map((r) => r[1]); return v.length >= min ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+const valueBefore = (series, day) => { let out = null; for (const r of series) if (r[0] <= day) out = r; return out; };
+
+function lineChart(points, color, unit, dec = 1) {
+  if (points.length < 2) return `<div class="small muted" style="padding:12px 0">Servono almeno due misure per il grafico.</div>`;
+  const W = 340, H = 150, L = 34, R = 10, T = 14, B = 26;
+  const vs = points.map((p) => p[1]); let lo = Math.min(...vs), hi = Math.max(...vs);
+  const pad = Math.max((hi - lo) * 0.15, 0.5); lo -= pad; hi += pad;
+  const t0 = Date.parse(points[0][0]), t1 = Date.parse(points[points.length - 1][0]) || t0 + 1;
+  const x = (d) => L + ((Date.parse(d) - t0) / Math.max(1, t1 - t0)) * (W - L - R);
+  const y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+  const ticks = [hi - pad, (hi + lo) / 2, lo + pad];
+  const months = []; const seen = new Set();
+  for (const [d] of points) { const k = d.slice(0, 7); if (!seen.has(k)) { seen.add(k); months.push(d); } }
+  const step = Math.ceil(months.length / 5);
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Andamento nel tempo">
+    ${ticks.map((t) => `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="#ECE6DC"/><text x="0" y="${y(t) + 4}" font-size="11" fill="#9AA0AD" font-weight="700">${fmtNum(t, dec)}${unit}</text>`).join("")}
+    ${months.filter((_, i) => i % step === 0).map((d) => `<text x="${x(d) - 8}" y="${H - 6}" font-size="11" fill="#9AA0AD" font-weight="700">${new Date(d + "T12:00:00").toLocaleDateString("it-IT", { month: "short" })}</text>`).join("")}
+    <path d="${points.map((p, i) => `${i ? "L" : "M"} ${x(p[0]).toFixed(1)} ${y(p[1]).toFixed(1)}`).join(" ")}" fill="none" stroke="${color}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+    ${points.map((p, i) => `<circle cx="${x(p[0]).toFixed(1)}" cy="${y(p[1]).toFixed(1)}" r="${i === points.length - 1 ? 6 : 3.5}" fill="${i === points.length - 1 ? color : "#fff"}" stroke="${color}" stroke-width="2.5"/>`).join("")}
+  </svg>`;
+}
+
+const QUAD = {
+  ricomposizione: ["Ricomposizione", "good", (f, l) => `hai perso <b>${fmtNum(-f, 1)} kg di grasso</b> e messo <b>${fmtNum(l, 1)} kg di massa magra</b>. È il risultato migliore possibile: il peso cambia poco, ma cambia quello giusto.`],
+  definizione: ["Definizione", "mid", (f, l) => `hai perso <b>${fmtNum(-f, 1)} kg di grasso</b> ma anche <b>${fmtNum(-l, 1)} kg di massa magra</b>. Per proteggere i muscoli: proteine alte (circa 1,6–2 g per kg) e pesi pesanti almeno 2 volte a settimana.`],
+  massa: ["Massa", "mid", (f, l) => `hai messo <b>${fmtNum(l, 1)} kg di massa magra</b> e <b>${fmtNum(f, 1)} kg di grasso</b>. Va bene in una fase di costruzione; se vuoi limitare il grasso riduci un po' il surplus calorico.`],
+  rivedere: ["Da rivedere", "bad", (f, l) => `il grasso è salito di <b>${fmtNum(f, 1)} kg</b> e la massa magra è scesa di <b>${fmtNum(-l, 1)} kg</b>. Di solito succede con meno allenamento e alimentazione meno curata: ripartiamo da 3 allenamenti di forza a settimana.`],
+  stabile: ["Stabile", "mid", () => `grasso e massa magra sono praticamente invariati.`],
+};
+function quadrantOf(dF, dL) {
+  if (Math.abs(dF) < 0.3 && Math.abs(dL) < 0.3) return "stabile";
+  if (dF <= 0 && dL >= 0) return "ricomposizione";
+  if (dF <= 0) return "definizione";
+  if (dL >= 0) return "massa";
+  return "rivedere";
+}
+function quadrantSvg(dF, dL) {
+  const cx = 160 + Math.max(-1, Math.min(1, dF / 4)) * 135, cy = 120 - Math.max(-1, Math.min(1, dL / 3)) * 95;
+  const q = quadrantOf(dF, dL);
+  const box = (x, y, key, title, sub, fill, ink) => `<rect x="${x}" y="${y}" width="148" height="108" rx="14" fill="${q === key ? fill : "#F4F1EC"}"/>
+    <text x="${x + 12}" y="${y + 22}" font-weight="900" font-size="13" fill="${q === key ? ink : "#5F6675"}">${title}</text><text x="${x + 12}" y="${y + 38}" font-size="10.5" font-weight="600" fill="#5F6675">${sub}</text>`;
+  return `<svg viewBox="0 0 320 252" width="100%" role="img" aria-label="Qualità del cambiamento: ${QUAD[q][0]}">
+    ${box(10, 10, "ricomposizione", "Ricomposizione", "− grasso · + muscoli", "#DDF3E7", "#2E8B5A")}
+    ${box(162, 10, "massa", "Massa", "+ grasso · + muscoli", "#FFF1CC", "#8A5F00")}
+    ${box(10, 122, "definizione", "Definizione", "− grasso · − muscoli", "#FFF1CC", "#8A5F00")}
+    ${box(162, 122, "rivedere", "Da rivedere", "+ grasso · − muscoli", "#FDE2DF", "#B8322A")}
+    <line x1="160" y1="10" x2="160" y2="230" stroke="#C9CEDB" stroke-width="1.5" stroke-dasharray="4 4"/><line x1="10" y1="120" x2="310" y2="120" stroke="#C9CEDB" stroke-width="1.5" stroke-dasharray="4 4"/>
+    <path d="M 160 120 L ${cx.toFixed(1)} ${cy.toFixed(1)}" stroke="#1C2340" stroke-width="2" stroke-dasharray="3 4"/>
+    <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="12" fill="${{ good: "#5DC796", mid: "#F7C65C", bad: "#EE6352" }[QUAD[q][1]]}" stroke="#fff" stroke-width="4"/>
+    <text x="10" y="248" font-size="10" font-weight="700" fill="#9AA0AD">← meno grasso</text><text x="236" y="248" font-size="10" font-weight="700" fill="#9AA0AD">più grasso →</text>
+  </svg>`;
+}
+
+function fatInfoSheet(m, sex) {
+  const ranges = sex === "F" ? [["Atlete", "14–20%"], ["In forma", "21–24%"], ["Nella media", "25–31%"], ["Alta", "oltre 32%"]] : [["Atleti", "6–13%"], ["In forma", "14–17%"], ["Nella media", "18–24%"], ["Alta", "oltre 25%"]];
+  openSheet(`${sheetHead("Massa grassa")}
+    <div style="line-height:1.55;color:var(--text)">È la parte del tuo peso fatta di grasso. Il resto è <b>massa magra</b>: muscoli, ossa, organi e acqua. Due persone con lo stesso peso possono avere un corpo molto diverso: per questo conta più la composizione del peso sulla bilancia.</div>
+    <div class="card list"><div class="label" style="margin-bottom:4px">Riferimenti ${sex === "F" ? "donne" : "uomini"} (indicativi)</div>${ranges.map(([a, b]) => `<div class="item"><span>${a}</span><b>${b}</b></div>`).join("")}</div>
+    ${m?.grasso_pct != null ? `<div class="card soft"><b>Tu:</b> ${fmtNum(m.grasso_pct, 1)}% (${fmtNum(fatKg(m), 1)} kg di grasso su ${fmtNum(m.peso, 1)} kg).</div>` : ""}
+    <div class="small muted" style="line-height:1.5">Le bilance a impedenza (InBody e simili) variano anche di 1–2 punti in base ad acqua e pasti: misurati sempre nelle stesse condizioni, per esempio la mattina a digiuno.</div>
+    ${sex ? "" : `<div class="small muted">Imposta il sesso in Impostazioni per riferimenti precisi.</div>`}`, "Massa grassa");
+}
+function vo2InfoSheet(vo2, age, sex) {
+  openSheet(`${sheetHead("VO₂max")}
+    <div style="line-height:1.55;color:var(--text)">È la quantità massima di ossigeno che il tuo corpo riesce a usare durante lo sforzo: la "cilindrata" del motore. È il miglior indicatore della forma aerobica ed è legato alla salute a lungo termine. L'Apple Watch lo stima durante camminate e corse all'aperto.</div>
+    ${age ? `<div class="card soft" style="line-height:1.5">Per ${sex === "F" ? "una donna" : "un uomo"} di ${age} anni il valore tipico è circa <b>${fmtNum(vo2Median(age, sex), 0)}</b>. Il tuo è <b>${fmtNum(vo2, 1)}</b>.</div>` : ""}
+    <div class="card soft" style="line-height:1.5"><b>Lo sapevi?</b> L'età del cuore è l'età in cui una persona media ha il tuo stesso VO₂max. Si alza soprattutto con allenamenti aerobici sostenuti e con gli intervalli (per esempio 4 × 4 minuti molto intensi in bici o a nuoto).</div>
+    <div class="small muted">Stime indicative, non una valutazione medica.</div>`, "VO₂max");
+}
+
+views.corpo = async (el) => {
+  el.innerHTML = header("Corpo") + loading(3);
+  const data = await api("/api/corpo");
+  const prof = cfg().profilo, age = Number(prof.eta) || null, sex = prof.sesso || "";
+  const ms = data.misure, last = ms[ms.length - 1];
+  const today = todayStr();
+  let html = header("Corpo", { sub: last ? `Ultima misura: ${fmtDate(last.giorno, { day: "numeric", month: "long" })}` : "" });
+
+  if (!last) {
+    html += `<div class="card col" style="gap:10px"><div class="h2">Nessuna misura ancora</div><div style="line-height:1.55;color:var(--text)">Kairo legge peso e composizione corporea da Salute. Usa una bilancia che scrive in Salute (InBody, Withings, Xiaomi…) oppure aggiungi il peso a mano nell'app Salute. Se ne hai di vecchie, caricale con <a href="#/importa">Importa da Salute</a>.</div></div>`;
+  } else {
+    const age_d = daysBetween(last.giorno, today);
+    if (age_d > 30) html += `<div class="card row" style="background:#FFF1CC;color:#8A5F00;gap:10px;padding:12px 16px;font-weight:700"><span style="font-size:20px" aria-hidden="true">⏳</span><span>L'ultima misura ha ${age_d} giorni. Rifai una misura per vedere i progressi di questi mesi.</span></div>`;
+
+    // 1 · composition
+    const prev3 = [...ms].reverse().find((m) => m.giorno <= shiftDay(last.giorno, -80) && m.grasso_pct != null);
+    const fk = fatKg(last), lk = leanKg(last);
+    const dPct = prev3 && last.grasso_pct != null ? last.grasso_pct - prev3.grasso_pct : null;
+    const pctFat = last.grasso_pct;
+    html += `<div class="card col" style="gap:14px">
+      <div class="row between"><div class="label">Composizione</div><button class="iconbtn" id="fatInfo" style="width:32px;height:32px;background:none" aria-label="Cos'è la massa grassa">${ico.info}</button></div>
+      ${pctFat != null ? `<div class="row" style="align-items:flex-end;gap:12px;flex-wrap:wrap"><div class="huge">${fmtNum(pctFat, 1)}<span style="font-size:30px">%</span></div>
+        <div class="col" style="gap:4px;padding-bottom:6px"><div style="font-weight:800">di massa grassa</div>${dPct != null ? `<span class="pill ${dPct <= 0 ? "good" : "bad"}">${signed(dPct, 1)} in ${Math.round(daysBetween(prev3.giorno, last.giorno) / 30)} mesi</span>` : ""}</div></div>
+        <div style="display:flex;height:30px;border-radius:15px;overflow:hidden;font-weight:900;font-size:13px">
+          <div style="width:${Math.max(pctFat, 24)}%;background:#FFB27A;display:flex;align-items:center;padding:0 10px;white-space:nowrap">${fmtNum(fk, 1)} kg</div>
+          <div style="flex:1;background:#BFEBD3;display:flex;align-items:center;padding:0 10px">${fmtNum(lk, 1)} kg di massa magra</div></div>
+        <div class="row small muted" style="gap:16px"><span><span class="status-dot" style="background:#FFB27A"></span> Grasso</span><span><span class="status-dot" style="background:#5DC796"></span> Muscoli, ossa e acqua</span></div>`
+      : `<div class="muted">La tua bilancia registra solo il peso: per la composizione serve una bilancia a impedenza.</div>`}
+      <div class="grid3">
+        ${[["Peso", last.peso, prev3?.peso, "kg", -1], ["Magra", lk, leanKg(prev3), "kg", 1], ["BMI", last.bmi, null, "", 0]].map(([l, v, o, u, good]) =>
+          `<div class="mini" style="background:var(--bg)"><span class="label">${l}</span><span class="big">${fmtNum(v, 1)}</span>${o != null && v != null ? `<span class="small ${(v - o) * good >= 0 ? "good" : "bad"}">${signed(v - o, 1, " " + u)}</span>` : l === "BMI" && v ? `<span class="small muted">${v < 18.5 ? "sottopeso" : v < 25 ? "normale" : v < 30 ? "sovrappeso" : "alto"}</span>` : ""}</div>`).join("")}
+      </div>
+      <div class="seg" role="tablist" id="seg">${[["grasso_pct", "Grasso"], ["peso", "Peso"], ["magra", "Muscoli"]].map(([k, l], i) => `<button role="tab" data-s="${k}" aria-selected="${i === 0}">${l}</button>`).join("")}</div>
+      <div id="chart"></div></div>`;
+
+    // 4 · quality of change
+    html += `<div class="card col" style="gap:12px"><div class="label">Qualità del cambiamento</div>
+      <div class="seg" id="qseg">${[[90, "3 mesi"], [180, "6 mesi"], [365, "1 anno"]].map(([d, l], i) => `<button data-q="${d}" aria-selected="${i === 0}">${l}</button>`).join("")}</div>
+      <div id="quad"></div></div>`;
+  }
+
+  // 5 · engine
+  const vo2 = data.vo2max, vNow = vo2[vo2.length - 1];
+  const fcrNow = data.fcr.length ? avgUpTo(data.fcr, data.fcr[data.fcr.length - 1][0]) : null;
+  const fcrOld = data.fcr.length ? avgUpTo(data.fcr, shiftDay(data.fcr[data.fcr.length - 1][0], -90)) : null;
+  const fcwNow = data.fc_camminata.length ? avgUpTo(data.fc_camminata, data.fc_camminata[data.fc_camminata.length - 1][0], 30, 5) : null;
+  const fcwOld = data.fc_camminata.length ? avgUpTo(data.fc_camminata, shiftDay(data.fc_camminata[data.fc_camminata.length - 1][0], -90), 30, 5) : null;
+  if (vNow || fcrNow) {
+    const vOld = vNow ? valueBefore(vo2, shiftDay(vNow[0], -180)) : null;
+    const dV = vNow && vOld ? vNow[1] - vOld[1] : null;
+    const fa = vNow && sex ? fitnessAge(vNow[1], sex) : null;
+    const lvl = vNow && age ? vo2Level(vNow[1], age, sex || "M") : null;
+    const row = (label, sub, value, unit, delta, goodWhenDown, id = "") => `<${id ? `button id="${id}"` : "div"} class="rowm" style="${id ? "background:none;border:0;width:100%;color:inherit;text-align:left;cursor:pointer;" : ""}">
+      <div class="col" style="gap:2px"><b>${label}</b><span class="small" style="color:#AEB4C6">${sub}</span></div>
+      <div style="text-align:right"><div class="big" style="color:#fff">${value}${unit ? ` <span style="font-size:14px">${unit}</span>` : ""}</div>${delta}</div></${id ? "button" : "div"}>`;
+    const dl = (d, goodWhenDown, txt, dec = 0) => (d == null ? "" : Math.abs(d) < (dec ? 0.3 : 1) ? `<span class="small" style="color:#AEB4C6">stabile</span>` : `<span class="small" style="color:${(d < 0) === goodWhenDown ? "#5DC796" : "#FFB547"}">${signed(d, dec)} ${txt}</span>`);
+    let tip = "";
+    if (dV != null) tip = dV < -1 ? `il VO₂max è calato di ${fmtNum(-dV, 1)} in 6 mesi. Due uscite aerobiche sostenute a settimana (bici, nuoto o corsa) lo riportano su in 6–8 settimane.` : dV > 1 ? `il VO₂max è salito di ${fmtNum(dV, 1)} in 6 mesi: il lavoro aerobico sta funzionando, continua così.` : `il VO₂max è stabile. Per alzarlo aggiungi una seduta a intervalli a settimana, per esempio 4 × 4 minuti molto intensi in bici.`;
+    html += `<div class="card dark col" style="gap:6px">
+      <div class="row between"><div class="label" style="color:#AEB4C6">Motore</div><span class="small" style="color:#AEB4C6">VO₂max e cuore</span></div>
+      ${fa ? `<div class="row" style="gap:14px;padding:6px 0 10px"><div style="font-size:64px;font-weight:900;letter-spacing:-2px;line-height:1;color:#FFB547">${fa}</div>
+        <div class="col" style="gap:2px"><div style="font-weight:900;font-size:18px">anni: l'età del tuo cuore</div><div class="small" style="color:#AEB4C6">Stimata dal VO₂max${age ? `. Hai ${age} anni${fa < age ? `: sei ${age - fa} anni "più giovane"` : fa > age ? `: c'è margine per ringiovanirlo` : ""}` : ""}.</div></div></div>`
+      : vNow ? `<div class="small" style="color:#AEB4C6;padding:4px 0 8px">Inserisci età e sesso in <a href="#/impostazioni" style="color:#FFB547">Impostazioni</a> per vedere l'età del tuo cuore.</div>` : ""}
+      ${vNow ? row("VO₂max", lvl ? lvl[0] : `misurato ${ago(vNow[0] + "T12:00:00")}`, fmtNum(vNow[1], 1), "", dl(dV, false, "in 6 mesi", 1), false, "vo2Info") : ""}
+      ${vNow && age ? (() => { const m = vo2Median(age, sex || "M"), lo = m - 15, hi = m + 15, pos = Math.max(2, Math.min(98, ((vNow[1] - lo) / (hi - lo)) * 100));
+          return `<div class="rangebar" style="margin:-4px 0 0"><div class="t" style="background:#2E3658"></div><div class="b" style="left:40%;width:20%;background:#3C4A7A"></div><div class="you" style="left:${pos}%;border-color:#1C2340"></div></div>
+          <div class="row between small" style="color:#AEB4C6;margin-top:-4px"><span>${fmtNum(lo, 0)}</span><span>${sex === "F" ? "donne" : "uomini"} di ${age} anni</span><span>${fmtNum(hi, 0)}</span></div>`; })() : ""}
+      ${fcrNow ? row("FC a riposo", fcrLevel(fcrNow), fmtNum(fcrNow, 0), "bpm", dl(fcrOld != null ? fcrNow - fcrOld : null, true, "in 3 mesi"), true) : ""}
+      ${fcwNow ? row("FC camminando", "più bassa = cuore più efficiente", fmtNum(fcwNow, 0), "bpm", dl(fcwOld != null ? fcwNow - fcwOld : null, true, "in 3 mesi"), true) : ""}
+      ${tip ? `<div class="card" style="background:#2A3150;margin-top:8px;padding:14px"><div class="small" style="line-height:1.5;color:#E6E8F0"><b>Coach:</b> ${tip}</div></div>` : ""}
+    </div>`;
+  }
+
+  // 3 · measurement diary
+  if (ms.length) {
+    const rows = [...ms].reverse().slice(0, 60);
+    html += `<details class="card" id="diary"><summary class="row between" style="list-style:none;cursor:pointer"><div class="h2">Misurazioni</div><span class="small muted">${ms.length} · apri ▾</span></summary>
+      <div class="small muted" style="margin-top:6px">Tocca due misure per confrontarle.</div>
+      <div class="list" style="margin-top:4px">${rows.map((m, i) => {
+        const p = rows[i + 1]; const dF = p ? (fatKg(m) ?? 0) - (fatKg(p) ?? 0) : null, dL = p && leanKg(m) != null && leanKg(p) != null ? leanKg(m) - leanKg(p) : null;
+        return `<button class="item" data-m="${m.giorno}" aria-pressed="false"><div class="col" style="gap:2px;text-align:left"><b>${fmtDate(m.giorno, { day: "numeric", month: "long", year: "numeric" })}</b></div>
+          <div class="small" style="text-align:right;font-weight:600">${fmtNum(m.peso, 1)} kg${m.grasso_pct != null ? ` · ${fmtNum(m.grasso_pct, 1)}%` : ""}${p && fatKg(m) != null && fatKg(p) != null ? `<br><span class="${dF <= 0 ? "good" : "bad"}">grasso ${signed(dF, 1)}</span>${dL != null ? ` · <span class="${dL >= 0 ? "good" : "bad"}">magra ${signed(dL, 1)}</span>` : ""}` : ""}</div></button>`; }).join("")}</div>
+      <button class="btn ghost block" id="cmp" disabled style="margin-top:10px">Confronta due misure</button></details>`;
+  }
+  el.innerHTML = html;
+
+  if (last) {
+    const series = { grasso_pct: ms.filter((m) => m.grasso_pct != null).map((m) => [m.giorno, m.grasso_pct]), peso: ms.filter((m) => m.peso != null).map((m) => [m.giorno, m.peso]), magra: ms.filter((m) => leanKg(m) != null).map((m) => [m.giorno, Math.round(leanKg(m) * 10) / 10]) };
+    const conf = { grasso_pct: ["#FF8A1F", "%"], peso: ["#1C2340", ""], magra: ["#2E8B5A", ""] };
+    const drawChart = (k) => { $("#chart").innerHTML = lineChart(series[k].slice(-30), conf[k][0], conf[k][1]); el.querySelectorAll("#seg button").forEach((b) => b.setAttribute("aria-selected", b.dataset.s === k)); };
+    if (!series.grasso_pct.length) { $("#seg").remove(); $("#chart").innerHTML = lineChart(series.peso.slice(-30), "#1C2340", ""); } else drawChart("grasso_pct");
+    el.querySelectorAll("#seg button").forEach((b) => (b.onclick = () => drawChart(b.dataset.s)));
+    const drawQuad = (days) => {
+      el.querySelectorAll("#qseg button").forEach((b) => b.setAttribute("aria-selected", Number(b.dataset.q) === days));
+      const ref = [...ms].reverse().find((m) => m.giorno <= shiftDay(last.giorno, -(days - 10)) && fatKg(m) != null);
+      if (!ref || fatKg(last) == null) { $("#quad").innerHTML = `<div class="muted" style="line-height:1.5">Serve una misura con massa grassa di almeno ${days === 365 ? "un anno" : days / 30 + " mesi"} prima dell'ultima.</div>`; return; }
+      const dF = fatKg(last) - fatKg(ref), dL = leanKg(last) - leanKg(ref), q = quadrantOf(dF, dL);
+      const months = Math.max(1, Math.round(daysBetween(ref.giorno, last.giorno) / 30));
+      $("#quad").innerHTML = `${quadrantSvg(dF, dL)}<div style="line-height:1.55;color:var(--text)"><b class="${QUAD[q][1]}">${QUAD[q][0]}.</b> In ${months} ${months === 1 ? "mese" : "mesi"} ${QUAD[q][2](dF, dL)}</div>
+        <div class="small muted">Dal ${fmtDate(ref.giorno, { day: "numeric", month: "short", year: "numeric" })} al ${fmtDate(last.giorno, { day: "numeric", month: "short", year: "numeric" })}</div>`;
+    };
+    drawQuad(90);
+    el.querySelectorAll("#qseg button").forEach((b) => (b.onclick = () => drawQuad(Number(b.dataset.q))));
+    $("#fatInfo").onclick = () => fatInfoSheet(last, sex);
+  }
+  const vi = $("#vo2Info"); if (vi) vi.onclick = () => vo2InfoSheet(vo2[vo2.length - 1][1], age, sex || "M");
+  // compare two measurements
+  const picked = [];
+  el.querySelectorAll("[data-m]").forEach((b) => (b.onclick = () => {
+    const d = b.dataset.m, i = picked.indexOf(d);
+    if (i >= 0) picked.splice(i, 1); else { picked.push(d); if (picked.length > 2) picked.shift(); }
+    el.querySelectorAll("[data-m]").forEach((x) => { const on = picked.includes(x.dataset.m); x.setAttribute("aria-pressed", on); x.style.background = on ? "var(--soft)" : ""; });
+    $("#cmp").disabled = picked.length !== 2;
+  }));
+  const cmp = $("#cmp");
+  if (cmp) cmp.onclick = () => {
+    const [a, b] = picked.map((d) => ms.find((m) => m.giorno === d)).sort((x, y) => (x.giorno < y.giorno ? -1 : 1));
+    const rows = [["Peso", a.peso, b.peso, " kg", -1], ["Massa grassa", a.grasso_pct, b.grasso_pct, "%", -1], ["Grasso", fatKg(a), fatKg(b), " kg", -1], ["Massa magra", leanKg(a), leanKg(b), " kg", 1], ["BMI", a.bmi, b.bmi, "", 0]];
+    const f = (d) => fmtDate(d, { day: "numeric", month: "short", year: "2-digit" });
+    openSheet(`${sheetHead("Prima e dopo")}
+      <div class="small muted">${daysBetween(a.giorno, b.giorno)} giorni tra le due misure</div>
+      <div class="card list"><div class="item small muted"><span style="flex:1.2"></span><b style="flex:1;text-align:right">${f(a.giorno)}</b><b style="flex:1;text-align:right">${f(b.giorno)}</b><b style="flex:1;text-align:right">Diff.</b></div>
+      ${rows.map(([l, x, y, u, g]) => `<div class="item"><span style="flex:1.2">${l}</span><span style="flex:1;text-align:right">${fmtNum(x, 1)}</span><span style="flex:1;text-align:right">${fmtNum(y, 1)}</span>
+        <b style="flex:1;text-align:right" class="${x == null || y == null || !g ? "" : (y - x) * g >= 0 ? "good" : "bad"}">${x == null || y == null ? "–" : signed(y - x, 1)}</b></div>`).join("")}</div>`, "Confronto misure");
+  };
+};
+
 /* ---------- check-in ---------- */
 function checkinSheet(existing) {
   const s = { energia: existing?.energia ?? 3, dolori: existing?.dolori ?? 2, umore: existing?.umore ?? 3, act: new Set((existing?.attivita || "").split(",").filter(Boolean)), rpe: existing?.rpe ?? 6, durata: existing?.durata_min ?? 60 };
@@ -408,6 +626,8 @@ views.impostazioni = async (el) => {
   el.innerHTML = `${header("Impostazioni", { back: "oggi", gear: false })}
     <div class="card col" style="gap:12px"><div class="h2">Profilo</div>
       <label class="field">Nome<input class="input" id="nome" value="${esc(c.profilo.nome)}" autocomplete="given-name"></label>
+      <div class="grid2"><label class="field">Età<input class="input" id="eta" type="number" inputmode="numeric" min="12" max="99" value="${esc(c.profilo.eta || "")}"></label>
+        <label class="field">Sesso<select class="input" id="sesso"><option value="">–</option><option value="M" ${c.profilo.sesso === "M" ? "selected" : ""}>Uomo</option><option value="F" ${c.profilo.sesso === "F" ? "selected" : ""}>Donna</option></select></label></div>
       <label class="field">I tuoi obiettivi<textarea class="input" id="obiettivi" rows="2" style="padding:12px;min-height:64px" placeholder="Es. scendere al 12% di grasso, nuotare 2 km senza fermarmi">${esc(c.profilo.obiettivi || "")}</textarea></label>
       <label class="field">Chi sei e come ti alleni<textarea class="input" id="note" rows="3" style="padding:12px;min-height:84px" placeholder="Es. 21 anni, palestra 3 volte a settimana, nuoto 1-2 volte, bici nel weekend">${esc(c.profilo.note)}</textarea><span class="hint">Restano su questo dispositivo e vengono inviate al coach insieme alle domande.</span></label>
       <button class="btn ghost" id="saveProfilo">Salva profilo</button></div>
@@ -440,7 +660,7 @@ views.impostazioni = async (el) => {
     </div>
     <div class="small muted center" style="display:flex;justify-content:center">Kairo ${APP_VERSION} · <a href="${GITHUB_URL}" target="_blank" rel="noopener" style="margin-left:4px">open source</a></div>`;
 
-  $("#saveProfilo").onclick = () => { store.set("profilo", { nome: $("#nome").value.trim(), note: $("#note").value.trim(), obiettivi: $("#obiettivi").value.trim() }); toast("Profilo salvato"); };
+  $("#saveProfilo").onclick = () => { store.set("profilo", { nome: $("#nome").value.trim(), eta: $("#eta").value.trim(), sesso: $("#sesso").value, note: $("#note").value.trim(), obiettivi: $("#obiettivi").value.trim() }); toast("Profilo salvato"); };
   $("#saveAi").onclick = () => { if (!validKey($("#gk").value)) return; store.set("groqKey", $("#gk").value.trim()); store.set("groqModel", $("#gm").value); toast("Impostazioni IA salvate"); };
   $("#loadModels").onclick = async () => {
     store.set("groqKey", $("#gk").value.trim());
@@ -856,7 +1076,10 @@ function route(name) { location.hash = "#/" + name; }
 async function router() {
   closeSheet();
   const name = (location.hash.replace(/^#\/?/, "") || "oggi").split("?")[0];
-  const el = $("#app");
+  // each navigation renders into a fresh container: a slow view that finishes late writes into a detached node
+  const el = document.createElement("div");
+  el.style.display = "contents";
+  $("#app").replaceChildren(el);
   document.body.classList.toggle("wide", name === "diagnostica");
   if (!PUBLIC.has(name) && !cfg().code) {
     const info = await api("/api/info").catch(() => null);
