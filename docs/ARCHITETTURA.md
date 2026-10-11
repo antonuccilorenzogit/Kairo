@@ -12,7 +12,8 @@
 
 ## Autenticazione
 - `POST /api/setup` imposta il codice di accesso solo se il server non ne ha già uno; il server salva l'hash SHA-256.
-- Tutte le altre chiamate richiedono `Authorization: Bearer <codice>`.
+- Tutte le altre chiamate richiedono `Authorization: Bearer <codice>`, tranne il link di collegamento.
+- **Link di collegamento**: `/api/sync/<token>` con un token casuale di 24 caratteri. Accetta solo l'invio dei dati (POST), quindi il comando dell'iPhone non conosce il codice di accesso. Si rigenera da *Impostazioni*.
 - La chiave Groq viaggia nell'header `x-groq-key` e non viene salvata sul server.
 
 ## API
@@ -20,7 +21,9 @@
 |---|---|---|
 | GET | `/api/info` | versione e stato della configurazione (pubblico) |
 | POST | `/api/setup` | crea il codice di accesso (pubblico, una volta) |
-| POST | `/api/ingest` | riceve un JSON di HealthSync |
+| POST | `/api/sync/<token>` | riceve un JSON di HealthSync (link di collegamento, senza codice) |
+| GET/POST | `/api/collegamento` | legge / rigenera il link di collegamento |
+| POST | `/api/ingest` | riceve un JSON (con codice; usato da *Importa da Salute*) |
 | GET | `/api/day?d=AAAA-MM-GG` | metriche e score di un giorno |
 | GET | `/api/history?days=N` | ultimi N giorni |
 | GET | `/api/sonno?d=` | fasi della notte che termina il giorno `d` |

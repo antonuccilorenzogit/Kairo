@@ -1,0 +1,33 @@
+# Keeps your copy of Kairo up to date with the official version.
+# Runs every Monday, or by hand: GitHub → your repository → Actions → "Aggiorna Kairo" → Run workflow.
+# Cloudflare sees the new commit and redeploys automatically. Your data is not touched.
+name: Aggiorna Kairo
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: write
+
+jobs:
+  aggiorna:
+    # never run inside the official repository itself
+    if: github.repository != 'antonuccilorenzogit/Kairo'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scarica l'ultima versione di Kairo
+        run: git clone --depth 1 https://github.com/antonuccilorenzogit/Kairo /tmp/kairo-ufficiale
+      - name: Aggiorna app e server (la configurazione resta la tua)
+        run: |
+          rm -rf src public
+          cp -r /tmp/kairo-ufficiale/worker/src /tmp/kairo-ufficiale/worker/public .
+          git config user.name "kairo-bot"
+          git config user.email "kairo-bot@users.noreply.github.com"
+          git add -A src public
+          if git diff --cached --quiet; then echo "Kairo è già aggiornato."; exit 0; fi
+          VERSIONE=$(grep -o 'APP_VERSION = "[^"]*"' public/app.js | cut -d'"' -f2)
+          git commit -m "Aggiorna Kairo alla versione $VERSIONE"
+          git push

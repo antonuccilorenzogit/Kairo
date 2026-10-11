@@ -2,8 +2,8 @@
 """Build and sign the Kairo Apple Shortcuts (HealthSync and the one-time history imports).
 
 The shortcuts are generated as Shortcuts property lists and signed with RoutineHub's
-public HubSign service, so no Mac is needed. Each shortcut asks two questions when it
-is imported (server address and access code), so one signed file works for everybody.
+public HubSign service, so no Mac is needed. Each shortcut asks one question when it is
+imported (the sync link copied from the app), so one signed file works for everybody.
 
 Usage:  python3 tools/build_shortcuts.py worker/public/shortcuts
 Requires network access to hubsign.routinehub.services. Only the shortcut logic is sent
@@ -14,7 +14,7 @@ Health type names are the *internal* English identifiers used by the Shortcuts a
 """
 import json, os, plistlib, sys, urllib.request, uuid
 
-SHORTCUT_VERSION = "1.0.0"
+SHORTCUT_VERSION = "1.2.0"
 OBJ = "￼"  # placeholder character that Shortcuts replaces with a variable
 
 
@@ -46,21 +46,17 @@ def act(ident, **params):
 
 
 def config_block():
-    """Actions 0-3: two text actions filled by the import questions, saved in variables."""
-    a, b = U(), U()
+    """Actions 0-1: one text action filled by the import question (the sync link), saved in a variable."""
+    a = U()
     return [
         act("is.workflow.actions.gettext", UUID=a, WFTextActionText=""),
-        act("is.workflow.actions.setvariable", WFInput=out_ref(a, "Testo"), WFVariableName="kairo_server"),
-        act("is.workflow.actions.gettext", UUID=b, WFTextActionText=""),
-        act("is.workflow.actions.setvariable", WFInput=out_ref(b, "Testo"), WFVariableName="kairo_codice"),
+        act("is.workflow.actions.setvariable", WFInput=out_ref(a, "Testo"), WFVariableName="kairo_link"),
     ]
 
 
 IMPORT_QUESTIONS = [
     {"ActionIndex": 0, "Category": "Parameter", "ParameterKey": "WFTextActionText",
-     "Text": "Indirizzo del tuo server Kairo (es. https://kairo.tuonome.workers.dev)", "DefaultValue": "https://"},
-    {"ActionIndex": 2, "Category": "Parameter", "ParameterKey": "WFTextActionText",
-     "Text": "Il tuo codice di accesso Kairo", "DefaultValue": ""},
+     "Text": "Incolla il link di collegamento copiato dall'app Kairo", "DefaultValue": ""},
 ]
 
 
@@ -108,7 +104,7 @@ def metric_block(key, hk_type, days, with_end=False, group=None):
 
 
 def send_block(keys, module, backup_suffix):
-    """Build the JSON dictionary, keep a backup copy in iCloud Drive and POST it to the server."""
+    """Build the JSON dictionary and POST it to the sync link."""
     acts = []
     did = U()
     item = lambda k, v: {"WFItemType": 0, "WFKey": plain_text(k), "WFValue": v}
@@ -119,18 +115,10 @@ def send_block(keys, module, backup_suffix):
     items += [item(k, text_with_var("", k)) for k in keys]
     acts.append(act("is.workflow.actions.dictionary", UUID=did,
                     WFItems={"Value": {"WFDictionaryFieldValueItems": items}, "WFSerializationType": "WFDictionaryFieldValue"}))
-    nid = U()
-    acts.append(act("is.workflow.actions.setitemname", UUID=nid, WFInput=out_ref(did, "Dizionario"),
-        WFName={"Value": {"string": OBJ + f"_{backup_suffix}.json", "attachmentsByRange": {"{0, 1}": {"Type": "CurrentDate",
-            "Aggrandizements": [{"Type": "WFDateFormatVariableAggrandizement", "WFDateFormatStyle": "Custom", "WFISO8601IncludeTime": False, "WFDateFormat": "yyyy-MM-dd_HH-mm"}]}}},
-            "WFSerializationType": "WFTextTokenString"}))
-    acts.append(act("is.workflow.actions.documentpicker.save", UUID=U(), WFInput=out_ref(nid, "Elemento rinominato"),
-                    WFAskWhereToSave=False, WFFileDestinationPath="Kairo/"))
     acts.append(act("is.workflow.actions.downloadurl", UUID=U(),
-        WFURL=text_with_var("", "kairo_server", "/api/ingest"), WFHTTPMethod="POST", WFHTTPBodyType="File",
+        WFURL=text_with_var("", "kairo_link"), WFHTTPMethod="POST", WFHTTPBodyType="File",
         WFRequestVariable=out_ref(did, "Dizionario"),
         WFHTTPHeaders={"Value": {"WFDictionaryFieldValueItems": [
-            item("Authorization", text_with_var("Bearer ", "kairo_codice")),
             item("Content-Type", plain_text("application/json"))]}, "WFSerializationType": "WFDictionaryFieldValue"}))
     return acts
 

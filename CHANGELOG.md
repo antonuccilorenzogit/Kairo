@@ -2,6 +2,19 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.2.0] — 2026-10-11
+
+### Semplificato
+- **Un solo link per collegare l'iPhone**: il comando HealthSync chiede solo il *link di collegamento* (copiato con un tocco dall'app), non più indirizzo e codice. Il link può solo inviare dati e si rigenera da *Impostazioni*.
+- Guida nell'app ridotta a 7 passi chiari; schermata del coach IA con istruzioni passo passo per la chiave Groq.
+- Accesso: niente più campo "indirizzo del server", l'app usa sempre il proprio indirizzo.
+- Il comando non salva più copie in iCloud Drive (una richiesta di permesso in meno).
+- **Aggiornamenti automatici**: le copie installate con *Deploy to Cloudflare* si aggiornano ogni settimana tramite l'azione GitHub *Aggiorna Kairo*.
+
+### Corretto
+- Errore 405 salvando la chiave Groq quando nel dispositivo era rimasto un indirizzo del server sbagliato.
+- Messaggio chiaro quando il server risponde con qualcosa che non è JSON.
+
 ## [1.1.1] — 2026-10-11
 
 ### Corretto

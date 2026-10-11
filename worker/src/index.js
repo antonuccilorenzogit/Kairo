@@ -4,7 +4,7 @@ import { computeDay, computeHistory } from "./metrics.js";
 import { ensureSchema, SCHEMA_VERSION } from "./schema.js";
 import { dailyAdvice, chat, testAI, groqModels, DEFAULT_GROQ_MODEL, FALLBACK_MODEL } from "./coach.js";
 
-export const VERSION = "1.1.1";
+const VERSION = "1.2.0";
 // Metrics that arrive already summed per day / per hour
 const DAILY = new Set(["passi", "kcal_attive", "kcal_riposo", "dist_piedi", "piani", "dist_bici",
   "dist_nuoto", "bracciate", "kcal_cibo", "proteine", "carboidrati", "grassi", "acqua"]);
@@ -26,6 +26,17 @@ async function sha256(text) {
 const getSetting = async (db, key) => (await db.prepare("SELECT value FROM settings WHERE key = ?").bind(key).first())?.value ?? null;
 const setSetting = (db, key, value) => db.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(key, value).run();
 
+// Sync link: a random token that only allows sending data (used by the HealthSync shortcut).
+async function syncToken(db, rotate = false) {
+  let t = rotate ? null : await getSetting(db, "sync_token");
+  if (!t) {
+    const abc = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+    t = [...crypto.getRandomValues(new Uint8Array(24))].map((b) => abc[b % abc.length]).join("");
+    await setSetting(db, "sync_token", t);
+  }
+  return t;
+}
+
 function bearer(req) {
   const h = req.headers.get("authorization") || "";
   return h.startsWith("Bearer ") ? h.slice(7).trim() : "";
@@ -39,7 +50,7 @@ async function authorized(req, env) {
 }
 
 // Sleep stage names arrive in the phone's language: map them to stable codes.
-export function stageCode(s) {
+function stageCode(s) {
   const t = (s || "").toLowerCase().trim();
   if (t.includes("profond") || t.includes("deep") || t.includes("tief") || t.includes("profund")) return "deep";
   if (t.includes("rem")) return "rem";
@@ -138,7 +149,23 @@ async function api(req, env, url) {
     return json({ ok: true });
   }
 
+  // Data sent by the HealthSync shortcut through the sync link (no access code needed)
+  if (p.startsWith("/api/sync/")) {
+    const tok = p.slice(10).replace(/\/+$/, "");
+    const real = await getSetting(env.DB, "sync_token");
+    if (!real || tok !== real) return json({ errore: "Link di collegamento non valido: copialo di nuovo dall'app Kairo (Impostazioni)." }, 401);
+    if (req.method !== "POST") return json({ ok: true, app: "kairo", messaggio: "Link valido" });
+    let payload;
+    try { payload = JSON.parse(await req.text()); } catch { return json({ errore: "JSON non valido" }, 400); }
+    return json({ ok: true, righe: await ingest(payload, env) });
+  }
+
   if (!(await authorized(req, env))) return json({ errore: "Codice di accesso non valido" }, 401);
+
+  if (p === "/api/collegamento") {
+    const t = await syncToken(env.DB, req.method === "POST");
+    return json({ link: `${url.origin}/api/sync/${t}` });
+  }
 
   if (p === "/api/ingest" && req.method === "POST") {
     let payload;

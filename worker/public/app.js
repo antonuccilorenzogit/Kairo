@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.1.1";
+const APP_VERSION = "1.2.0";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -15,7 +15,7 @@ const store = {
   del(k) { try { localStorage.removeItem("kairo." + k); } catch {} },
 };
 const cfg = () => ({
-  server: store.get("server", location.origin),
+  server: location.origin, // the app is always served by its own Kairo server
   code: store.get("code", ""),
   groqKey: store.get("groqKey", ""),
   groqModel: store.get("groqModel", ""),
@@ -61,6 +61,9 @@ async function api(path, { method = "GET", body, raw = false } = {}) {
   try { res = await fetch(c.server.replace(/\/$/, "") + path, { method, headers, body: body ? JSON.stringify(body) : undefined }); }
   catch (e) { throw new ApiError("Server non raggiungibile. Controlla la connessione o l'indirizzo del server.", 0); }
   if (raw) return res;
+  if (!(res.headers.get("content-type") || "").includes("application/json")) {
+    throw new ApiError(`Il server ha risposto in modo inatteso (errore ${res.status}). Ricarica la pagina; se continua apri la Diagnostica.`, res.status);
+  }
   const data = await res.json().catch(() => ({}));
   if (res.status === 401 && path !== "/api/info") { route("accesso"); throw new ApiError(data.errore || "Codice non valido", 401); }
   if (!res.ok) throw new ApiError(data.errore || `Errore ${res.status}`, res.status);
@@ -401,16 +404,15 @@ views.impostazioni = async (el) => {
       <div id="aiOut" class="small muted"></div>
       <button class="btn primary" id="saveAi">Salva</button></div>
 
-    <div class="card col" style="gap:12px"><div class="h2">Comando rapido HealthSync</div>
-      <div class="small" style="line-height:1.5;color:var(--text)">Il comando legge i dati di Salute sull'iPhone e li invia al tuo server. Durante l'importazione ti chiede indirizzo e codice qui sotto.</div>
-      <div class="card soft col" style="gap:4px"><div class="small muted">Indirizzo del server</div><div class="code">${esc(c.server)}</div></div>
-      <a class="btn orange" href="shortcuts/HealthSync.shortcut" target="_blank" rel="noopener">Scarica HealthSync</a>
-      <a class="btn ghost" href="#/guida">Guida passo passo (A–Z)</a></div>
+    <div class="card col" style="gap:12px"><div class="h2">Collegamento con l'iPhone</div>
+      <div class="small" style="line-height:1.5;color:var(--text)">Il comando HealthSync usa questo link per inviare i dati. Funziona solo per inviare dati: non apre l'app.</div>
+      <div class="card soft code" id="linkBox">…</div>
+      <div class="row"><button class="btn primary" id="copyLink" style="flex:2">Copia link</button><button class="btn ghost" id="newLink" style="flex:1">Rigenera</button></div>
+      <a class="btn ghost" href="#/guida">Guida passo passo</a></div>
 
-    <div class="card col" style="gap:10px"><div class="h2">Server e accesso</div>
-      <label class="field">Indirizzo del server<input class="input" id="srv" value="${esc(c.server)}" inputmode="url" autocomplete="off"></label>
-      <label class="field">Codice di accesso<input class="input" id="code" type="password" value="${esc(c.code)}" autocomplete="current-password"></label>
-      <div class="row"><button class="btn ghost" id="saveSrv">Salva</button><button class="btn ghost" id="chgCode">Cambia codice</button></div></div>
+    <div class="card col" style="gap:10px"><div class="h2">Codice di accesso</div>
+      <div class="small muted">Serve per aprire Kairo su un nuovo dispositivo. Indirizzo: <span class="code">${esc(c.server)}</span></div>
+      <button class="btn ghost" id="chgCode">Cambia codice</button></div>
 
     <div class="card list">
       <a class="item" href="#/diagnostica">Diagnostica ${ico.chevron}</a>
@@ -424,7 +426,7 @@ views.impostazioni = async (el) => {
     <div class="small muted center" style="display:flex;justify-content:center">Kairo ${APP_VERSION} · <a href="${GITHUB_URL}" target="_blank" rel="noopener" style="margin-left:4px">open source</a></div>`;
 
   $("#saveProfilo").onclick = () => { store.set("profilo", { nome: $("#nome").value.trim(), note: $("#note").value.trim() }); toast("Profilo salvato"); };
-  $("#saveAi").onclick = () => { store.set("groqKey", $("#gk").value.trim()); store.set("groqModel", $("#gm").value); toast("Impostazioni IA salvate"); };
+  $("#saveAi").onclick = () => { if (!validKey($("#gk").value)) return; store.set("groqKey", $("#gk").value.trim()); store.set("groqModel", $("#gm").value); toast("Impostazioni IA salvate"); };
   $("#loadModels").onclick = async () => {
     store.set("groqKey", $("#gk").value.trim());
     const out = $("#aiOut"); out.textContent = "Carico i modelli…";
@@ -444,9 +446,15 @@ views.impostazioni = async (el) => {
       out.innerHTML = r.errore ? `<span class="bad">${esc(r.errore)}</span>` : `<span class="good">Funziona</span> · ${r.provider === "groq" ? "Groq" : "Modello di riserva"} · ${esc(r.model)} · ${r.latenza_ms} ms${r.quota?.richieste_rimaste ? ` · ${esc(r.quota.richieste_rimaste)} richieste rimaste oggi` : ""}${r.avviso ? `<br>${esc(r.avviso)}` : ""}`;
     } catch (e) { out.textContent = e.message; }
   };
-  $("#saveSrv").onclick = () => { store.set("server", $("#srv").value.trim().replace(/\/$/, "")); store.set("code", $("#code").value.trim()); toast("Salvato"); };
+  let link = "";
+  api("/api/collegamento").then((r) => { link = r.link; $("#linkBox").textContent = link; }).catch((e) => { $("#linkBox").textContent = e.message; });
+  $("#copyLink").onclick = () => link && copyText(link, "Link copiato");
+  $("#newLink").onclick = async () => {
+    if (!confirm("Creare un nuovo link? Quello vecchio smette di funzionare e dovrai aggiornarlo nel comando HealthSync.")) return;
+    try { const r = await api("/api/collegamento", { method: "POST" }); link = r.link; $("#linkBox").textContent = link; toast("Nuovo link creato"); } catch (e) { toast(e.message); }
+  };
   $("#chgCode").onclick = async () => {
-    const nuovo = prompt("Nuovo codice di accesso (almeno 8 caratteri). Dopo andrà aggiornato anche nel comando HealthSync.");
+    const nuovo = prompt("Nuovo codice di accesso (almeno 8 caratteri).");
     if (!nuovo) return;
     try { await api("/api/codice", { method: "POST", body: { nuovo } }); store.set("code", nuovo); toast("Codice cambiato"); views.impostazioni(el); }
     catch (e) { toast(e.message); }
@@ -593,85 +601,57 @@ views.info = async (el) => {
 async function copyText(t, ok = "Copiato") { try { await navigator.clipboard.writeText(t); toast(ok); } catch { toast("Copia non riuscita: selezionalo e copialo a mano"); } }
 const tip = (t, body) => `<div class="card soft col" style="gap:4px"><div style="font-weight:900">${t}</div><div class="small" style="line-height:1.5">${body}</div></div>`;
 const GUIDE = [
-  { t: "Come funziona", body: (c) => `
-    <div style="line-height:1.55;color:var(--text)">Kairo riceve i dati dall'iPhone in tre pezzi:</div>
-    <ol class="steps"><li><b>Il comando HealthSync</b> legge i dati di Salute (che arrivano dal Watch) e li invia al tuo server.</li>
-      <li><b>Due automazioni</b> lo fanno partire da solo: quando spegni la sveglia e quando metti in carica l'iPhone.</li>
-      <li><b>L'app Kairo</b> (questa) mostra recupero, sonno e coach, su iPhone e PC.</li></ol>
-    ${tip("Cosa ti serve", "iPhone con l'app <b>Comandi</b> (è già installata; se l'hai cancellata riscaricala gratis dall'App Store), Apple Watch abbinato, e <b>questa pagina aperta in Safari sull'iPhone</b>. Tempo: circa 10 minuti, una volta sola.")}` },
-  { t: "Prepara l'iPhone", body: () => `
-    <ol class="steps"><li>Apri l'app <b>Impostazioni</b> dell'iPhone.</li>
-      <li>Scorri e tocca <b>App</b> → <b>Comandi</b> (su iOS meno recenti: direttamente <b>Comandi rapidi</b>).</li>
-      <li>Tocca <b>Avanzate</b>.</li>
-      <li>Attiva <b>Consenti condivisione di grandi quantità di dati</b>.</li></ol>
-    ${tip("Perché", "Senza questa opzione iOS blocca l'invio quando i dati superano qualche centinaio di valori, per esempio la frequenza cardiaca di due giorni.")}` },
-  { t: "Copia indirizzo e codice", body: (c) => `
-    <div style="line-height:1.55;color:var(--text)">Il comando ti chiederà queste due cose quando lo aggiungi. Tienile a portata di mano.</div>
-    <div class="card soft col" style="gap:6px"><div class="small muted">1 · Indirizzo del server</div><div class="code">${esc(c.server)}</div>
-      <button class="btn ghost" data-copy="${esc(c.server)}">Copia indirizzo</button></div>
-    <div class="card soft col" style="gap:6px"><div class="small muted">2 · Codice di accesso</div><div class="code">${c.code ? "•".repeat(Math.min(c.code.length, 16)) : "non salvato su questo dispositivo"}</div>
-      ${c.code ? `<button class="btn ghost" id="copyCode">Copia codice</button>` : ""}</div>
-    ${tip("Suggerimento", "Copia l'indirizzo ora; il codice lo copi al passo 5, quando il comando lo chiede. Gli appunti tengono una cosa sola alla volta.")}` },
-  { t: "Scarica HealthSync", body: () => `
-    <a class="btn orange block" href="shortcuts/HealthSync.shortcut" target="_blank" rel="noopener">Scarica HealthSync</a>
-    <ol class="steps"><li>Tocca il pulsante qui sopra. Safari chiede <b>«Vuoi scaricare HealthSync.shortcut?»</b>: tocca <b>Scarica</b>.</li>
-      <li>Tocca l'icona dei download nella barra di Safari (un cerchio con la freccia ↓) e poi <b>HealthSync.shortcut</b>.</li>
-      <li>Si apre l'app <b>Comandi</b> con l'anteprima del comando.</li></ol>
-    ${tip("Non si apre?", "Apri l'app <b>File</b> → <b>Download</b> e tocca <b>HealthSync.shortcut</b>. Se compare «Impossibile aprire», aggiorna iOS: i comandi firmati richiedono iOS 15 o successivo.")}` },
-  { t: "Aggiungi il comando", body: (c) => `
-    <ol class="steps"><li>Nell'anteprima tocca <b>Configura comando</b> (o <b>Aggiungi comando</b>).</li>
-      <li><b>Domanda 1, indirizzo del server:</b> cancella il testo di esempio e incolla <span class="code">${esc(c.server)}</span></li>
-      <li>Tocca <b>Avanti</b>.</li>
-      <li><b>Domanda 2, codice di accesso:</b> torna qui, copia il codice, torna su Comandi e incollalo.</li>
-      <li>Tocca <b>Aggiungi comando</b>. HealthSync compare in <b>Comandi</b>.</li></ol>
-    ${c.code ? `<button class="btn ghost" id="copyCode">Copia codice</button>` : ""}
-    ${tip("Hai sbagliato qualcosa?", "Tieni premuto su HealthSync → <b>Modifica</b>. In cima ci sono due blocchi di testo: il primo è l'indirizzo, il secondo il codice. Correggili e tocca <b>Fine</b>.")}` },
-  { t: "Primo avvio e permessi", body: () => `
-    <ol class="steps"><li>In Comandi tocca la scheda <b>HealthSync</b> per avviarlo.</li>
-      <li>Alla richiesta di accedere a <b>Salute</b>: tocca <b>Consenti</b>. Se compare l'elenco dei dati, tocca <b>Attiva tutto</b> e poi <b>Consenti</b>.</li>
-      <li>Alla richiesta di connettersi al tuo server: <b>Consenti sempre</b>.</li>
-      <li>Alla richiesta di salvare in iCloud Drive (copia di sicurezza in <i>iCloud Drive/Kairo</i>): <b>Consenti sempre</b>.</li>
-      <li>Quando il comando finisce, torna qui e tocca <b>Verifica</b>.</li></ol>
-    <button class="btn primary block" id="verify">Verifica che i dati siano arrivati</button><div id="verifyOut" class="small" style="line-height:1.5"></div>
-    ${tip("Perché due volte «Consenti»?", "iOS chiede il permesso la prima volta per ogni tipo di azione. Dopo «Consenti sempre» il comando gira da solo, senza domande.")}` },
-  { t: "Automazione 1: sveglia", body: () => `
-    <ol class="steps"><li>Apri <b>Comandi</b> e tocca la scheda <b>Automazione</b> in basso.</li>
-      <li>Tocca <b>+</b> in alto a destra (o <b>Nuova automazione</b>).</li>
-      <li>Scegli <b>Sveglia</b> → seleziona <b>Viene fermata</b> → lascia <b>Qualsiasi sveglia</b>.</li>
-      <li>In basso scegli <b>Esegui immediatamente</b> e disattiva <b>Notifica durante l'esecuzione</b>.</li>
-      <li>Tocca <b>Avanti</b>, scegli <b>HealthSync</b> e poi <b>Fine</b>.</li></ol>
-    ${tip("Non usi la sveglia?", "Al punto 3 scegli <b>Ora del giorno</b> → per esempio le 9:00, <b>Ogni giorno</b>. Il resto è uguale.")}` },
-  { t: "Automazione 2: caricatore", body: () => `
-    <ol class="steps"><li>Sempre in <b>Automazione</b>, tocca <b>+</b>.</li>
-      <li>Scegli <b>Caricatore</b> → <b>È collegato</b>.</li>
-      <li>Scegli <b>Esegui immediatamente</b> e disattiva la notifica.</li>
-      <li>Tocca <b>Avanti</b> → <b>HealthSync</b> → <b>Fine</b>.</li></ol>
-    ${tip("Perché le automazioni non sono un file da importare?", "Apple permette di condividere i <b>comandi</b> come file, ma non le <b>automazioni</b>: vanno create a mano sull'iPhone. Sono solo questi due minuti, una volta per sempre.")}` },
-  { t: "Importa lo storico", body: () => `
-    <div style="line-height:1.55;color:var(--text)">Così Kairo calcola subito le tue medie personali, invece di aspettare 2 settimane. Scegli uno dei due modi (una volta sola).</div>
-    <div class="card soft col" style="gap:8px"><div style="font-weight:900">A · Consigliato: esportazione di Salute</div>
-      <div class="small" style="line-height:1.5">Prende tutto in un colpo: fino a 2 anni di HRV, FC, sonno, attività, peso.</div>
-      <a class="btn primary" href="#/importa">Importa da Salute</a></div>
-    <div class="card soft col" style="gap:8px"><div style="font-weight:900">B · Con i comandi Storico</div>
-      <div class="small" style="line-height:1.5">Scarica e aggiungi ognuno come al passo 4–5 (stesse due domande), poi avviali una volta in ordine. Ognuno può richiedere un minuto: tieni lo schermo acceso.</div>
-      <div class="grid2"><a class="btn ghost" href="shortcuts/HealthSync_Storico_1A.shortcut" target="_blank" rel="noopener">1A · cuore</a><a class="btn ghost" href="shortcuts/HealthSync_Storico_1B.shortcut" target="_blank" rel="noopener">1B · corpo</a><a class="btn ghost" href="shortcuts/HealthSync_Storico_1C.shortcut" target="_blank" rel="noopener">1C · attività</a><a class="btn ghost" href="shortcuts/HealthSync_Storico_2.shortcut" target="_blank" rel="noopener">2 · sonno</a></div>
-      <div class="small muted">Dopo averli usati puoi eliminarli da Comandi.</div></div>` },
+  { t: "Prima di iniziare", body: () => `
+    <div style="line-height:1.55;color:var(--text)">In 6 passi l'iPhone inizierà a mandare a Kairo i dati del Watch, da solo, ogni giorno. Ci vogliono circa <b>5 minuti</b>, una volta sola.</div>
+    <div class="card soft col" style="gap:6px"><div style="font-weight:900">Fai questa guida sull'iPhone, in Safari</div><div class="small" style="line-height:1.5">Ti serve l'app <b>Comandi</b> (è già sull'iPhone; se l'hai cancellata, riscaricala gratis dall'App Store).</div></div>
+    <div class="h2" style="font-size:17px">Un'impostazione da attivare</div>
+    <ol class="steps"><li>Apri <b>Impostazioni</b> dell'iPhone → <b>App</b> → <b>Comandi</b> → <b>Avanzate</b>.</li>
+      <li>Attiva <b>Consenti condivisione di grandi quantità di dati</b>.</li>
+      <li>Torna qui e tocca <b>Avanti</b>.</li></ol>
+    <div class="small muted">Su iOS 17 o precedenti il percorso è Impostazioni → Comandi rapidi → Avanzate.</div>` },
+  { t: "Installa il comando", body: () => `
+    <div style="line-height:1.55;color:var(--text)">Due pulsanti, in quest'ordine:</div>
+    <button class="btn primary block" id="copyLink">① Copia il link di collegamento</button>
+    <a class="btn orange block" href="shortcuts/HealthSync.shortcut" target="_blank" rel="noopener">② Scarica HealthSync</a>
+    <ol class="steps"><li>Safari chiede <b>«Scaricare HealthSync.shortcut?»</b> → tocca <b>Scarica</b>.</li>
+      <li>Tocca l'icona <b>download</b> (cerchio con la freccia ↓, nella barra di Safari) → tocca <b>HealthSync.shortcut</b>. Si apre l'app Comandi.</li>
+      <li>Tocca <b>Configura comando</b>. Nel riquadro tieni premuto → <b>Incolla</b> (è il link copiato al punto ①).</li>
+      <li>Tocca <b>Aggiungi comando</b>. Fatto.</li></ol>
+    ${tip("Non trovi il file?", "Apri l'app <b>File</b> → <b>Download</b> → tocca <b>HealthSync.shortcut</b>.")}` },
+  { t: "Prova il comando", body: () => `
+    <ol class="steps"><li>Apri l'app <b>Comandi</b> e tocca il riquadro <b>HealthSync</b>.</li>
+      <li>La prima volta iOS chiede dei permessi: rispondi sempre <b>Consenti</b> (o <b>Consenti sempre</b>). Se compare l'elenco dei dati di Salute: <b>Attiva tutto</b> → <b>Consenti</b>.</li>
+      <li>Aspetta che il comando finisca (pochi secondi), poi torna qui.</li></ol>
+    <button class="btn primary block" id="verify">Controlla se i dati sono arrivati</button><div id="verifyOut" class="small" style="line-height:1.5"></div>` },
+  { t: "Rendilo automatico", body: () => `
+    <div style="line-height:1.55;color:var(--text)">Crei due automazioni, così il comando parte da solo. Apri <b>Comandi</b> → scheda <b>Automazione</b> (in basso).</div>
+    <div class="card soft col" style="gap:8px"><div style="font-weight:900">A · Quando spegni la sveglia</div>
+      <ol class="steps"><li>Tocca <b>+</b> (in alto a destra) → <b>Sveglia</b>.</li>
+        <li>Scegli <b>Viene fermata</b> e <b>Esegui immediatamente</b>.</li>
+        <li><b>Avanti</b> → scegli <b>HealthSync</b> → <b>Fine</b>.</li></ol></div>
+    <div class="card soft col" style="gap:8px"><div style="font-weight:900">B · Quando metti in carica</div>
+      <ol class="steps"><li>Tocca <b>+</b> → <b>Caricatore</b>.</li>
+        <li>Scegli <b>È collegato</b> e <b>Esegui immediatamente</b>.</li>
+        <li><b>Avanti</b> → <b>HealthSync</b> → <b>Fine</b>.</li></ol></div>
+    <div class="small muted" style="line-height:1.5">Non usi la sveglia? In A scegli <b>Ora del giorno</b> (es. 9:00, ogni giorno). Le automazioni non si possono scaricare come file: Apple permette di condividere solo i comandi.</div>` },
+  { t: "Carica il tuo storico", body: () => `
+    <div style="line-height:1.55;color:var(--text)">Facoltativo ma consigliato: così Kairo conosce subito le tue medie, invece di aspettare due settimane.</div>
+    <ol class="steps"><li>Apri l'app <b>Salute</b> → tocca la tua <b>foto</b> in alto a destra.</li>
+      <li>In fondo: <b>Esporta tutti i dati sanitari</b> → <b>Esporta</b>. Aspetta (anche qualche minuto).</li>
+      <li>Scegli <b>Salva su File</b> → <b>Sul mio iPhone</b> → <b>Salva</b>.</li>
+      <li>Tocca il pulsante qui sotto e scegli il file <b>esportazione.zip</b>.</li></ol>
+    <a class="btn primary block" href="#/importa">Importa da Salute</a>` },
   { t: "Kairo sulla schermata Home", body: () => `
-    <div class="h2" style="font-size:17px">iPhone</div>
-    <ol class="steps"><li>In <b>Safari</b>, con Kairo aperto, tocca <b>Condividi</b> (il quadrato con la freccia ↑).</li>
-      <li>Scorri e tocca <b>Aggiungi alla schermata Home</b> → <b>Aggiungi</b>.</li>
-      <li>Apri Kairo dall'icona. La prima volta ti chiede di nuovo il <b>codice</b>: è normale, l'app installata ha una memoria separata da Safari.</li></ol>
-    <div class="h2" style="font-size:17px">PC</div>
-    <ol class="steps"><li>Apri lo stesso indirizzo in <b>Chrome</b> o <b>Edge</b> e accedi con il codice.</li>
-      <li>Clicca l'icona <b>Installa</b> a destra nella barra degli indirizzi (o menu ⋮ → <b>Installa Kairo</b>).</li></ol>
-    ${tip("Funziona anche a PC spento", "Il server è su Cloudflare, sempre acceso: l'iPhone invia i dati e tu li vedi ovunque.")}` },
+    <ol class="steps"><li>In <b>Safari</b> tocca <b>Condividi</b> (quadrato con la freccia ↑).</li>
+      <li>Scorri → <b>Aggiungi alla schermata Home</b> → <b>Aggiungi</b>.</li>
+      <li>Apri Kairo dall'icona e inserisci di nuovo il <b>codice di accesso</b> (l'app sulla Home ha una memoria separata da Safari).</li></ol>
+    <div class="small muted" style="line-height:1.5"><b>Sul PC:</b> apri <span class="code">${esc(location.origin)}</span> in Chrome o Edge, accedi con il codice e clicca <b>Installa</b> nella barra degli indirizzi.</div>` },
   { t: "Fatto", body: () => `
     <div class="col center" style="gap:8px">${bean(90, 110)}<div class="h2">Kairo è pronto</div></div>
-    <ol class="steps"><li><b>Ogni mattina</b> spegni la sveglia: i dati della notte arrivano da soli.</li>
-      <li>Apri Kairo e fai il <b>check-in</b> (10 secondi): il coach ne tiene conto.</li>
-      <li><b>Dormi con il Watch</b>: sonno, respirazione e HRV notturna sono il cuore dello score.</li></ol>
-    ${tip("Se un giorno i dati non sono aggiornati", "Apri <b>Impostazioni → Diagnostica</b>: ti dice quando è arrivato l'ultimo invio e cosa controllare.")}
-    <a class="btn ghost" href="#/diagnostica">Apri la diagnostica</a>
+    <ol class="steps"><li><b>Dormi con il Watch</b>: è la base dello score di recupero.</li>
+      <li>La mattina spegni la sveglia: i dati arrivano da soli.</li>
+      <li>Apri Kairo e fai il <b>check-in</b> (10 secondi).</li></ol>
+    ${tip("Qualcosa non torna?", "<b>Impostazioni → Diagnostica</b> ti dice quando sono arrivati gli ultimi dati e cosa controllare.")}
     <a class="btn primary" href="#/oggi">Vai a Oggi</a>` },
 ];
 
@@ -681,7 +661,7 @@ views.guida = async (el) => {
   const draw = () => {
     store.set("guidaStep", i);
     const g = GUIDE[i];
-    el.innerHTML = `${header("Guida", { back: "impostazioni", gear: false, sub: "Configurazione dalla A alla Z" })}
+    el.innerHTML = `${header("Guida", { back: "impostazioni", gear: false, sub: "Collega l'iPhone in 5 minuti" })}
       <div class="col" style="gap:8px"><div class="row between small"><b>Passo ${i + 1} di ${GUIDE.length}</b><span class="muted">${Math.round((i / (GUIDE.length - 1)) * 100)}%</span></div>
         <div class="track"><div class="bar" style="left:0;width:${(i / (GUIDE.length - 1)) * 100}%;background:var(--orange)"></div></div>
         <div class="chips" style="gap:6px">${GUIDE.map((s, k) => `<button class="chip" data-go="${k}" style="padding:4px 10px;font-size:12px;${k === i ? "background:var(--ink);color:#fff;border-color:var(--ink)" : k < i ? "background:#DDF3E7;border-color:#DDF3E7" : ""}" aria-label="Passo ${k + 1}: ${esc(s.t)}">${k + 1}</button>`).join("")}</div></div>
@@ -689,8 +669,11 @@ views.guida = async (el) => {
       <div class="row">${i > 0 ? `<button class="btn ghost" id="prev" style="flex:1">Indietro</button>` : ""}${i < GUIDE.length - 1 ? `<button class="btn primary" id="next" style="flex:2">Avanti</button>` : ""}</div>
       <a class="small center" style="display:block" href="${GITHUB_URL}/blob/main/docs/SETUP.md" target="_blank" rel="noopener">Guida completa su GitHub</a>`;
     el.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => { i = Number(b.dataset.go); draw(); window.scrollTo(0, 0); }));
-    el.querySelectorAll("[data-copy]").forEach((b) => (b.onclick = () => copyText(b.dataset.copy, "Indirizzo copiato")));
-    const cc = $("#copyCode"); if (cc) cc.onclick = () => copyText(c.code, "Codice copiato");
+    const cl = $("#copyLink");
+    if (cl) cl.onclick = async () => {
+      try { const r = await api("/api/collegamento"); await copyText(r.link, "Link copiato: ora tocca ②"); cl.textContent = "① Link copiato ✓"; }
+      catch (e) { toast(e.message); }
+    };
     const p = $("#prev"); if (p) p.onclick = () => { i--; draw(); window.scrollTo(0, 0); };
     const n = $("#next"); if (n) n.onclick = () => { i++; draw(); window.scrollTo(0, 0); };
     const v = $("#verify");
@@ -702,7 +685,7 @@ views.guida = async (el) => {
         const min = last ? (Date.now() - Date.parse(last.received)) / 60000 : Infinity;
         out.innerHTML = last && min < 30
           ? `<span class="good"><b>Funziona!</b></span> Ultimo invio ${ago(last.received)} (${last.righe} righe). Vai avanti.`
-          : `<span class="bad"><b>Non ancora.</b></span> ${last ? `L'ultimo invio è di ${ago(last.received)}.` : "Nessun invio ricevuto."} Controlla che il comando sia finito senza errori e che indirizzo e codice siano giusti (passo 5).`;
+          : `<span class="bad"><b>Non ancora.</b></span> ${last ? `L'ultimo invio è di ${ago(last.received)}.` : "Nessun invio ricevuto."} Controlla che il comando sia finito senza errori. Se ha dato errore 401, il link non è giusto: rifai il passo 2.`;
       } catch (e) { out.textContent = e.message; }
     };
   };
@@ -788,7 +771,7 @@ views.benvenuto = async (el) => {
       <div style="font-size:48px;font-weight:900;letter-spacing:-1.5px">kairo<span style="color:var(--orange)">.</span></div>
       <div class="muted" style="max-width:300px;line-height:1.5">Ogni giorno parte da come hai recuperato.</div>${bean(82, 120)}</div>
     <div class="card col" style="gap:12px"><div class="h2">Crea il tuo codice di accesso</div>
-      <div class="small" style="line-height:1.5;color:var(--text)">Questo server è nuovo. Scegli un codice (almeno 8 caratteri): servirà all'app e al comando HealthSync. Salvalo in un posto sicuro, per esempio nel portachiavi.</div>
+      <div class="small" style="line-height:1.5;color:var(--text)">Benvenuto! Scegli un codice di almeno 8 caratteri: ti servirà per aprire Kairo su iPhone e PC. Salvalo nel portachiavi o in Note.</div>
       <label class="field">Codice<input class="input" id="c1" type="password" autocomplete="new-password" minlength="8"></label>
       <label class="field">Ripeti il codice<input class="input" id="c2" type="password" autocomplete="new-password"></label>
       <button class="btn primary" id="go">Crea e continua</button><div id="msg" class="small bad"></div></div>`;
@@ -803,13 +786,12 @@ views.benvenuto = async (el) => {
 
 views.accesso = async (el) => {
   el.innerHTML = `<div class="col center" style="gap:12px;padding-top:30px">${ico.sun(80)}<div style="font-size:42px;font-weight:900;letter-spacing:-1px">kairo<span style="color:var(--orange)">.</span></div></div>
-    <div class="card col" style="gap:12px"><div class="h2">Accedi</div>
-      <label class="field">Indirizzo del server<input class="input" id="srv" value="${esc(cfg().server)}" inputmode="url" autocomplete="off"><span class="hint">Di solito è già giusto: è l'indirizzo di questa pagina.</span></label>
+    <div class="card col" style="gap:12px"><div class="h2">Accedi</div><div class="small muted">Inserisci il codice di accesso che hai creato la prima volta.</div>
       <label class="field">Codice di accesso<input class="input" id="code" type="password" autocomplete="current-password"></label>
       <button class="btn primary" id="go">Entra</button><div id="msg" class="small bad"></div>
       <a class="small" href="${GITHUB_URL}#readme" target="_blank" rel="noopener">Non hai ancora un server? Leggi come crearlo</a></div>`;
   $("#go").onclick = async () => {
-    store.set("server", $("#srv").value.trim().replace(/\/$/, "")); store.set("code", $("#code").value.trim());
+    store.set("code", $("#code").value.trim());
     try {
       const info = await api("/api/info");
       if (info.setup_richiesto) return route("benvenuto");
@@ -818,19 +800,37 @@ views.accesso = async (el) => {
   };
 };
 
+function validKey(v) {
+  const k = String(v || "").trim();
+  if (!k) return true;
+  if (!/^gsk_[A-Za-z0-9]{20,}$/.test(k)) { toast("La chiave Groq inizia con gsk_ e non ha spazi: ricopiala per intero."); return false; }
+  return true;
+}
+
 views["configura-ia"] = async (el) => {
   store.set("groqAsked", true);
-  el.innerHTML = `${header("Il tuo coach IA", { gear: false })}
+  el.innerHTML = `${header("Coach IA", { gear: false, sub: "Facoltativo · 2 minuti" })}
     <div class="card col" style="gap:12px">
-      <div style="line-height:1.5;color:var(--text)">Kairo usa <b>Groq</b>, gratuito e velocissimo (circa 1.000 richieste al giorno). Crea una chiave su <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a> e incollala qui. Resta solo su questo dispositivo.</div>
-      <label class="field">Chiave API Groq<input class="input" id="gk" type="password" placeholder="gsk_…" autocomplete="off"></label>
+      <div style="line-height:1.55;color:var(--text)">Il coach funziona già, con un modello gratuito di Cloudflare. Con una chiave <b>Groq</b> (gratis) diventa più preciso e veloce.</div>
+      <ol class="steps"><li>Apri <a href="https://console.groq.com/keys" target="_blank" rel="noopener"><b>console.groq.com/keys</b></a> e accedi (anche con Google).</li>
+        <li>Tocca <b>Create API Key</b>, scrivi un nome qualsiasi (es. Kairo) e conferma.</li>
+        <li>Tocca <b>Copy</b>, torna qui e incolla la chiave (inizia con <span class="code">gsk_</span>).</li></ol>
+      <label class="field">Chiave Groq<input class="input" id="gk" type="password" placeholder="gsk_…" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
       <button class="btn primary" id="save">Salva e prova</button>
-      <button class="btn ghost" id="skip">Salta: uso il modello gratuito di Cloudflare</button>
-      <div id="out" class="small muted"></div></div>`;
+      <div id="out" class="small" style="line-height:1.5"></div>
+      <button class="btn ghost" id="skip">Lo faccio dopo</button></div>
+    <div class="small muted center">La chiave resta solo su questo dispositivo. Puoi cambiarla in Impostazioni.</div>`;
   $("#save").onclick = async () => {
-    store.set("groqKey", $("#gk").value.trim()); $("#out").textContent = "Provo la connessione…";
-    try { const r = await api("/api/ai/test", { method: "POST" }); if (r.errore) { $("#out").textContent = r.errore; return; } route("guida"); }
-    catch (e) { $("#out").textContent = e.message; }
+    const k = $("#gk").value.trim();
+    if (!k) return ($("#out").textContent = "Incolla prima la chiave, oppure tocca «Lo faccio dopo».");
+    if (!validKey(k)) return;
+    store.set("groqKey", k); $("#out").textContent = "Provo la connessione…";
+    try {
+      const r = await api("/api/ai/test", { method: "POST" });
+      if (r.errore) { $("#out").innerHTML = `<span class="bad">${esc(r.errore)}</span>`; return; }
+      if (r.provider !== "groq") { $("#out").innerHTML = `<span class="bad">Groq non ha risposto${r.avviso ? ": " + esc(r.avviso) : ""}</span>`; return; }
+      toast("Chiave Groq funzionante"); route("guida");
+    } catch (e) { $("#out").innerHTML = `<span class="bad">${esc(e.message)}</span>`; }
   };
   $("#skip").onclick = () => route("guida");
 };

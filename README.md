@@ -20,6 +20,7 @@ Open source, gratuito, i dati restano nel <i>tuo</i> account.</p>
 - **Coach IA**: consiglio del giorno e chat che risponde con i tuoi numeri
 - **Check-in in 10 secondi**: energia, indolenzimento, umore, cosa hai fatto ieri
 - **Importa da Salute**: carica l'esportazione dell'app Salute, letta sul dispositivo
+- **Aggiornamenti automatici**: la tua copia si aggiorna da sola ogni settimana
 - **Diagnostica completa**: sincronizzazione, dati ricevuti, quota IA, versioni
 - **App installabile** su iPhone e PC (PWA), funziona anche offline
 - **Costo zero**: tutto sui piani gratuiti di Cloudflare e Groq
@@ -28,7 +29,7 @@ Open source, gratuito, i dati restano nel <i>tuo</i> account.</p>
 
 ```
  ⌚ Apple Watch ──► 📱 Salute ──► Comando "HealthSync" (automatico, 2 volte al giorno)
-                                          │  POST JSON + codice di accesso
+                                          │  POST JSON sul tuo link di collegamento
                                           ▼
                         ☁️ Il TUO Cloudflare Worker (gratuito, sempre acceso)
                            ├─ 🗄️ D1: il tuo database
@@ -45,20 +46,19 @@ Open source, gratuito, i dati restano nel <i>tuo</i> account.</p>
 
 Dettagli tecnici in [docs/ARCHITETTURA.md](docs/ARCHITETTURA.md).
 
-## Installazione in 4 passi (circa 15 minuti)
+## Installazione (10 minuti, tutto gratis)
 
-Serve: un **iPhone con Apple Watch**, un account **Cloudflare** e uno **GitHub** (entrambi gratuiti). La guida completa con screenshot è in [docs/SETUP.md](docs/SETUP.md).
+Serve: un **iPhone con Apple Watch** e due account gratuiti, **[GitHub](https://github.com/signup)** e **[Cloudflare](https://dash.cloudflare.com/sign-up)**.
+
+**1. Crea il tuo server** (meglio dal PC)
 
 <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/antonuccilorenzogit/Kairo/tree/main/worker"><img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare"></a>
 
-1. **Pubblica il server.** Clicca il pulsante **Deploy to Cloudflare** qui sopra, accedi e conferma. Cloudflare crea il server, il database e ti dà un indirizzo tipo `https://kairo.tuonome.workers.dev`.
-2. **Apri l'indirizzo** dall'iPhone, crea il tuo **codice di accesso** e, se vuoi, incolla una chiave gratuita di [Groq](https://console.groq.com/keys) per il coach IA.
-3. **Installa il comando HealthSync** dalla guida dentro l'app. Durante l'importazione ti chiede indirizzo e codice. Poi crea le due automazioni (sveglia e carica) come spiegato nella guida.
-4. **Aggiungi Kairo alla schermata Home**: in Safari tocca *Condividi → Aggiungi alla schermata Home*. Su PC: Chrome o Edge → *Installa app*.
+Clicca il pulsante, accedi a Cloudflare, scegli il tuo account GitHub e premi **Deploy**. Dopo un minuto apri **Overview → Visit**: quello è l'indirizzo della tua app (tipo `https://kairo.tuonome.workers.dev`).
 
-Facoltativo ma consigliato: in *Impostazioni → Importa dati da Salute* carica l'esportazione dell'app Salute (`esportazione.zip`) per avere subito le tue medie personali. In alternativa puoi usare i 4 comandi **Storico**.
+**2. Apri l'indirizzo sull'iPhone, in Safari**, crea il tuo codice di accesso e segui la **Guida** che compare: ti accompagna passo passo (copia un link, scarica un comando, crea due automazioni).
 
-Dentro l'app c'è una **guida passo passo dalla A alla Z** (*Impostazioni → Guida*), con i pulsanti per scaricare i comandi e copiare indirizzo e codice.
+Fine. La guida dettagliata, con le soluzioni ai problemi più comuni, è in [docs/SETUP.md](docs/SETUP.md).
 
 ## Costi
 
@@ -72,7 +72,7 @@ Dentro l'app c'è una **guida passo passo dalla A alla Z** (*Impostazioni → Gu
 ## Privacy e sicurezza
 
 - I dati di salute sono salvati **solo nel tuo database Cloudflare**.
-- Il server accetta richieste solo con il tuo codice di accesso (salvato come hash SHA-256).
+- L'app si apre solo con il tuo codice di accesso (salvato come hash SHA-256). Il comando dell'iPhone usa un link di collegamento separato che può solo inviare dati, e che puoi rigenerare quando vuoi.
 - Nessun tracciamento, nessuna analytics, nessun font o script esterno: anche il font è incluso nel progetto.
 - Puoi **esportare** tutti i dati in JSON o **cancellarli** dalle Impostazioni.
 
