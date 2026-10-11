@@ -1,6 +1,7 @@
 // Daily workout recommendation (which sport, how hard, what session) and gym routines ("schede").
 // The AI proposes the session; recovery, training load and alarms set the limits; fixed rules are the fallback.
 import { ask } from "./coach.js";
+import { muscleFatigue, routineFatigue } from "./strength.js";
 
 export const INTENSITA = ["leggero", "medio", "intenso"];
 const NOMI = { palestra: "Palestra", nuoto: "Nuoto", bici: "Bici", corsa: "Corsa" };
@@ -165,7 +166,11 @@ export async function recommendWorkout(env, req, { hist, profile, profileText, s
   // next routine in rotation: the one after the last one done
   const last = await env.DB.prepare("SELECT workout FROM sets WHERE workout IS NOT NULL AND workout != '' ORDER BY start DESC LIMIT 1").first();
   const idx = last ? schede.findIndex((s) => s.nome === last.workout) : -1;
-  const prossimaScheda = schede.length ? schede[(idx + 1) % schede.length] : null;
+  // next routine: rotation order, but skip routines whose muscles are still tired (fatigue per muscle group)
+  const fat = await muscleFatigue(env.DB);
+  const order = schede.map((_, i) => schede[(idx + 1 + i) % schede.length]);
+  const prossimaScheda = order.length ? order.reduce((best, s) => (routineFatigue(s, fat) < routineFatigue(best, fat) - 0.5 ? s : best), order[0]) : null;
+  const stanchi = fat.filter((f) => f.stato !== "fresco").map((f) => `${f.muscolo} ${f.stato}`).join(", ");
   const ctx = { scelta, perche: scelta.perche, prossimaScheda };
 
   const c = today.carico || {};
@@ -176,6 +181,7 @@ export async function recommendWorkout(env, req, { hist, profile, profileText, s
 - ${today.allarme ? `ALLARME: ${today.allarme.titolo}.` : "Nessun allarme."}
 - Sport che pratica (puoi proporre SOLO questi): ${sports.join(", ")}.
 - Ultimi giorni:\n${giorni}
+- Muscoli ancora affaticati dalle ultime sedute: ${stanchi || "nessuno"}${stanchi ? " (non proporre sedute che li caricano di nuovo)" : ""}.
 - Schede di palestra: ${schede.length ? schede.map((s) => `${s.nome} (${s.esercizi.map((e) => e.nome).slice(0, 6).join(", ")})`).join("; ") : "nessuna"}${prossimaScheda ? `; la prossima in rotazione è "${prossimaScheda.nome}"` : ""}.
 - Proposta calcolata dalle regole: ${scelta.sport}, intensità ${scelta.intensita}.${exclude ? ` L'utente ha chiesto un'alternativa a ${exclude}: non proporre ${exclude}.` : ""}
 

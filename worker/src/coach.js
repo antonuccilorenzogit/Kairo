@@ -2,7 +2,7 @@
 // Primary provider: Groq (key sent by the device on every request, never stored here).
 // Fallback: Cloudflare Workers AI (free daily allowance, no key needed).
 import { computeHistory } from "./metrics.js";
-import { strengthSummary } from "./strength.js";
+import { strengthSummary, muscleFatigue } from "./strength.js";
 import { MEMORY_RULES, applyTags } from "./memory.js";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
@@ -67,6 +67,9 @@ async function buildSummary(db, today, hist) {
   try {
     const fs = await strengthSummary(db, today);
     if (fs.esercizi.length) forza = "Forza (massimale stimato, Epley): " + fs.esercizi.slice(0, 4).map((e) => `${e.esercizio} ${r1(e.max_4_settimane ?? e.record, 1)} kg${e.max_4_precedenti ? ` (4 settimane prima ${r1(e.max_4_precedenti, 1)})` : ""}${e.settimane_dal_record >= 4 ? `, nessun record da ${e.settimane_dal_record} settimane` : ""}`).join("; ") + `. Serie per settimana (ultime 8): ${fs.serie_per_settimana.join(", ")}.`;
+    const mf = await muscleFatigue(db);
+    const st = mf.filter((f) => f.stato !== "fresco"), lo = mf.filter((f) => f.volume === "basso"), hi = mf.filter((f) => f.volume === "alto");
+    if (mf.length) forza += ` Fatica per muscolo: ${st.length ? st.map((f) => `${f.muscolo} ${f.stato}`).join(", ") : "tutti freschi"}. Serie negli ultimi 7 giorni (consigliato 10-20 per muscolo): ${mf.map((f) => `${f.muscolo} ${f.serie_7g}`).join(", ")}${lo.length ? `; volume basso per ${lo.map((f) => f.muscolo).join(", ")}` : ""}${hi.length ? `; volume alto per ${hi.map((f) => f.muscolo).join(", ")}` : ""}.`;
   } catch (_) {}
   const lines = [
     forza,

@@ -3,7 +3,7 @@
 import { computeDay, computeHistory, mergeStages } from "./metrics.js";
 import { ensureSchema, SCHEMA_VERSION } from "./schema.js";
 import { dailyAdvice, chat, testAI, groqModels, weeklyCoach, DEFAULT_GROQ_MODEL, FALLBACK_MODEL } from "./coach.js";
-import { saveSets, strengthSummary } from "./strength.js";
+import { saveSets, strengthSummary, muscleFatigue } from "./strength.js";
 import { weeklyReport } from "./report.js";
 import { recommendWorkout, getSchede, saveSchede, lastSets, schedeFromText } from "./workout.js";
 import { sha256, safeEqual, clientIp, lockedFor, recordFailure, clearFailures, pruneFailures, codeProblem } from "./security.js";
@@ -349,7 +349,7 @@ async function api(req, env, url) {
       if (b.errore) return json({ errore: b.errore }, 400);
       return json({ ok: true, ...(await saveSets(env.DB, b.payload.serie)) });
     }
-    return json(await strengthSummary(env.DB, todayLocal(tz)));
+    return json({ ...(await strengthSummary(env.DB, todayLocal(tz))), muscoli: await muscleFatigue(env.DB) });
   }
   if (p === "/api/corpo") {
     // Body page: measurements grouped per day, VO2max history, resting and walking heart rate per day

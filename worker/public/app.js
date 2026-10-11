@@ -887,6 +887,13 @@ views.palestra = async (el) => {
     : `<div class="card col" style="gap:10px"><div class="h2">Nessuna scheda</div><div class="small" style="line-height:1.5;color:var(--text)">Descrivi al coach i tuoi allenamenti (es. «Lunedì: panca 4x8-10, croci 3x12…») e compila lui le schede. Oppure creale a mano.</div>
       <button class="btn primary" id="aiSchede2">✨ Crea le schede con il coach</button><a class="btn ghost" href="#/scheda?id=nuova">Crea a mano</a></div>`;
   if (schede.length) html += `<a class="btn ghost" href="#/scheda?id=nuova">+ Nuova scheda</a>`;
+  // fatigue per muscle group: what is still tired and weekly volume (10-20 sets per muscle)
+  if (forza && forza.muscoli?.length) {
+    const ST = { stanco: "err", "in recupero": "warn", fresco: "ok" };
+    html += `<div class="card col" style="gap:8px"><div class="row between"><div class="label">Muscoli</div><span class="small muted">serie in 7 giorni</span></div>
+      <div class="list">${forza.muscoli.map((m) => `<div class="item"><span class="row" style="gap:10px"><span class="status-dot ${ST[m.stato]}"></span><span style="text-transform:capitalize">${esc(m.muscolo)}</span><span class="small muted" style="font-weight:600">${esc(m.stato)}</span></span><span class="small ${m.volume === "giusto" ? "muted" : "mid"}" style="font-weight:700">${m.serie_7g}${m.volume !== "giusto" ? ` · ${m.volume}` : ""}</span></div>`).join("")}</div>
+      <div class="small muted" style="line-height:1.45">Stanco = allenato nelle ultime 24–48 ore: l'allenamento del giorno sceglie la scheda con i muscoli più freschi. Per crescere servono circa 10–20 serie a settimana per muscolo.</div></div>`;
+  }
   // progress of the main lifts
   if (forza && forza.esercizi.length) {
     const maxSets = Math.max(1, ...forza.serie_per_settimana);

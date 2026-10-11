@@ -55,3 +55,51 @@ export async function strengthSummary(db, today) {
   for (const v of vol.results) { const w = Math.floor(daysAgo(v.d) / 7); if (w >= 0 && w < 8) weeks[7 - w] += v.n; }
   return { esercizi: list.slice(0, 6), serie_per_settimana: weeks, ultima_seduta: r.results.length ? r.results[r.results.length - 1].start : null };
 }
+
+// ---------- fatigue per muscle group ----------
+// Exercise name → muscles worked (primary first). Italian and English names, the most common gym exercises.
+const MUSCLE_MAP = [
+  [/stacc|deadlift|rdl|good morning/i, ["femorali", "glutei", "schiena"]],
+  [/squat|pressa|leg press|affond|lunge|hack|bulgar|step.?up/i, ["quadricipiti", "glutei"]],
+  [/leg ext|estension.*gamb|quadricip/i, ["quadricipiti"]],
+  [/leg curl|curl.*gamb|femoral|nordic/i, ["femorali"]],
+  [/hip thrust|ponte|glute|abdu|kickback/i, ["glutei"]],
+  [/polpacc|calf|punte/i, ["polpacci"]],
+  [/panca|bench|chest press|pettoral|croci|fly|dip|piegament|push.?up/i, ["petto", "tricipiti", "spalle"]],
+  [/lento|military|overhead|shoulder press|alzat|lateral|face pull|deltoid|spall|arnold/i, ["spalle"]],
+  [/trazion|pull.?up|chin|lat|pulldown|rematore|row|pulley|dorsal|schiena/i, ["schiena", "bicipiti"]],
+  [/curl|bicipit|hammer/i, ["bicipiti"]],
+  [/french|tricipit|push.?down|skull|kick.?back.*tric|estension.*tric/i, ["tricipiti"]],
+  [/crunch|plank|addom|abs|core|russian|leg raise|ab wheel/i, ["addome"]],
+];
+export function musclesOf(name) {
+  for (const [re, m] of MUSCLE_MAP) if (re.test(name)) return m;
+  return [];
+}
+
+// For each muscle: recent fatigue (hard sets in the last 72 h, decaying: <24 h ×1, 24-48 h ×0.6, 48-72 h ×0.3)
+// and weekly volume (sets in 7 days, secondary muscles count half) vs the 10-20 sets/week range (Schoenfeld 2017).
+export async function muscleFatigue(db, nowMs = Date.now()) {
+  const since = new Date(nowMs - 7 * 86400e3).toISOString().slice(0, 10);
+  const r = await db.prepare("SELECT start, exercise, count(*) n FROM sets WHERE start >= ? AND (set_type IS NULL OR set_type != 'warmup') GROUP BY start, exercise").bind(since).all();
+  const out = {};
+  for (const x of r.results) {
+    const ms = musclesOf(x.exercise); if (!ms.length) continue;
+    const h = (nowMs - Date.parse(x.start)) / 36e5;
+    const w = h < 24 ? 1 : h < 48 ? 0.6 : h < 72 ? 0.3 : 0;
+    ms.forEach((m, i) => {
+      const o = (out[m] ||= { muscolo: m, fatica: 0, serie_7g: 0 });
+      const k = i === 0 ? 1 : 0.5;
+      o.fatica += x.n * k * w; o.serie_7g += x.n * k;
+    });
+  }
+  return Object.values(out).map((o) => ({ ...o, fatica: Math.round(o.fatica * 10) / 10, serie_7g: Math.round(o.serie_7g),
+    stato: o.fatica >= 6 ? "stanco" : o.fatica >= 2.5 ? "in recupero" : "fresco",
+    volume: o.serie_7g < 10 ? "basso" : o.serie_7g > 20 ? "alto" : "giusto" })).sort((a, b) => b.fatica - a.fatica);
+}
+// How tired a routine's muscles are (to pick the best routine for today).
+export const routineFatigue = (scheda, fat) => {
+  const by = Object.fromEntries(fat.map((f) => [f.muscolo, f.fatica]));
+  const ms = [...new Set(scheda.esercizi.flatMap((e) => musclesOf(e.nome).slice(0, 1)))];
+  return ms.length ? ms.reduce((a, m) => a + (by[m] || 0), 0) / ms.length : 0;
+};
