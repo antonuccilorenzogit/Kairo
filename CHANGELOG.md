@@ -2,6 +2,23 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [Non pubblicato]
+
+### Aggiunto
+- **Pagina Corpo**: composizione corporea, qualità del cambiamento (ricomposizione, definizione…), "Motore" con VO₂max, età del cuore e frequenza cardiaca, diario e confronto di due misure.
+- Profilo con età e sesso (per età del cuore e riferimenti).
+- **Backup automatici** ogni settimana e prima di ogni cancellazione (ultime 8 copie), con download e **ripristino** dalle Impostazioni.
+- **23 test automatici** e controllo su GitHub a ogni modifica.
+
+### Migliorato
+- **Calcoli basati su metodi pubblicati**: Recupero con la struttura della Readiness di Oura e l'HRV secondo Plews/HRV4Training (media 7 giorni, normal range a 60 giorni); punteggio del sonno con le soglie AASM/NSF e il Sleep Regularity Index; VO₂max con le tabelle della Cooper Institute ed età del cuore come Garmin; riferimenti AHA, ACE e OMS. Nuova scheda "Come si calcola?".
+- **Sicurezza**: blocco dopo 5 tentativi sbagliati (15 minuti, poi sempre più a lungo), confronti a tempo costante, codici di almeno 10 caratteri, link di collegamento più lungo con contatore separato, validazione di tutti i dati in ingresso, limiti di dimensione, niente CORS, Content-Security-Policy e altri header di sicurezza.
+- **Niente doppioni**: misure con chiave sull'istante (anche con fusi orari diversi), totali giornalieri che non si sommano tra più invii, sonno di più fonti fuso in un'unica linea temporale.
+- L'aggiornamento automatico aggiorna anche la configurazione (backup e cron), mantenendo il nome del progetto.
+
+### Corretto
+- Cambiando scheda velocemente una pagina lenta poteva sovrascrivere quella nuova.
+
 ## [1.3.0] — 2026-10-11
 
 ### Migliorato

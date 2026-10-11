@@ -72,7 +72,10 @@ Fine. La guida dettagliata, con le soluzioni ai problemi più comuni, è in [doc
 ## Privacy e sicurezza
 
 - I dati di salute sono salvati **solo nel tuo database Cloudflare**.
-- L'app si apre solo con il tuo codice di accesso (salvato come hash SHA-256). Il comando dell'iPhone usa un link di collegamento separato che può solo inviare dati, e che puoi rigenerare quando vuoi.
+- L'app si apre solo con il tuo codice di accesso (salvato come hash SHA-256). Dopo 5 tentativi sbagliati l'accesso si blocca per 15 minuti, poi sempre più a lungo.
+- Il comando dell'iPhone usa un link di collegamento separato che può solo inviare dati, e che puoi rigenerare quando vuoi.
+- Solo dati validi e plausibili entrano nel database, e **niente viene contato due volte**, anche se lo stesso dato arriva più volte o da più fonti.
+- **Backup automatici** ogni settimana e prima di ogni cancellazione; puoi scaricarli e ripristinarli dalle Impostazioni.
 - Nessun tracciamento, nessuna analytics, nessun font o script esterno: anche il font è incluso nel progetto.
 - Puoi **esportare** tutti i dati in JSON o **cancellarli** dalle Impostazioni.
 

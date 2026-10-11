@@ -55,8 +55,39 @@ async function load(db, from, to) {
   return { samples, sleepRows: r[1].results, daily, checkin };
 }
 
+// Le fasi possono arrivare da più fonti (Watch, iPhone, altre app) e sovrapporsi: le fondo in una
+// sola linea temporale senza sovrapposizioni, così ogni minuto conta una volta sola. Dove le fonti
+// si sovrappongono vince la fase più informativa: profondo/REM/leggero > sonno generico > sveglio > a letto.
+const PRIORITY = { deep: 6, rem: 5, core: 4, asleep: 3, awake: 2, inbed: 1 };
+export function mergeStages(rows) {
+  const iv = rows.map((r) => ({ s: t(r.start), e: t(r.end), stage: r.stage, start: r.start, end: r.end }))
+    .filter((x) => Number.isFinite(x.s) && Number.isFinite(x.e) && x.e > x.s);
+  if (!iv.length) return [];
+  const cuts = [...new Set(iv.flatMap((x) => [x.s, x.e]))].sort((a, b) => a - b);
+  // ISO string (con il fuso originale) per ogni istante di taglio
+  const isoAt = new Map();
+  for (const x of iv) { isoAt.set(x.s, x.start); isoAt.set(x.e, x.end); }
+  iv.sort((a, b) => a.s - b.s);
+  const out = [];
+  let k = 0;
+  const active = [];
+  for (let i = 0; i < cuts.length - 1; i++) {
+    const a = cuts[i], b = cuts[i + 1];
+    while (k < iv.length && iv[k].s <= a) active.push(iv[k++]);
+    for (let j = active.length - 1; j >= 0; j--) if (active[j].e <= a) active.splice(j, 1);
+    let best = null;
+    for (const x of active) if (x.s <= a && x.e >= b && (!best || PRIORITY[x.stage] > PRIORITY[best])) best = x.stage;
+    if (!best) continue;
+    const last = out[out.length - 1];
+    if (last && last.stage === best && last.endMs === a) { last.end = isoAt.get(b); last.endMs = b; }
+    else out.push({ start: isoAt.get(a), end: isoAt.get(b), stage: best, startMs: a, endMs: b });
+  }
+  return out.map(({ start, end, stage }) => ({ start, end, stage }));
+}
+
 // Raggruppa le fasi in sessioni di sonno e le assegna al giorno del risveglio
-function buildSessions(rows) {
+function buildSessions(rawRows) {
+  const rows = mergeStages(rawRows);
   const sessions = [];
   let cur = null;
   for (const r of rows) {

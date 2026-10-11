@@ -51,6 +51,13 @@ La pagina *Impostazioni → Diagnostica* ti dice se c'è una versione nuova.
 
 ---
 
+## Backup
+
+Kairo salva da solo una copia dei tuoi dati **ogni lunedì** e **prima di ogni cancellazione**, e tiene le ultime 8. In *Impostazioni → Backup* puoi:
+- **Backup ora**: crea subito una copia;
+- toccare un backup per **scaricarlo** (file `.json.gz`, da tenere anche sul PC o su iCloud);
+- **Ripristina**: scegli un backup o un'esportazione JSON. I dati vengono aggiunti a quelli presenti, senza doppioni.
+
 ## Problemi frequenti
 
 | Cosa vedi | Cosa fare |
@@ -61,6 +68,8 @@ La pagina *Impostazioni → Diagnostica* ti dice se c'è una versione nuova.
 | *"Nessun campione di dati trovato"* | App Salute → foto → *App* → *Comandi* → attiva tutto |
 | La chiave Groq dà errore | Ricopiala per intero da console.groq.com: inizia con `gsk_` e non ha spazi. Oppure salta il passo, il coach funziona lo stesso |
 | *"Il server ha risposto in modo inatteso"* | Ricarica la pagina; se continua apri *Impostazioni → Diagnostica* e copia il report |
+| *"Troppi tentativi sbagliati"* | hai sbagliato il codice 5 volte: aspetta il tempo indicato (dalla stessa rete) e riprova con il codice giusto |
+| *"Backup automatici non attivi"* | la tua copia è stata installata prima della 1.4: l'aggiornamento automatico del lunedì li attiva da solo |
 | Lo score resta "in calibrazione" | Servono almeno 5 notti con il Watch, oppure importa lo storico da Salute |
 | "Ultimo invio" vecchio in Diagnostica | In *Comandi → Automazione* controlla che le due automazioni siano attive e su *Esegui immediatamente* |
 

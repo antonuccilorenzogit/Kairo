@@ -1,37 +1,39 @@
 // Kairo server — receives HealthSync data, stores it in D1, computes recovery & sleep,
 // talks to the AI coach and serves the web app (static assets in /public).
-import { computeDay, computeHistory } from "./metrics.js";
+import { computeDay, computeHistory, mergeStages } from "./metrics.js";
 import { ensureSchema, SCHEMA_VERSION } from "./schema.js";
 import { dailyAdvice, chat, testAI, groqModels, DEFAULT_GROQ_MODEL, FALLBACK_MODEL } from "./coach.js";
+import { sha256, safeEqual, clientIp, lockedFor, recordFailure, clearFailures, pruneFailures, codeProblem } from "./security.js";
+import { parsePayload, cleanCheckin, MAX_BODY_BYTES } from "./validate.js";
+import { exportData, createBackup, listBackups, readBackup, restoreData, gunzip } from "./backup.js";
 
-const VERSION = "1.3.0";
-// Metrics that arrive already summed per day / per hour
-const DAILY = new Set(["passi", "kcal_attive", "kcal_riposo", "dist_piedi", "piani", "dist_bici",
-  "dist_nuoto", "bracciate", "kcal_cibo", "proteine", "carboidrati", "grassi", "acqua"]);
-const HOURLY = new Set(["kcal_ora"]);
+const VERSION = "1.4.0";
 
-const CORS = {
-  "access-control-allow-origin": "*",
-  "access-control-allow-headers": "authorization,content-type,x-groq-key,x-groq-model",
-  "access-control-allow-methods": "GET,POST,DELETE,OPTIONS",
-};
-const json = (data, status = 200) => new Response(JSON.stringify(data), {
-  status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...CORS },
+// No CORS headers: only the Kairo app (same origin) and the Shortcuts app (not a browser) talk to the API.
+const json = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), {
+  status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", ...extra },
 });
-
-async function sha256(text) {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
 const getSetting = async (db, key) => (await db.prepare("SELECT value FROM settings WHERE key = ?").bind(key).first())?.value ?? null;
 const setSetting = (db, key, value) => db.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(key, value).run();
+
+// Reads a JSON body with a size limit; returns undefined when it is missing or invalid.
+async function readJson(req, limit = 256 * 1024) {
+  const len = Number(req.headers.get("content-length") || 0);
+  if (len > limit) return { __troppo: true };
+  const text = await req.text().catch(() => "");
+  if (text.length > limit) return { __troppo: true };
+  try { return JSON.parse(text); } catch { return undefined; }
+}
 
 // Sync link: a random token that only allows sending data (used by the HealthSync shortcut).
 async function syncToken(db, rotate = false) {
   let t = rotate ? null : await getSetting(db, "sync_token");
   if (!t) {
     const abc = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
-    t = [...crypto.getRandomValues(new Uint8Array(24))].map((b) => abc[b % abc.length]).join("");
+    // rejection sampling: every character equally likely
+    const out = [];
+    while (out.length < 32) for (const b of crypto.getRandomValues(new Uint8Array(48))) if (b < 228 && out.length < 32) out.push(abc[b % 57]);
+    t = out.join("");
     await setSetting(db, "sync_token", t);
   }
   return t;
@@ -41,66 +43,48 @@ function bearer(req) {
   const h = req.headers.get("authorization") || "";
   return h.startsWith("Bearer ") ? h.slice(7).trim() : "";
 }
-async function authorized(req, env) {
+// "ok" | "missing" | "wrong"
+async function checkCode(req, env) {
   const token = bearer(req);
-  if (!token) return false;
-  if (env.API_KEY && token === env.API_KEY) return true; // optional secret set with wrangler
+  if (!token) return "missing";
+  if (env.API_KEY && safeEqual(token, env.API_KEY)) return "ok"; // optional secret set with wrangler
   const hash = await getSetting(env.DB, "access_hash");
-  return !!hash && (await sha256(token)) === hash;
+  return hash && safeEqual(await sha256(token), hash) ? "ok" : "wrong";
 }
+const locked = (sec) => json({ errore: `Troppi tentativi sbagliati: riprova tra ${Math.ceil(sec / 60)} minuti.`, bloccato_per_s: sec }, 429, { "retry-after": String(sec) });
 
-// Sleep stage names arrive in the phone's language: map them to stable codes.
-function stageCode(s) {
-  const t = (s || "").toLowerCase().trim();
-  if (t.includes("profond") || t.includes("deep") || t.includes("tief") || t.includes("profund")) return "deep";
-  if (t.includes("rem")) return "rem";
-  if (t.includes("principal") || t.includes("core") || t.includes("leggero") || t.includes("kern") || t.includes("básico")) return "core";
-  if (t.includes("veglia") || t.includes("sveglio") || t.includes("awake") || t.includes("wach") || t.includes("despierto")) return "awake";
-  if (t.includes("letto") || t.includes("bed") || t.includes("bett") || t.includes("cama")) return "inbed";
-  return "asleep";
-}
-
-const split = (s) => (s ? String(s).split(";").map((x) => x.trim()).filter((x) => x !== "") : []);
-const num = (s) => Number(String(s).replace(",", "."));
-
+// Writes validated rows. Every table has a natural key, so sending the same data again
+// (or overlapping periods) never creates duplicates.
 async function ingest(payload, env) {
-  const stmts = [];
-  const keys = new Set(Object.keys(payload).filter((k) => k.endsWith("_valori")).map((k) => k.slice(0, -7)));
-  for (const key of keys) {
-    const vals = split(payload[`${key}_valori`]);
-    const dates = split(payload[`${key}_date`]);
-    const ends = split(payload[`${key}_fine`]);
-    const n = Math.min(vals.length, dates.length);
-    for (let i = 0; i < n; i++) {
-      const ts = dates[i];
-      if (key === "sonno") {
-        if (!ends[i]) continue;
-        stmts.push(env.DB.prepare("INSERT INTO sleep(start,end,stage) VALUES(?,?,?) ON CONFLICT(start) DO UPDATE SET end=excluded.end, stage=excluded.stage")
-          .bind(ts, ends[i], stageCode(vals[i])));
-        continue;
-      }
-      const v = num(vals[i]);
-      if (!Number.isFinite(v)) continue;
-      if (DAILY.has(key)) {
-        if (v === 0) continue; // Shortcuts fills days without data with 0
-        stmts.push(env.DB.prepare("INSERT INTO daily(metric,day,value) VALUES(?,?,?) ON CONFLICT(metric,day) DO UPDATE SET value=max(value,excluded.value)")
-          .bind(key, ts.slice(0, 10), v));
-      } else if (HOURLY.has(key)) {
-        stmts.push(env.DB.prepare("INSERT INTO hourly(metric,hour,value) VALUES(?,?,?) ON CONFLICT(metric,hour) DO UPDATE SET value=max(value,excluded.value)")
-          .bind(key, ts.slice(0, 13), v));
-      } else {
-        stmts.push(env.DB.prepare("INSERT INTO samples(metric,ts,value) VALUES(?,?,?) ON CONFLICT(metric,ts) DO UPDATE SET value=excluded.value")
-          .bind(key, ts, v));
-      }
-    }
-  }
-  for (let i = 0; i < stmts.length; i += 400) await env.DB.batch(stmts.slice(i, i + 400));
-  await env.DB.prepare("INSERT INTO imports(received,modulo,esportato,righe,versione) VALUES(?,?,?,?,?)")
-    .bind(new Date().toISOString(), payload.modulo || null, payload.esportato || null, stmts.length, payload.versione || null).run();
-  return stmts.length;
+  const db = env.DB, rows = parsePayload(payload), stmts = [];
+  for (const [m, ts, t, v] of rows.samples) stmts.push(db.prepare("INSERT OR REPLACE INTO samples(metric,ts,t,value) VALUES(?,?,?,?)").bind(m, ts, t, v));
+  // daily and hourly totals arrive already summed by Health: keep the highest value seen (a day only grows)
+  for (const [m, d, v] of rows.daily) stmts.push(db.prepare("INSERT INTO daily(metric,day,value) VALUES(?,?,?) ON CONFLICT(metric,day) DO UPDATE SET value=max(value,excluded.value)").bind(m, d, v));
+  for (const [m, h, v] of rows.hourly) stmts.push(db.prepare("INSERT INTO hourly(metric,hour,value) VALUES(?,?,?) ON CONFLICT(metric,hour) DO UPDATE SET value=max(value,excluded.value)").bind(m, h, v));
+  for (const [s, e, st] of rows.sleep) stmts.push(db.prepare("INSERT OR IGNORE INTO sleep(start,end,stage) VALUES(?,?,?)").bind(s, e, st));
+  for (let i = 0; i < stmts.length; i += 400) await db.batch(stmts.slice(i, i + 400));
+  const clip = (x, n) => (x == null ? null : String(x).slice(0, n));
+  await db.prepare("INSERT INTO imports(received,modulo,esportato,righe,versione) VALUES(?,?,?,?,?)")
+    .bind(new Date().toISOString(), clip(payload?.modulo, 60), clip(payload?.esportato, 40), stmts.length, clip(payload?.versione, 20)).run();
+  // keep the import log short
+  await db.prepare("DELETE FROM imports WHERE id <= (SELECT max(id) - 500 FROM imports)").run();
+  return { righe: stmts.length, scartati: rows.discarded, sconosciuti: rows.unknown };
 }
 
-const todayLocal = (tz) => new Intl.DateTimeFormat("sv-SE", { timeZone: tz || "Europe/Rome" }).format(new Date());
+async function readIngestBody(req) {
+  const len = Number(req.headers.get("content-length") || 0);
+  if (len > MAX_BODY_BYTES) return { errore: "Invio troppo grande: dividi i dati in più parti." };
+  const text = await req.text();
+  if (text.length > MAX_BODY_BYTES) return { errore: "Invio troppo grande: dividi i dati in più parti." };
+  try { const p = JSON.parse(text); return p && typeof p === "object" && !Array.isArray(p) ? { payload: p } : { errore: "JSON non valido" }; }
+  catch { return { errore: "JSON non valido" }; }
+}
+
+const todayLocal = (tz) => {
+  try { return new Intl.DateTimeFormat("sv-SE", { timeZone: tz || "Europe/Rome" }).format(new Date()); }
+  catch { return new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Rome" }).format(new Date()); }
+};
+const validDay = (d) => (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) && Number.isFinite(Date.parse(d)) ? d : null);
 
 async function diagnostics(env) {
   const db = env.DB;
@@ -110,7 +94,7 @@ async function diagnostics(env) {
     db.prepare("SELECT metric, count(*) n, min(day) da, max(day) a FROM daily GROUP BY metric ORDER BY metric"),
     db.prepare("SELECT count(*) n, min(start) da, max(end) a FROM sleep"),
     db.prepare("SELECT received, modulo, esportato, righe, versione FROM imports ORDER BY id DESC LIMIT 12"),
-    db.prepare("SELECT key, value FROM settings WHERE key LIKE 'ai_%' OR key = 'schema_version' OR key = 'setup_at'"),
+    db.prepare("SELECT key, value FROM settings WHERE key LIKE 'ai_%' OR key IN ('schema_version','setup_at','last_backup')"),
   ]);
   const settings = Object.fromEntries(r[5].results.map((x) => [x.key, x.value]));
   const day = new Date().toISOString().slice(0, 10);
@@ -121,6 +105,7 @@ async function diagnostics(env) {
     database: { righe: r[0].results[0], dimensione_byte: dbSize },
     metriche: r[1].results, giornaliere: r[2].results, sonno: r[3].results[0],
     importazioni: r[4].results,
+    backup: { attivo: !!env.BACKUP, ultimo: settings.last_backup ? JSON.parse(settings.last_backup) : null },
     ia: {
       groq_quota: settings.ai_quota_groq ? JSON.parse(settings.ai_quota_groq) : null,
       chiamate_oggi_groq: Number(settings[`ai_calls_groq_${day}`] || 0),
@@ -133,57 +118,76 @@ async function diagnostics(env) {
 
 async function api(req, env, url) {
   const p = url.pathname;
-  const tz = req.headers.get("x-timezone") || "Europe/Rome";
+  const tz = String(req.headers.get("x-timezone") || "Europe/Rome").slice(0, 60);
+  const ip = clientIp(req);
 
-  // Public endpoints
+  // ---- public ----
   if (p === "/api/info") {
     const hash = await getSetting(env.DB, "access_hash");
     return json({ app: "kairo", versione: VERSION, schema: SCHEMA_VERSION, setup_richiesto: !hash && !env.API_KEY });
   }
   if (p === "/api/setup" && req.method === "POST") {
-    if ((await getSetting(env.DB, "access_hash")) || env.API_KEY) return json({ errore: "Server già configurato" }, 409);
-    const { codice } = await req.json().catch(() => ({}));
-    if (!codice || String(codice).length < 8) return json({ errore: "Il codice deve avere almeno 8 caratteri" }, 400);
-    await setSetting(env.DB, "access_hash", await sha256(String(codice)));
+    const wait = await lockedFor(env.DB, ip); if (wait) return locked(wait);
+    if ((await getSetting(env.DB, "access_hash")) || env.API_KEY) { await recordFailure(env.DB, ip); return json({ errore: "Server già configurato" }, 409); }
+    const b = await readJson(req);
+    const problem = codeProblem(b?.codice);
+    if (problem) return json({ errore: problem }, 400);
+    // first come, first served: the insert only succeeds if nobody configured the server in the meantime
+    const r = await env.DB.prepare("INSERT OR IGNORE INTO settings(key,value) VALUES('access_hash',?)").bind(await sha256(String(b.codice))).run();
+    if (!r.meta?.changes) return json({ errore: "Server già configurato" }, 409);
     await setSetting(env.DB, "setup_at", new Date().toISOString());
     return json({ ok: true });
   }
 
-  // Data sent by the HealthSync shortcut through the sync link (no access code needed)
+  // ---- HealthSync shortcut: sync link (can only send data) ----
   if (p.startsWith("/api/sync/")) {
+    // separate counter: an old link in a forgotten shortcut must not lock you out of the app
+    const sip = "sync:" + ip;
+    const wait = await lockedFor(env.DB, sip); if (wait) return locked(wait);
     const tok = p.slice(10).replace(/\/+$/, "");
     const real = await getSetting(env.DB, "sync_token");
-    if (!real || tok !== real) return json({ errore: "Link di collegamento non valido: copialo di nuovo dall'app Kairo (Impostazioni)." }, 401);
+    if (!real || !safeEqual(tok, real)) {
+      const lock = await recordFailure(env.DB, sip);
+      return lock ? locked(lock) : json({ errore: "Link di collegamento non valido: copialo di nuovo dall'app Kairo (Impostazioni)." }, 401);
+    }
     if (req.method !== "POST") return json({ ok: true, app: "kairo", messaggio: "Link valido" });
-    let payload;
-    try { payload = JSON.parse(await req.text()); } catch { return json({ errore: "JSON non valido" }, 400); }
-    return json({ ok: true, righe: await ingest(payload, env) });
+    const b = await readIngestBody(req);
+    if (b.errore) return json({ errore: b.errore }, 400);
+    return json({ ok: true, ...(await ingest(b.payload, env)) });
   }
 
-  if (!(await authorized(req, env))) return json({ errore: "Codice di accesso non valido" }, 401);
+  // ---- everything else needs the access code ----
+  const wait = await lockedFor(env.DB, ip);
+  if (wait) return locked(wait);
+  const auth = await checkCode(req, env);
+  if (auth !== "ok") {
+    if (auth === "wrong") { const lock = await recordFailure(env.DB, ip); if (lock) return locked(lock); }
+    return json({ errore: "Codice di accesso non valido" }, 401);
+  }
+  await clearFailures(env.DB, ip);
+  if (Math.random() < 0.02) await pruneFailures(env.DB);
 
   if (p === "/api/collegamento") {
     const t = await syncToken(env.DB, req.method === "POST");
     return json({ link: `${url.origin}/api/sync/${t}` });
   }
-
   if (p === "/api/ingest" && req.method === "POST") {
-    let payload;
-    try { payload = JSON.parse(await req.text()); } catch { return json({ errore: "JSON non valido" }, 400); }
-    return json({ ok: true, righe: await ingest(payload, env) });
+    const b = await readIngestBody(req);
+    if (b.errore) return json({ errore: b.errore }, 400);
+    return json({ ok: true, ...(await ingest(b.payload, env)) });
   }
-  if (p === "/api/day") return json(await computeDay(env.DB, url.searchParams.get("d") || todayLocal(tz)));
+  if (p === "/api/day") return json(await computeDay(env.DB, validDay(url.searchParams.get("d")) || todayLocal(tz)));
   if (p === "/api/history") {
-    const days = Math.min(Math.max(Number(url.searchParams.get("days") || 30), 1), 400);
-    return json(await computeHistory(env.DB, url.searchParams.get("fino") || todayLocal(tz), days));
+    const days = Math.min(Math.max(Number(url.searchParams.get("days")) || 30, 1), 400);
+    return json(await computeHistory(env.DB, validDay(url.searchParams.get("fino")) || todayLocal(tz), days));
   }
   if (p === "/api/sonno") {
-    // stages of the night that ends on day `d` (from 18:00 of the previous day to 18:00 of `d`)
-    const d = url.searchParams.get("d") || todayLocal(tz);
+    // stages of the night that ends on day `d` (from 18:00 of the previous day to 18:00 of `d`), sources merged
+    const d = validDay(url.searchParams.get("d")) || todayLocal(tz);
     const prev = new Date(Date.parse(d + "T12:00:00Z") - 86400e3).toISOString().slice(0, 10);
-    const r = await env.DB.prepare("SELECT start, end, stage FROM sleep WHERE end > ? AND end <= ? ORDER BY start")
+    const r = await env.DB.prepare("SELECT start, end, stage FROM sleep WHERE end > ? AND start < ? ORDER BY start")
       .bind(prev + "T18:00", d + "T18:00").all();
-    return json(r.results);
+    return json(mergeStages(r.results).filter((x) => x.end > prev + "T18:00" && x.end <= d + "T18:00"));
   }
   if (p === "/api/corpo") {
     // Body page: measurements grouped per day, VO2max history, resting and walking heart rate per day
@@ -209,8 +213,9 @@ async function api(req, env, url) {
   }
   if (p === "/api/checkin") {
     if (req.method === "POST") {
-      const c = await req.json().catch(() => ({}));
-      const day = c.day || todayLocal(tz);
+      const c = cleanCheckin(await readJson(req), todayLocal(tz));
+      if (c.errore) return json({ errore: c.errore }, 400);
+      const day = c.day;
       await env.DB.prepare(`INSERT INTO checkin(day,energia,dolori,umore,attivita,rpe,durata_min,note,updated) VALUES(?,?,?,?,?,?,?,?,?)
         ON CONFLICT(day) DO UPDATE SET energia=excluded.energia, dolori=excluded.dolori, umore=excluded.umore, attivita=excluded.attivita,
         rpe=excluded.rpe, durata_min=excluded.durata_min, note=excluded.note, updated=excluded.updated`)
@@ -218,34 +223,51 @@ async function api(req, env, url) {
       await env.DB.prepare("DELETE FROM advice WHERE day = ?").bind(day).run(); // advice must take the check-in into account
       return json({ ok: true });
     }
-    return json(await env.DB.prepare("SELECT * FROM checkin WHERE day = ?").bind(url.searchParams.get("d") || todayLocal(tz)).first());
+    return json(await env.DB.prepare("SELECT * FROM checkin WHERE day = ?").bind(validDay(url.searchParams.get("d")) || todayLocal(tz)).first());
   }
   if (p === "/api/coach/oggi" && req.method === "POST") {
-    const b = await req.json().catch(() => ({}));
-    return json(await dailyAdvice(env, req, todayLocal(tz), !!b.forza, b.profilo || ""));
+    const b = (await readJson(req)) || {};
+    return json(await dailyAdvice(env, req, todayLocal(tz), !!b.forza, String(b.profilo || "").slice(0, 2000)));
   }
   if (p === "/api/coach/chat" && req.method === "POST") {
-    const b = await req.json().catch(() => ({}));
-    return json(await chat(env, req, todayLocal(tz), Array.isArray(b.messaggi) ? b.messaggi : [], b.profilo || ""));
+    const b = (await readJson(req, 512 * 1024)) || {};
+    return json(await chat(env, req, todayLocal(tz), Array.isArray(b.messaggi) ? b.messaggi.slice(-20) : [], String(b.profilo || "").slice(0, 2000)));
   }
   if (p === "/api/ai/test" && req.method === "POST") return json(await testAI(env, req));
   if (p === "/api/ai/modelli") return json(await groqModels(req, env));
   if (p === "/api/diagnostica") return json(await diagnostics(env));
   if (p === "/api/codice" && req.method === "POST") {
-    const { nuovo } = await req.json().catch(() => ({}));
-    if (!nuovo || String(nuovo).length < 8) return json({ errore: "Il codice deve avere almeno 8 caratteri" }, 400);
-    await setSetting(env.DB, "access_hash", await sha256(String(nuovo)));
+    const b = (await readJson(req)) || {};
+    const problem = codeProblem(b.nuovo);
+    if (problem) return json({ errore: problem }, 400);
+    await setSetting(env.DB, "access_hash", await sha256(String(b.nuovo)));
     return json({ ok: true });
   }
   if (p === "/api/export") {
-    const r = await env.DB.batch(["samples", "daily", "hourly", "sleep", "checkin", "imports"].map((t) => env.DB.prepare(`SELECT * FROM ${t}`)));
-    return new Response(JSON.stringify({ app: "kairo", versione: VERSION, esportato: new Date().toISOString(),
-      samples: r[0].results, daily: r[1].results, hourly: r[2].results, sleep: r[3].results, checkin: r[4].results, imports: r[5].results }), {
-      headers: { "content-type": "application/json", "content-disposition": `attachment; filename="kairo-export-${todayLocal(tz)}.json"`, ...CORS } });
+    return new Response(JSON.stringify(await exportData(env.DB, VERSION)), {
+      headers: { "content-type": "application/json", "cache-control": "no-store", "content-disposition": `attachment; filename="kairo-export-${todayLocal(tz)}.json"` } });
+  }
+  if (p === "/api/backup" && req.method === "GET") {
+    return json({ attivo: !!env.BACKUP, backup: await listBackups(env), ultimo: JSON.parse((await getSetting(env.DB, "last_backup")) || "null") });
+  }
+  if (p === "/api/backup" && req.method === "POST") return json(await createBackup(env, VERSION, "manuale"));
+  if (p === "/api/backup/file") {
+    const key = url.searchParams.get("chiave");
+    const bytes = await readBackup(env, key);
+    if (!bytes) return json({ errore: "Backup non trovato" }, 404);
+    const name = key.slice(7, 17);
+    return new Response(bytes, { headers: { "content-type": "application/gzip", "cache-control": "no-store", "content-disposition": `attachment; filename="kairo-backup-${name}.json.gz"` } });
+  }
+  if (p === "/api/ripristina" && req.method === "POST") {
+    const b = await readIngestBody(req);
+    if (b.errore) return json({ errore: b.errore }, 400);
+    return json(await restoreData(env.DB, b.payload));
   }
   if (p === "/api/dati" && req.method === "DELETE") {
-    const { conferma } = await req.json().catch(() => ({}));
+    const { conferma } = (await readJson(req)) || {};
     if (conferma !== "CANCELLA") return json({ errore: "Conferma mancante" }, 400);
+    // safety net: an automatic backup right before deleting everything
+    if (env.BACKUP) { const bk = await createBackup(env, VERSION, "prima della cancellazione"); if (bk.errore) return json({ errore: `Backup di sicurezza non riuscito, cancellazione annullata: ${bk.errore}` }, 500); }
     await env.DB.batch(["samples", "daily", "hourly", "sleep", "checkin", "imports", "advice"].map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
     return json({ ok: true });
   }
@@ -255,13 +277,19 @@ async function api(req, env, url) {
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
-    if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
     if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(req);
+    if (req.method === "OPTIONS") return new Response(null, { status: 204 });
     try {
       await ensureSchema(env.DB);
       return await api(req, env, url);
     } catch (e) {
-      return json({ errore: String((e && e.message) || e) }, 500);
+      console.error(e);
+      return json({ errore: "Errore interno del server. Riprova; se continua apri la Diagnostica." }, 500);
     }
+  },
+  // weekly automatic backup (cron in wrangler.toml)
+  async scheduled(event, env, ctx) {
+    await ensureSchema(env.DB);
+    ctx.waitUntil(createBackup(env, VERSION, "automatico settimanale").then((r) => r.errore && console.warn(r.errore)));
   },
 };

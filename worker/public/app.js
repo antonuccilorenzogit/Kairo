@@ -66,6 +66,7 @@ async function api(path, { method = "GET", body, raw = false } = {}) {
   }
   const data = await res.json().catch(() => ({}));
   if (res.status === 401 && path !== "/api/info") { route("accesso"); throw new ApiError(data.errore || "Codice non valido", 401); }
+  if (res.status === 429) throw new ApiError(data.errore || "Troppi tentativi: riprova più tardi.", 429);
   if (!res.ok) throw new ApiError(data.errore || `Errore ${res.status}`, res.status);
   return data;
 }
@@ -690,6 +691,11 @@ views.impostazioni = async (el) => {
       <div class="small muted">Serve per aprire Kairo su un nuovo dispositivo. Indirizzo: <span class="code">${esc(c.server)}</span></div>
       <button class="btn ghost" id="chgCode">Cambia codice</button></div>
 
+    <div class="card col" style="gap:10px"><div class="h2">Backup</div>
+      <div id="bkInfo" class="small muted" style="line-height:1.5">…</div>
+      <div class="row"><button class="btn ghost" id="bkNow" style="flex:1">Backup ora</button><label class="btn ghost" style="flex:1;cursor:pointer">Ripristina<input type="file" id="bkFile" accept=".json,.gz,application/json,application/gzip" hidden></label></div>
+      <div id="bkList" class="list"></div><div id="bkOut" class="small"></div></div>
+
     <div class="card list">
       <a class="item" href="#/diagnostica">Diagnostica ${ico.chevron}</a>
       <a class="item" href="#/guida">Guida e tutorial ${ico.chevron}</a>
@@ -730,7 +736,7 @@ views.impostazioni = async (el) => {
     try { const r = await api("/api/collegamento", { method: "POST" }); link = r.link; $("#linkBox").textContent = link; toast("Nuovo link creato"); } catch (e) { toast(e.message); }
   };
   $("#chgCode").onclick = async () => {
-    const nuovo = prompt("Nuovo codice di accesso (almeno 8 caratteri).");
+    const nuovo = prompt("Nuovo codice di accesso (almeno 10 caratteri).");
     if (!nuovo) return;
     try { await api("/api/codice", { method: "POST", body: { nuovo } }); store.set("code", nuovo); toast("Codice cambiato"); views.impostazioni(el); }
     catch (e) { toast(e.message); }
@@ -744,9 +750,60 @@ views.impostazioni = async (el) => {
       a.href = URL.createObjectURL(blob); a.download = `kairo-export-${todayStr()}.json`; a.click();
     } catch (err) { toast(err.message); }
   };
+  // ---- backup ----
+  const fmtBytes = (b) => (b > 1048576 ? `${fmtNum(b / 1048576, 1)} MB` : `${fmtNum(b / 1024, 0)} KB`);
+  const loadBackups = async () => {
+    try {
+      const r = await api("/api/backup");
+      $("#bkInfo").innerHTML = r.attivo
+        ? `Kairo salva da solo una copia dei tuoi dati <b>ogni lunedì</b> e prima di ogni cancellazione; tiene le ultime 8. ${r.ultimo ? `Ultimo: ${ago(r.ultimo.creato)}.` : "Nessun backup ancora."}`
+        : `I backup automatici non sono attivi su questo server. Puoi comunque scaricare tutti i dati da «Esporta tutti i dati» e ripristinarli da qui.`;
+      $("#bkNow").disabled = !r.attivo;
+      $("#bkList").innerHTML = r.backup.slice(0, 8).map((b) => `<a class="item" href="#" data-bk="${esc(b.chiave)}"><span>${fmtDate(b.creato.slice(0, 10), { day: "numeric", month: "short", year: "numeric" })} <span class="small muted">· ${esc(b.motivo || "")}</span></span><span class="small muted">${fmtNum(b.righe)} righe · ${fmtBytes(b.byte)} ↓</span></a>`).join("");
+      el.querySelectorAll("[data-bk]").forEach((a) => (a.onclick = async (e) => {
+        e.preventDefault();
+        try {
+          const res = await api(`/api/backup/file?chiave=${encodeURIComponent(a.dataset.bk)}`, { raw: true });
+          if (!res.ok) throw new Error("Download non riuscito");
+          const blob = await res.blob(), link = document.createElement("a");
+          link.href = URL.createObjectURL(blob); link.download = `kairo-backup-${a.dataset.bk.slice(7, 17)}.json.gz`; link.click();
+        } catch (err) { toast(err.message); }
+      }));
+    } catch (e) { $("#bkInfo").textContent = e.message; }
+  };
+  loadBackups();
+  $("#bkNow").onclick = async () => {
+    $("#bkOut").textContent = "Creo il backup…";
+    try { const r = await api("/api/backup", { method: "POST" }); $("#bkOut").innerHTML = r.errore ? `<span class="bad">${esc(r.errore)}</span>` : `<span class="good">Backup creato: ${fmtNum(r.righe)} righe.</span>`; loadBackups(); }
+    catch (e) { $("#bkOut").textContent = e.message; }
+  };
+  $("#bkFile").onchange = async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    const out = $("#bkOut");
+    try {
+      out.textContent = "Leggo il file…";
+      let text;
+      if (/\.gz$/i.test(f.name)) text = await new Response(f.stream().pipeThrough(new DecompressionStream("gzip"))).text();
+      else text = await f.text();
+      const data = JSON.parse(text);
+      if (data.app !== "kairo") throw new Error("Questo file non è un backup o un'esportazione di Kairo.");
+      const tables = ["samples", "daily", "hourly", "sleep", "checkin"];
+      const total = tables.reduce((a, t) => a + (data[t]?.length || 0), 0);
+      if (!confirm(`Ripristinare ${fmtNum(total)} righe dal ${String(data.esportato || "").slice(0, 10)}? I dati attuali restano: vengono solo aggiunti quelli mancanti.`)) { out.textContent = ""; return; }
+      let done = 0, saved = 0;
+      for (const t of tables) for (const part of chunks(data[t] || [], 3000)) {
+        const r = await api("/api/ripristina", { method: "POST", body: { app: "kairo", [t]: part } });
+        if (r.errore) throw new Error(r.errore);
+        saved += r.righe; done += part.length;
+        out.textContent = `Ripristino… ${Math.round((done / total) * 100)}%`;
+      }
+      out.innerHTML = `<span class="good">Ripristino completato: ${fmtNum(saved)} righe.</span>`;
+    } catch (err) { out.innerHTML = `<span class="bad">${esc(err.message)}</span>`; }
+    e.target.value = "";
+  };
   $("#logout").onclick = () => { if (confirm("Rimuovere codice e chiavi da questo dispositivo? I dati sul server restano.")) { ["code", "groqKey", "groqModel", "chat"].forEach(store.del); route("accesso"); } };
   $("#wipe").onclick = async () => {
-    const v = prompt("Questa azione cancella definitivamente tutti i tuoi dati dal server. Scrivi CANCELLA per confermare.");
+    const v = prompt("Questa azione cancella tutti i tuoi dati dal server (prima Kairo ne salva un backup, se i backup sono attivi). Scrivi CANCELLA per confermare.");
     if (v !== "CANCELLA") return;
     try { await api("/api/dati", { method: "DELETE", body: { conferma: "CANCELLA" } }); toast("Dati cancellati"); }
     catch (e) { toast(e.message); }
@@ -807,6 +864,7 @@ views.diagnostica = async (el) => {
     html += `<div class="card list"><div class="label" style="margin-bottom:4px">Dati ricevuti</div>
       ${item(d.sonno.n ? fresh(d.sonno.a) : "off", "Sonno (fasi)", d.sonno.n ? `${d.sonno.n} fasi · ultima ${ago(d.sonno.a)}` : "nessun dato")}
       ${rows.map((m) => item(fresh(m.last), metricName[m.metric] || esc(m.metric), `${fmtNum(m.n)} valori · ultimo ${ago(m.last)}`)).join("")}
+      ${item(!d.backup?.attivo ? "warn" : d.backup.ultimo && (Date.now() - Date.parse(d.backup.ultimo.creato)) / 864e5 < 9 ? "ok" : "warn", "Backup", !d.backup?.attivo ? "non attivi" : d.backup.ultimo ? `ultimo ${ago(d.backup.ultimo.creato)}` : "nessuno ancora")}
       ${item("off", "Righe nel database", Object.entries(d.database.righe).map(([k, v]) => `${k} ${fmtNum(v)}`).join(" · "))}
       ${d.database.dimensione_byte ? item("off", "Dimensione database", `${fmtNum(d.database.dimensione_byte / 1048576, 1)} MB su 5.000 MB gratuiti`) : ""}
     </div>`;
@@ -1047,13 +1105,13 @@ views.benvenuto = async (el) => {
       <div style="font-size:48px;font-weight:900;letter-spacing:-1.5px">kairo<span style="color:var(--orange)">.</span></div>
       <div class="muted" style="max-width:300px;line-height:1.5">Ogni giorno parte da come hai recuperato.</div>${bean(82, 120)}</div>
     <div class="card col" style="gap:12px"><div class="h2">Crea il tuo codice di accesso</div>
-      <div class="small" style="line-height:1.5;color:var(--text)">Benvenuto! Scegli un codice di almeno 8 caratteri: ti servirà per aprire Kairo su iPhone e PC. Salvalo nel portachiavi o in Note.</div>
-      <label class="field">Codice<input class="input" id="c1" type="password" autocomplete="new-password" minlength="8"></label>
+      <div class="small" style="line-height:1.5;color:var(--text)">Benvenuto! Scegli un codice di almeno 10 caratteri (meglio una frase corta, es. «mattino-bici-42»): ti servirà per aprire Kairo su iPhone e PC. Salvalo nel portachiavi o in Note.</div>
+      <label class="field">Codice<input class="input" id="c1" type="password" autocomplete="new-password" minlength="10"></label>
       <label class="field">Ripeti il codice<input class="input" id="c2" type="password" autocomplete="new-password"></label>
       <button class="btn primary" id="go">Crea e continua</button><div id="msg" class="small bad"></div></div>`;
   $("#go").onclick = async () => {
     const a = $("#c1").value, b = $("#c2").value;
-    if (a.length < 8) return ($("#msg").textContent = "Almeno 8 caratteri.");
+    if (a.length < 10) return ($("#msg").textContent = "Almeno 10 caratteri.");
     if (a !== b) return ($("#msg").textContent = "I due codici non coincidono.");
     try { await api("/api/setup", { method: "POST", body: { codice: a } }); store.set("code", a); route("configura-ia"); }
     catch (e) { $("#msg").textContent = e.message; }

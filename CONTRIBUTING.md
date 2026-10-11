@@ -17,6 +17,13 @@ curl -X POST http://localhost:8787/api/setup -H 'content-type: application/json'
 curl -X POST http://localhost:8787/api/ingest -H 'authorization: Bearer codice-di-prova' --data-binary @esempio.json
 ```
 
+## Test
+```bash
+cd worker
+npm test                # 23 test automatici: sicurezza, doppioni, sonno, backup, migrazioni, calcoli
+```
+I test usano un database SQLite in memoria con la stessa interfaccia di D1 e girano su GitHub a ogni push. Una modifica è pronta solo se passano tutti.
+
 ## Linee guida
 - La web app non ha passaggi di build: JavaScript moderno, nessuna dipendenza esterna a runtime.
 - Testi dell'interfaccia in italiano; codice e commenti in inglese.

@@ -15,6 +15,14 @@ run_worker_first = ["/api/*"]
 binding = "DB"
 database_name = "kairo"
 
+# Automatic backups (compressed copies of the data, the last 8 are kept). Created automatically on deploy.
+[[kv_namespaces]]
+binding = "BACKUP"
+
+# Weekly backup every Monday at 03:17 UTC
+[triggers]
+crons = ["17 3 * * 1"]
+
 # Free fallback model when Groq is not configured or unavailable
 [ai]
 binding = "AI"

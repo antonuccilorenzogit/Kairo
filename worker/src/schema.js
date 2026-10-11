@@ -1,14 +1,16 @@
 // Database schema. Applied automatically on the first request (idempotent),
 // so a fresh deployment needs no manual migration step.
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const SCHEMA = [
-  // Point samples (HRV, resting HR, SpO2, respiration, weight, heart rate…)
+  // Point samples (HRV, resting HR, SpO2, respiration, weight, heart rate…).
+  // `t` is the instant in epoch seconds: the same measurement sent twice, even with a
+  // different time-zone offset, maps to the same row (unique index on metric + t).
   `CREATE TABLE IF NOT EXISTS samples (
-     metric TEXT NOT NULL, ts TEXT NOT NULL, value REAL NOT NULL,
+     metric TEXT NOT NULL, ts TEXT NOT NULL, value REAL NOT NULL, t INTEGER,
      PRIMARY KEY (metric, ts))`,
   `CREATE INDEX IF NOT EXISTS idx_samples_ts ON samples(ts)`,
-  // Daily totals (steps, calories, distances, nutrition)
+  // Daily totals (steps, calories, distances, nutrition): one row per metric and day
   `CREATE TABLE IF NOT EXISTS daily (
      metric TEXT NOT NULL, day TEXT NOT NULL, value REAL NOT NULL,
      PRIMARY KEY (metric, day))`,
@@ -16,9 +18,12 @@ export const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS hourly (
      metric TEXT NOT NULL, hour TEXT NOT NULL, value REAL NOT NULL,
      PRIMARY KEY (metric, hour))`,
-  // Sleep stages
+  // Sleep stages. Overlaps between sources (Watch, iPhone, other apps) are resolved when
+  // the night is computed, so every minute is counted once.
   `CREATE TABLE IF NOT EXISTS sleep (
-     start TEXT PRIMARY KEY, end TEXT NOT NULL, stage TEXT NOT NULL)`,
+     start TEXT NOT NULL, end TEXT NOT NULL, stage TEXT NOT NULL,
+     PRIMARY KEY (start, end, stage))`,
+  `CREATE INDEX IF NOT EXISTS idx_sleep_end ON sleep(end)`,
   // Daily check-in
   `CREATE TABLE IF NOT EXISTS checkin (
      day TEXT PRIMARY KEY, energia INTEGER, dolori INTEGER, umore INTEGER,
@@ -30,17 +35,50 @@ export const SCHEMA = [
   // Daily coach advice cache
   `CREATE TABLE IF NOT EXISTS advice (
      day TEXT PRIMARY KEY, text TEXT NOT NULL, provider TEXT, model TEXT, created TEXT)`,
-  // Key/value settings (access-code hash, AI usage counters, schema version)
+  // Key/value settings (access-code hash, sync token, AI usage counters, schema version)
   `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`,
+  // Failed access attempts per client, for the temporary lock-out
+  `CREATE TABLE IF NOT EXISTS auth_fail (
+     ip TEXT PRIMARY KEY, n INTEGER NOT NULL, first INTEGER NOT NULL,
+     locked_until INTEGER NOT NULL DEFAULT 0, locks INTEGER NOT NULL DEFAULT 0)`,
 ];
 
-let ensured = false;
+// Upgrades for databases created by older versions. Each step is safe to run again.
+const MIGRATIONS = {
+  // v1 -> v2: instant key for samples (dedupe), sleep key on the whole interval
+  2: [
+    "ALTER TABLE samples ADD COLUMN t INTEGER",
+    "UPDATE samples SET t = CAST(strftime('%s', ts) AS INTEGER) WHERE t IS NULL",
+    "DELETE FROM samples WHERE t IS NOT NULL AND rowid NOT IN (SELECT max(rowid) FROM samples WHERE t IS NOT NULL GROUP BY metric, t)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_samples_metric_t ON samples(metric, t)",
+    `CREATE TABLE IF NOT EXISTS sleep_v2 (start TEXT NOT NULL, end TEXT NOT NULL, stage TEXT NOT NULL, PRIMARY KEY (start, end, stage))`,
+    "INSERT OR IGNORE INTO sleep_v2(start, end, stage) SELECT start, end, stage FROM sleep",
+    "DROP TABLE sleep",
+    "ALTER TABLE sleep_v2 RENAME TO sleep",
+    "CREATE INDEX IF NOT EXISTS idx_sleep_end ON sleep(end)",
+  ],
+};
+
+const ready = new WeakSet();
 export async function ensureSchema(db) {
-  if (ensured) return;
+  if (ready.has(db)) return;
   await db.batch(SCHEMA.map((s) => db.prepare(s)));
-  // columns added after the first release (ignore "duplicate column" errors)
   try { await db.prepare("ALTER TABLE imports ADD COLUMN versione TEXT").run(); } catch (_) {}
+  const row = await db.prepare("SELECT value FROM settings WHERE key = 'schema_version'").first();
+  const current = Number(row?.value || 1);
+  // a brand-new database already has the latest tables: only old ones need migrating
+  const isNew = !row;
+  for (let v = current + 1; v <= SCHEMA_VERSION; v++) {
+    if (isNew) break;
+    for (const sql of MIGRATIONS[v] || []) {
+      try { await db.prepare(sql).run(); } catch (e) {
+        // "duplicate column" / "no such table" mean the step was already applied
+        if (!/duplicate column|no such table|already exists/i.test(String(e.message))) throw e;
+      }
+    }
+  }
+  await db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS ux_samples_metric_t ON samples(metric, t)").run();
   await db.prepare("INSERT INTO settings(key,value) VALUES('schema_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
     .bind(String(SCHEMA_VERSION)).run();
-  ensured = true;
+  ready.add(db);
 }
