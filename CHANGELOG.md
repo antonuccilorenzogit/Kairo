@@ -2,7 +2,7 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
-## [Non pubblicato]
+## [1.8.0] — 2026-10-11
 
 ### Migliorato
 - **Impostazioni a menu**: una lista pulita divisa in Tu, App, Dati e Altro; ogni riga mostra lo stato (es. notifiche attive, ultimo invio, ultimo backup) e si apre nella sua pagina: Profilo, Sport e infortunio, Cosa ricorda il coach, Notifiche, Coach IA, Collegamento iPhone, Backup ed esportazione, Codice di accesso e account.
