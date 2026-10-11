@@ -2,6 +2,11 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.1.1] — 2026-10-11
+
+### Corretto
+- Su iPhone i comandi rapidi si scaricavano come pagina HTML: ora vengono serviti come file `.shortcut` con il nome giusto e non passano dal service worker.
+
 ## [1.1.0] — 2026-10-11
 
 ### Aggiunto

@@ -1,4 +1,24 @@
-/shortcuts/*
+/shortcuts/HealthSync.shortcut
   Content-Type: application/octet-stream
-  Content-Disposition: attachment
-  Cache-Control: no-cache
+  Content-Disposition: attachment; filename="HealthSync.shortcut"
+  Cache-Control: no-store
+
+/shortcuts/HealthSync_Storico_1A.shortcut
+  Content-Type: application/octet-stream
+  Content-Disposition: attachment; filename="HealthSync_Storico_1A.shortcut"
+  Cache-Control: no-store
+
+/shortcuts/HealthSync_Storico_1B.shortcut
+  Content-Type: application/octet-stream
+  Content-Disposition: attachment; filename="HealthSync_Storico_1B.shortcut"
+  Cache-Control: no-store
+
+/shortcuts/HealthSync_Storico_1C.shortcut
+  Content-Type: application/octet-stream
+  Content-Disposition: attachment; filename="HealthSync_Storico_1C.shortcut"
+  Cache-Control: no-store
+
+/shortcuts/HealthSync_Storico_2.shortcut
+  Content-Type: application/octet-stream
+  Content-Disposition: attachment; filename="HealthSync_Storico_2.shortcut"
+  Cache-Control: no-store

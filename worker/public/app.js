@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.1.0";
+const APP_VERSION = "1.1.1";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -404,7 +404,7 @@ views.impostazioni = async (el) => {
     <div class="card col" style="gap:12px"><div class="h2">Comando rapido HealthSync</div>
       <div class="small" style="line-height:1.5;color:var(--text)">Il comando legge i dati di Salute sull'iPhone e li invia al tuo server. Durante l'importazione ti chiede indirizzo e codice qui sotto.</div>
       <div class="card soft col" style="gap:4px"><div class="small muted">Indirizzo del server</div><div class="code">${esc(c.server)}</div></div>
-      <a class="btn orange" href="shortcuts/HealthSync.shortcut" download>Scarica HealthSync</a>
+      <a class="btn orange" href="shortcuts/HealthSync.shortcut" target="_blank" rel="noopener">Scarica HealthSync</a>
       <a class="btn ghost" href="#/guida">Guida passo passo (A–Z)</a></div>
 
     <div class="card col" style="gap:10px"><div class="h2">Server e accesso</div>
@@ -613,7 +613,7 @@ const GUIDE = [
       ${c.code ? `<button class="btn ghost" id="copyCode">Copia codice</button>` : ""}</div>
     ${tip("Suggerimento", "Copia l'indirizzo ora; il codice lo copi al passo 5, quando il comando lo chiede. Gli appunti tengono una cosa sola alla volta.")}` },
   { t: "Scarica HealthSync", body: () => `
-    <a class="btn orange block" href="shortcuts/HealthSync.shortcut" download>Scarica HealthSync</a>
+    <a class="btn orange block" href="shortcuts/HealthSync.shortcut" target="_blank" rel="noopener">Scarica HealthSync</a>
     <ol class="steps"><li>Tocca il pulsante qui sopra. Safari chiede <b>«Vuoi scaricare HealthSync.shortcut?»</b>: tocca <b>Scarica</b>.</li>
       <li>Tocca l'icona dei download nella barra di Safari (un cerchio con la freccia ↓) e poi <b>HealthSync.shortcut</b>.</li>
       <li>Si apre l'app <b>Comandi</b> con l'anteprima del comando.</li></ol>
@@ -654,7 +654,7 @@ const GUIDE = [
       <a class="btn primary" href="#/importa">Importa da Salute</a></div>
     <div class="card soft col" style="gap:8px"><div style="font-weight:900">B · Con i comandi Storico</div>
       <div class="small" style="line-height:1.5">Scarica e aggiungi ognuno come al passo 4–5 (stesse due domande), poi avviali una volta in ordine. Ognuno può richiedere un minuto: tieni lo schermo acceso.</div>
-      <div class="grid2"><a class="btn ghost" href="shortcuts/HealthSync_Storico_1A.shortcut" download>1A · cuore</a><a class="btn ghost" href="shortcuts/HealthSync_Storico_1B.shortcut" download>1B · corpo</a><a class="btn ghost" href="shortcuts/HealthSync_Storico_1C.shortcut" download>1C · attività</a><a class="btn ghost" href="shortcuts/HealthSync_Storico_2.shortcut" download>2 · sonno</a></div>
+      <div class="grid2"><a class="btn ghost" href="shortcuts/HealthSync_Storico_1A.shortcut" target="_blank" rel="noopener">1A · cuore</a><a class="btn ghost" href="shortcuts/HealthSync_Storico_1B.shortcut" target="_blank" rel="noopener">1B · corpo</a><a class="btn ghost" href="shortcuts/HealthSync_Storico_1C.shortcut" target="_blank" rel="noopener">1C · attività</a><a class="btn ghost" href="shortcuts/HealthSync_Storico_2.shortcut" target="_blank" rel="noopener">2 · sonno</a></div>
       <div class="small muted">Dopo averli usati puoi eliminarli da Comandi.</div></div>` },
   { t: "Kairo sulla schermata Home", body: () => `
     <div class="h2" style="font-size:17px">iPhone</div>
