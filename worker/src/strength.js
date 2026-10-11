@@ -58,38 +58,39 @@ export async function strengthSummary(db, today) {
 
 // ---------- fatigue per muscle group ----------
 // Exercise name → muscles worked (primary first). Italian and English names, the most common gym exercises.
+// Each muscle has a weight: the main one counts 1, the helpers only a fraction of a set.
 const MUSCLE_MAP = [
-  [/stacc|deadlift|rdl|good morning/i, ["femorali", "glutei", "schiena"]],
-  [/squat|pressa|leg press|affond|lunge|hack|bulgar|step.?up/i, ["quadricipiti", "glutei"]],
-  [/leg ext|estension.*gamb|quadricip/i, ["quadricipiti"]],
-  [/leg curl|curl.*gamb|femoral|nordic/i, ["femorali"]],
-  [/hip thrust|ponte|glute|abdu|kickback/i, ["glutei"]],
-  [/polpacc|calf|punte/i, ["polpacci"]],
-  [/panca|bench|chest press|pettoral|croci|fly|dip|piegament|push.?up/i, ["petto", "tricipiti", "spalle"]],
-  [/lento|military|overhead|shoulder press|alzat|lateral|face pull|deltoid|spall|arnold/i, ["spalle"]],
-  [/trazion|pull.?up|chin|lat|pulldown|rematore|row|pulley|dorsal|schiena/i, ["schiena", "bicipiti"]],
-  [/curl|bicipit|hammer/i, ["bicipiti"]],
-  [/french|tricipit|push.?down|skull|kick.?back.*tric|estension.*tric/i, ["tricipiti"]],
-  [/crunch|plank|addom|abs|core|russian|leg raise|ab wheel/i, ["addome"]],
+  [/stacc|deadlift|rdl|good morning/i, [["femorali", 1], ["glutei", 0.5], ["schiena", 0.3]]],
+  [/squat|pressa|leg press|affond|lunge|hack|bulgar|step.?up/i, [["quadricipiti", 1], ["glutei", 0.4]]],
+  [/leg ext|estension.*gamb|quadricip/i, [["quadricipiti", 1]]],
+  [/leg curl|curl.*gamb|femoral|nordic/i, [["femorali", 1]]],
+  [/hip thrust|ponte|glute|abdu|kickback/i, [["glutei", 1]]],
+  [/polpacc|calf|punte/i, [["polpacci", 1]]],
+  [/panca|bench|chest press|pettoral|croci|fly|dip|piegament|push.?up/i, [["petto", 1], ["tricipiti", 0.3], ["spalle", 0.2]]],
+  [/lento|military|overhead|shoulder press|alzat|lateral|face pull|deltoid|spall|arnold/i, [["spalle", 1], ["tricipiti", 0.2]]],
+  [/trazion|pull.?up|chin|lat|pulldown|rematore|row|pulley|dorsal|schiena/i, [["schiena", 1], ["bicipiti", 0.3]]],
+  [/curl|bicipit|hammer/i, [["bicipiti", 1]]],
+  [/french|tricipit|push.?down|skull|kick.?back.*tric|estension.*tric/i, [["tricipiti", 1]]],
+  [/crunch|plank|addom|abs|core|russian|leg raise|ab wheel/i, [["addome", 1]]],
 ];
-export function musclesOf(name) {
+export function muscleWeights(name) {
   for (const [re, m] of MUSCLE_MAP) if (re.test(name)) return m;
   return [];
 }
+export const musclesOf = (name) => muscleWeights(name).map(([m]) => m);
 
 // For each muscle: recent fatigue (hard sets in the last 72 h, decaying: <24 h ×1, 24-48 h ×0.6, 48-72 h ×0.3)
-// and weekly volume (sets in 7 days, secondary muscles count half) vs the 10-20 sets/week range (Schoenfeld 2017).
+// and weekly volume (sets in 7 days, helper muscles count only their fraction) vs the 10-20 sets/week range (Schoenfeld 2017).
 export async function muscleFatigue(db, nowMs = Date.now()) {
   const since = new Date(nowMs - 7 * 86400e3).toISOString().slice(0, 10);
   const r = await db.prepare("SELECT start, exercise, count(*) n FROM sets WHERE start >= ? AND (set_type IS NULL OR set_type != 'warmup') GROUP BY start, exercise").bind(since).all();
   const out = {};
   for (const x of r.results) {
-    const ms = musclesOf(x.exercise); if (!ms.length) continue;
+    const ms = muscleWeights(x.exercise); if (!ms.length) continue;
     const h = (nowMs - Date.parse(x.start)) / 36e5;
     const w = h < 24 ? 1 : h < 48 ? 0.6 : h < 72 ? 0.3 : 0;
-    ms.forEach((m, i) => {
+    ms.forEach(([m, k]) => {
       const o = (out[m] ||= { muscolo: m, fatica: 0, serie_7g: 0 });
-      const k = i === 0 ? 1 : 0.5;
       o.fatica += x.n * k * w; o.serie_7g += x.n * k;
     });
   }

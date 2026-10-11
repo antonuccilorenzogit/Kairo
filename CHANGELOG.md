@@ -5,7 +5,7 @@ Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https
 ## [Non pubblicato]
 
 ### Aggiunto
-- **Fatica per gruppo muscolare**: dalle serie registrate Kairo sa quali muscoli sono stanchi (serie delle ultime 72 ore, con peso che cala col passare delle ore) e quante serie hai fatto a settimana per muscolo (fascia 10–20, Schoenfeld 2017). L'allenamento del giorno sceglie la scheda con i muscoli più freschi e l'IA evita di ricaricare quelli stanchi; il coach ne tiene conto; nella pagina Palestra c'è la scheda «Muscoli».
+- **Fatica per gruppo muscolare**: dalle serie registrate Kairo sa quali muscoli sono stanchi (serie delle ultime 72 ore, con peso che cala col passare delle ore) e quante serie hai fatto a settimana per muscolo (fascia 10–20, Schoenfeld 2017). Ogni esercizio pesa soprattutto sul muscolo principale: per la panca petto 1, tricipiti 0,3, spalle 0,2 serie. L'allenamento del giorno sceglie la scheda con i muscoli più freschi e l'IA evita di ricaricare quelli stanchi; il coach ne tiene conto; nella pagina Palestra c'è la scheda «Muscoli».
 
 ## [1.8.2] — 2026-10-11
 
