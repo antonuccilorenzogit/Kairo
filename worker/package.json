@@ -1,0 +1,14 @@
+{
+  "name": "kairo-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Kairo server: Apple Health data, recovery score and AI coach on Cloudflare Workers",
+  "license": "MIT",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "devDependencies": {
+    "wrangler": "^4.40.0"
+  }
+}

@@ -1,0 +1,20 @@
+# Kairo — Cloudflare Worker configuration.
+# "Deploy to Cloudflare" (or `npx wrangler deploy`) creates the D1 database automatically.
+name = "kairo"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "kairo"
+
+# Free fallback model when Groq is not configured or unavailable
+[ai]
+binding = "AI"
