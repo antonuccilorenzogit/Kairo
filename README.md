@@ -1,23 +1,10 @@
 <p align="center">
-  <img src="worker/public/icons/icon-192.png" width="96" alt="Icona di Kairo">
+  <img src="docs/banner.png" width="100%" alt="kairo. con Bean, la mascotte">
 </p>
-
-<h1 align="center">kairo.</h1>
 
 <p align="center"><b>Ogni giorno parte da come hai recuperato.</b><br>
 Recupero, sonno e allenamento dai dati del tuo Apple Watch, con un coach IA.<br>
 Open source, gratuito, i dati restano nel <i>tuo</i> account.</p>
-
-<p align="center">
-  <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/antonuccilorenzogit/Kairo/tree/main/worker"><img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare"></a>
-</p>
-
-<p align="center">
-  <img src="docs/screenshots/oggi.png" width="200" alt="Schermata Oggi">
-  <img src="docs/screenshots/recupero_sheet.png" width="200" alt="Spiegazione dell'HRV">
-  <img src="docs/screenshots/sonno.png" width="200" alt="Schermata Sonno">
-  <img src="docs/screenshots/checkin.png" width="200" alt="Check-in">
-</p>
 
 ---
 
@@ -61,6 +48,8 @@ Dettagli tecnici in [docs/ARCHITETTURA.md](docs/ARCHITETTURA.md).
 ## Installazione in 4 passi (circa 15 minuti)
 
 Serve: un **iPhone con Apple Watch**, un account **Cloudflare** e uno **GitHub** (entrambi gratuiti). La guida completa con screenshot è in [docs/SETUP.md](docs/SETUP.md).
+
+<a href="https://deploy.workers.cloudflare.com/?url=https://github.com/antonuccilorenzogit/Kairo/tree/main/worker"><img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare"></a>
 
 1. **Pubblica il server.** Clicca il pulsante **Deploy to Cloudflare** qui sopra, accedi e conferma. Cloudflare crea il server, il database e ti dà un indirizzo tipo `https://kairo.tuonome.workers.dev`.
 2. **Apri l'indirizzo** dall'iPhone, crea il tuo **codice di accesso** e, se vuoi, incolla una chiave gratuita di [Groq](https://console.groq.com/keys) per il coach IA.
