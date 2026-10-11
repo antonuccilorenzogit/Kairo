@@ -50,6 +50,9 @@ export const SCHEMA = [
   // Gym routines ("schede"): exercises with sets and a rep range, as JSON
   `CREATE TABLE IF NOT EXISTS schede (
      id TEXT PRIMARY KEY, nome TEXT NOT NULL, ordine INTEGER NOT NULL, esercizi TEXT NOT NULL, updated TEXT NOT NULL)`,
+  // Coach memory: durable facts about the person (goals, races, injuries, preferences)
+  `CREATE TABLE IF NOT EXISTS memoria (
+     id INTEGER PRIMARY KEY AUTOINCREMENT, testo TEXT NOT NULL UNIQUE, fonte TEXT NOT NULL, creato TEXT NOT NULL)`,
   // Web-push subscriptions (one per device that enabled notifications)
   `CREATE TABLE IF NOT EXISTS push_subs (
      endpoint TEXT PRIMARY KEY, p256dh TEXT NOT NULL, auth TEXT NOT NULL, created TEXT NOT NULL)`,

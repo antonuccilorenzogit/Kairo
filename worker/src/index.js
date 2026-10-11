@@ -10,6 +10,10 @@ import { sha256, safeEqual, clientIp, lockedFor, recordFailure, clearFailures, p
 import { parsePayload, cleanCheckin, MAX_BODY_BYTES } from "./validate.js";
 import { exportData, createBackup, listBackups, readBackup, restoreData } from "./backup.js";
 import { getProfile, saveProfile, hrMax, profileText } from "./profile.js";
+import { listMemory, addMemory, deleteMemory, memoryText } from "./memory.js";
+
+// What every coach prompt knows about the person: profile + remembered facts.
+const coachProfile = async (db, profile) => profileText(profile || (await getProfile(db))) + memoryText(await listMemory(db));
 import { recomputeTrimp } from "./load.js";
 import { getVapid, sendPush, validEndpoint } from "./push.js";
 
@@ -277,13 +281,13 @@ async function api(req, env, url) {
     const yesterday = new Date(Date.parse(todayLocal(tz) + "T12:00:00Z") - 86400e3).toISOString().slice(0, 10);
     const rep = await weeklyReport(env.DB, validDay(url.searchParams.get("a")) || yesterday);
     if (p === "/api/settimana") return json(rep);
-    return json(await weeklyCoach(env, req, rep, profileText(await getProfile(env.DB))));
+    return json(await weeklyCoach(env, req, rep, await coachProfile(env.DB)));
   }
   if (p === "/api/allenamento/oggi" && req.method === "POST") {
     const b = (await readJson(req)) || {};
     const profile = await getProfile(env.DB);
     const hist = await computeHistory(env.DB, todayLocal(tz), 8);
-    return json(await recommendWorkout(env, req, { hist, profile, profileText: profileText(profile), schede: await getSchede(env.DB),
+    return json(await recommendWorkout(env, req, { hist, profile, profileText: await coachProfile(env.DB, profile), schede: await getSchede(env.DB),
       force: !!b.forza || !!b.altro, exclude: b.altro && ["palestra", "nuoto", "bici", "corsa"].includes(b.escludi) ? b.escludi : null }));
   }
   if (p === "/api/schede") {
@@ -346,7 +350,7 @@ async function api(req, env, url) {
   }
   if (p === "/api/coach/oggi" && req.method === "POST") {
     const b = (await readJson(req)) || {};
-    return json(await dailyAdvice(env, req, todayLocal(tz), !!b.forza, profileText(await getProfile(env.DB))));
+    return json(await dailyAdvice(env, req, todayLocal(tz), !!b.forza, await coachProfile(env.DB)));
   }
   if (p === "/api/coach/chat" && req.method === "POST") {
     const b = (await readJson(req, 512 * 1024)) || {};
@@ -355,11 +359,17 @@ async function api(req, env, url) {
     const now = () => new Date().toISOString();
     await env.DB.prepare("INSERT INTO chat(role,content,created) VALUES('user',?,?)").bind(q, now()).run();
     const hist = (await env.DB.prepare("SELECT role, content FROM (SELECT * FROM chat ORDER BY id DESC LIMIT 10) ORDER BY id").all()).results;
-    const r = await chat(env, req, todayLocal(tz), hist, profileText(await getProfile(env.DB)));
-    const meta = r.errore ? "errore" : `${r.provider === "groq" ? "Groq" : "Modello di riserva"} · ${r.model}${r.avviso ? " · " + r.avviso : ""}`;
+    const r = await chat(env, req, todayLocal(tz), hist, await coachProfile(env.DB));
+    const mem = [...(r.ricordati || []).map((t) => `📌 Me lo segno: ${t}`), ...(r.dimenticati || []).map((t) => `🗑 Dimenticato: ${t}`)];
+    const meta = r.errore ? "errore" : [...mem, `${r.provider === "groq" ? "Groq" : "Modello di riserva"} · ${r.model}${r.avviso ? " · " + r.avviso : ""}`].join("\n");
     await env.DB.prepare("INSERT INTO chat(role,content,meta,created) VALUES('assistant',?,?,?)").bind(r.errore || r.testo, meta, now()).run();
     await env.DB.prepare("DELETE FROM chat WHERE id <= (SELECT max(id) - 200 FROM chat)").run();
     return json({ ...r, meta });
+  }
+  if (p === "/api/memoria") {
+    if (req.method === "POST") { const b = (await readJson(req)) || {}; return json(await addMemory(env.DB, b.testo, "utente")); }
+    if (req.method === "DELETE") return json(await deleteMemory(env.DB, url.searchParams.get("id")));
+    return json({ memoria: await listMemory(env.DB) });
   }
   if (p === "/api/ai/test" && req.method === "POST") return json(await testAI(env, req));
   if (p === "/api/ai/modelli") return json(await groqModels(req, env));
@@ -396,7 +406,7 @@ async function api(req, env, url) {
     if (conferma !== "CANCELLA") return json({ errore: "Conferma mancante" }, 400);
     // safety net: an automatic backup right before deleting everything
     if (env.BACKUP) { const bk = await createBackup(env, VERSION, "prima della cancellazione"); if (bk.errore) return json({ errore: `Backup di sicurezza non riuscito, cancellazione annullata: ${bk.errore}` }, 500); }
-    await env.DB.batch(["samples", "daily", "hourly", "sleep", "checkin", "imports", "advice"].map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
+    await env.DB.batch(["samples", "daily", "hourly", "sleep", "checkin", "imports", "advice", "memoria"].map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
     return json({ ok: true });
   }
   return json({ errore: "endpoint sconosciuto" }, 404);

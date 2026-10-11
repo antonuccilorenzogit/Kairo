@@ -3,6 +3,7 @@
 // Fallback: Cloudflare Workers AI (free daily allowance, no key needed).
 import { computeHistory } from "./metrics.js";
 import { strengthSummary } from "./strength.js";
+import { MEMORY_RULES, applyTags } from "./memory.js";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 export const DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b";
@@ -203,12 +204,13 @@ export async function dailyAdvice(env, req, today, force, profile) {
 export async function chat(env, req, today, history, profile) {
   const ctx = await buildContext(env.DB, today, 21);
   const messages = [
-    { role: "system", content: SYSTEM(profile) + `\n\nQUADRO GENERALE\n${ctx.summary}\n\nULTIMI 21 GIORNI (l'ultima riga è oggi)\n${ctx.text}\n\nLunghezza: risposte brevi (max 90 parole) per domande semplici, fino a 200 parole per valutazioni generali o piani.` },
+    { role: "system", content: SYSTEM(profile) + MEMORY_RULES.replace("{OGGI}", today) + `\n\nQUADRO GENERALE\n${ctx.summary}\n\nULTIMI 21 GIORNI (l'ultima riga è oggi)\n${ctx.text}\n\nLunghezza: risposte brevi (max 90 parole) per domande semplici, fino a 200 parole per valutazioni generali o piani.` },
     ...history.slice(-10).map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: String(m.content).slice(0, 2000) })),
   ];
   const r = await ask(env, req, messages);
   if (r.errore) return r;
-  return { testo: r.text, provider: r.provider, model: r.model, quota: r.quota, avviso: r.avviso };
+  const m = await applyTags(env.DB, r.text);
+  return { testo: m.testo, ricordati: m.ricordati, dimenticati: m.dimenticati, provider: r.provider, model: r.model, quota: r.quota, avviso: r.avviso };
 }
 
 export async function weeklyCoach(env, req, rep, profile) {

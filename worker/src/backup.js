@@ -4,7 +4,7 @@ import { METRICS, parseTs, stageCode } from "./validate.js";
 
 export const KEEP_BACKUPS = 8;
 const PREFIX = "backup/";
-const TABLES = ["samples", "daily", "hourly", "sleep", "checkin", "imports"];
+const TABLES = ["samples", "daily", "hourly", "sleep", "checkin", "imports", "memoria"];
 
 export async function exportData(db, version) {
   const r = await db.batch(TABLES.map((t) => db.prepare(`SELECT * FROM ${t}`)));
@@ -86,6 +86,12 @@ export async function restoreData(db, data) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(c?.day))) { skipped++; continue; }
     stmts.push(db.prepare("INSERT OR IGNORE INTO checkin(day,energia,dolori,umore,attivita,rpe,durata_min,note,updated) VALUES(?,?,?,?,?,?,?,?,?)")
       .bind(c.day, c.energia ?? null, c.dolori ?? null, c.umore ?? null, c.attivita ?? null, c.rpe ?? null, c.durata_min ?? null, c.note ?? null, c.updated ?? null));
+  }
+  for (const m of Array.isArray(data.memoria) ? data.memoria : []) {
+    const t = String(m?.testo ?? "").replace(/[\u0000-\u001f\[\]]/g, " ").trim().slice(0, 240);
+    if (t.length < 3) { skipped++; continue; }
+    stmts.push(db.prepare("INSERT OR IGNORE INTO memoria(testo,fonte,creato) VALUES(?,?,?)")
+      .bind(t, m.fonte === "utente" ? "utente" : "coach", /^\d{4}-\d{2}-\d{2}$/.test(String(m.creato)) ? m.creato : new Date().toISOString().slice(0, 10)));
   }
   for (let i = 0; i < stmts.length; i += 400) await db.batch(stmts.slice(i, i + 400));
   return { ok: true, righe: stmts.length, scartate: skipped };

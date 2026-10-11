@@ -2,6 +2,14 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [Non pubblicato]
+
+### Aggiunto
+- **Il coach ricorda**: quando in chat gli racconti qualcosa di importante (una gara con la data, un dolore, un obiettivo, una preferenza) se lo segna e lo usa in tutti i consigli successivi: chat, messaggio del mattino, resoconto della settimana e allenamento del giorno. Sotto la risposta compare «📌 Me lo segno: …». Quando una cosa non vale più la dimentica da solo. In *Impostazioni → Cosa ricorda il coach* puoi vedere, aggiungere ed eliminare i ricordi. La memoria è inclusa nei backup.
+
+### Migliorato
+- Meno letture e scritture sul database: nuovi indici per sonno e totali giornalieri, i dati reinviati uguali non vengono riscritti, il controllo della notifica serale gira solo la sera.
+
 ## [1.4.0] — 2026-10-11
 
 ### Aggiunto

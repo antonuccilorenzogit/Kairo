@@ -439,7 +439,7 @@ views.coach = async (el) => {
     el.innerHTML = `${header("Coach", { sub: "Il tuo allenatore personale" })}
       ${msgs.length ? "" : `<div class="card soft col"><div style="line-height:1.45">Chiedimi qualsiasi cosa su recupero, sonno e allenamento: leggo i tuoi dati e ti dico cosa significano e su cosa lavorare.${cfg().profilo.obiettivi ? "" : ` <a href="#/impostazioni">Scrivi i tuoi obiettivi</a> per consigli su misura.`}</div></div>`}
       <div class="chips">${suggest.map((s) => `<button class="chip" data-q="${esc(s)}">${esc(s)}</button>`).join("")}</div>
-      <div class="chat" id="chat">${msgs.map((m) => `<div class="msg ${m.role === "user" ? "user" : "bot md"}">${m.role === "user" ? esc(m.content) : md(m.content)}${m.meta ? `<span class="meta">${esc(m.meta)}</span>` : ""}</div>`).join("")}${busy ? '<div class="msg bot"><div class="skeleton" style="width:180px"></div></div>' : ""}</div>
+      <div class="chat" id="chat">${msgs.map((m) => `<div class="msg ${m.role === "user" ? "user" : "bot md"}">${m.role === "user" ? esc(m.content) : md(m.content)}${m.meta ? `<span class="meta">${esc(m.meta).replace(/\n/g, "<br>")}</span>` : ""}</div>`).join("")}${busy ? '<div class="msg bot"><div class="skeleton" style="width:180px"></div></div>' : ""}</div>
       ${msgs.length ? '<button class="btn ghost" id="clear" style="align-self:center;min-height:40px;font-size:14px">Nuova conversazione</button>' : ""}
       <div style="height:70px"></div>
       <div class="composer"><form id="f"><label for="q" style="position:absolute;left:-9999px">Messaggio</label><input id="q" class="input" placeholder="Scrivi una domanda…" autocomplete="off" maxlength="2000" ${busy ? "disabled" : ""}><button class="btn primary" ${busy ? "disabled" : ""}>Invia</button></form></div>`;
@@ -976,6 +976,11 @@ views.impostazioni = async (el) => {
       <div class="hint">Il profilo è salvato sul tuo server: vale su iPhone e PC e il coach lo usa per i consigli.</div>
       <button class="btn ghost" id="saveProfilo">Salva profilo</button></div>
 
+    <div class="card col" style="gap:10px"><div class="h2">Cosa ricorda il coach</div>
+      <div class="small muted" style="line-height:1.5">Quando in chat gli racconti qualcosa di importante (una gara, un dolore, un obiettivo) il coach se lo segna e lo usa nei consigli. Qui puoi correggere o aggiungere.</div>
+      <div id="memList" class="list"></div>
+      <div class="row"><input class="input" id="memNew" maxlength="240" placeholder="Es. gara di nuoto 1500 m il 15 novembre" style="flex:1"><button class="btn ghost" id="memAdd">Aggiungi</button></div></div>
+
     <div class="card col" style="gap:10px"><div class="h2">Notifiche</div>
       <div id="pushInfo" class="small" style="line-height:1.5;color:var(--text)">Due notifiche al giorno, niente di più: <b>la mattina</b> recupero e allenamento consigliato, <b>la sera</b> l'orario per andare a letto.</div>
       <div class="row"><button class="btn primary" id="pushOn" style="flex:2">Attiva</button><button class="btn ghost" id="pushTest" style="flex:1" disabled>Prova</button></div>
@@ -1021,6 +1026,21 @@ views.impostazioni = async (el) => {
     if (!body.sport.length) { toast("Scegli almeno uno sport"); return; }
     try { const saved = await api("/api/profilo", { method: "POST", body }); store.set("profilo", saved); toast("Profilo salvato"); }
     catch (e) { toast(e.message); }
+  };
+  // ---- coach memory ----
+  const memLoad = async () => {
+    const box = $("#memList");
+    try {
+      const { memoria } = await api("/api/memoria");
+      box.innerHTML = memoria.length ? memoria.map((m) => `<div class="item" style="gap:10px;align-items:flex-start"><div style="flex:1;line-height:1.4">${esc(m.testo)}<div class="small muted">${m.fonte === "utente" ? "aggiunto da te" : "dal coach"} · ${esc(m.creato)}</div></div><button class="iconbtn" data-mem="${m.id}" aria-label="Elimina" style="color:var(--muted)">✕</button></div>`).join("")
+        : `<div class="small muted" style="padding:6px 0">Ancora niente: parla con il coach o aggiungi qui sotto.</div>`;
+      box.querySelectorAll("[data-mem]").forEach((b) => (b.onclick = async () => { try { await api("/api/memoria?id=" + b.dataset.mem, { method: "DELETE" }); memLoad(); } catch (e) { toast(e.message); } }));
+    } catch (e) { box.textContent = e.message; }
+  };
+  memLoad();
+  $("#memAdd").onclick = async () => {
+    const t = $("#memNew").value.trim(); if (!t) return;
+    try { const r = await api("/api/memoria", { method: "POST", body: { testo: t } }); if (r.errore) return toast(r.errore); $("#memNew").value = ""; memLoad(); } catch (e) { toast(e.message); }
   };
   el.querySelectorAll("[data-sport]").forEach((b) => (b.onclick = () => b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") !== "true")));
   // ---- notifications (web push; on iPhone only for the app added to the Home Screen) ----
