@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.2.0";
+const APP_VERSION = "1.3.0";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -188,7 +188,21 @@ views.oggi = async (el) => {
 
 function profiloText() {
   const p = cfg().profilo;
-  return [p.nome ? `si chiama ${p.nome}` : "", p.note || ""].filter(Boolean).join(". ");
+  return [p.nome ? `Si chiama ${p.nome}.` : "", p.note ? `Di sé dice: ${p.note}` : "", p.obiettivi ? `I suoi obiettivi: ${p.obiettivi}` : "Non ha ancora indicato i suoi obiettivi."].filter(Boolean).join("\n");
+}
+// minimal, safe markdown for coach messages: **bold**, *italic*, bullet lists, paragraphs
+function md(text) {
+  const inline = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<i>$2</i>");
+  const out = []; let list = null;
+  for (const raw of String(text).split("\n")) {
+    const line = raw.trim();
+    const m = line.match(/^(?:[-•*]|\d+[.)])\s+(.*)$/);
+    if (m) { if (!list) { list = []; out.push(list); } list.push(inline(m[1])); continue; }
+    list = null;
+    if (!line) continue;
+    out.push(inline(line.replace(/^#+\s*/, "")));
+  }
+  return out.map((b) => (Array.isArray(b) ? `<ul>${b.map((i) => `<li>${i}</li>`).join("")}</ul>` : `<p>${b}</p>`)).join("");
 }
 
 /* explanation panels for the recovery components */
@@ -326,12 +340,12 @@ views.sonno = async (el) => {
 
 views.coach = async (el) => {
   const msgs = store.get("chat", []);
-  const suggest = ["Posso allenarmi duro oggi?", "Perché il mio recupero è così?", "Come sta andando il mio sonno?", "Cosa posso migliorare questa settimana?"];
+  const suggest = ["Fammi una valutazione della mia forma", "Su cosa devo lavorare questo mese?", "Posso allenarmi duro oggi?", "Come sta andando il mio sonno?"];
   const render = (busy = false) => {
-    el.innerHTML = `${header("Coach", { sub: "Risponde con i tuoi dati degli ultimi 21 giorni" })}
-      ${msgs.length ? "" : `<div class="card soft col"><div style="line-height:1.45">Chiedimi qualsiasi cosa sui tuoi dati: recupero, sonno, allenamento. Uso solo i numeri del tuo database.</div></div>`}
+    el.innerHTML = `${header("Coach", { sub: "Il tuo allenatore personale" })}
+      ${msgs.length ? "" : `<div class="card soft col"><div style="line-height:1.45">Chiedimi qualsiasi cosa su recupero, sonno e allenamento: leggo i tuoi dati e ti dico cosa significano e su cosa lavorare.${cfg().profilo.obiettivi ? "" : ` <a href="#/impostazioni">Scrivi i tuoi obiettivi</a> per consigli su misura.`}</div></div>`}
       <div class="chips">${suggest.map((s) => `<button class="chip" data-q="${esc(s)}">${esc(s)}</button>`).join("")}</div>
-      <div class="chat" id="chat">${msgs.map((m) => `<div class="msg ${m.role === "user" ? "user" : "bot"}">${esc(m.content)}${m.meta ? `<span class="meta">${esc(m.meta)}</span>` : ""}</div>`).join("")}${busy ? '<div class="msg bot"><div class="skeleton" style="width:180px"></div></div>' : ""}</div>
+      <div class="chat" id="chat">${msgs.map((m) => `<div class="msg ${m.role === "user" ? "user" : "bot md"}">${m.role === "user" ? esc(m.content) : md(m.content)}${m.meta ? `<span class="meta">${esc(m.meta)}</span>` : ""}</div>`).join("")}${busy ? '<div class="msg bot"><div class="skeleton" style="width:180px"></div></div>' : ""}</div>
       ${msgs.length ? '<button class="btn ghost" id="clear" style="align-self:center;min-height:40px;font-size:14px">Nuova conversazione</button>' : ""}
       <div style="height:70px"></div>
       <div class="composer"><form id="f"><label class="sr" for="q" style="position:absolute;left:-9999px">Messaggio</label><input id="q" class="input" placeholder="Scrivi una domanda…" autocomplete="off" ${busy ? "disabled" : ""}><button class="btn primary" ${busy ? "disabled" : ""}>Invia</button></form></div>`;
@@ -394,7 +408,8 @@ views.impostazioni = async (el) => {
   el.innerHTML = `${header("Impostazioni", { back: "oggi", gear: false })}
     <div class="card col" style="gap:12px"><div class="h2">Profilo</div>
       <label class="field">Nome<input class="input" id="nome" value="${esc(c.profilo.nome)}" autocomplete="given-name"></label>
-      <label class="field">Note per il coach<textarea class="input" id="note" rows="3" style="padding:12px;min-height:84px" placeholder="Es. palestra 3 volte a settimana, nuoto, obiettivo 10% di grasso">${esc(c.profilo.note)}</textarea><span class="hint">Restano su questo dispositivo e vengono inviate all'IA insieme alle domande.</span></label>
+      <label class="field">I tuoi obiettivi<textarea class="input" id="obiettivi" rows="2" style="padding:12px;min-height:64px" placeholder="Es. scendere al 12% di grasso, nuotare 2 km senza fermarmi">${esc(c.profilo.obiettivi || "")}</textarea></label>
+      <label class="field">Chi sei e come ti alleni<textarea class="input" id="note" rows="3" style="padding:12px;min-height:84px" placeholder="Es. 21 anni, palestra 3 volte a settimana, nuoto 1-2 volte, bici nel weekend">${esc(c.profilo.note)}</textarea><span class="hint">Restano su questo dispositivo e vengono inviate al coach insieme alle domande.</span></label>
       <button class="btn ghost" id="saveProfilo">Salva profilo</button></div>
 
     <div class="card col" style="gap:12px"><div class="h2">Intelligenza artificiale</div>
@@ -425,7 +440,7 @@ views.impostazioni = async (el) => {
     </div>
     <div class="small muted center" style="display:flex;justify-content:center">Kairo ${APP_VERSION} · <a href="${GITHUB_URL}" target="_blank" rel="noopener" style="margin-left:4px">open source</a></div>`;
 
-  $("#saveProfilo").onclick = () => { store.set("profilo", { nome: $("#nome").value.trim(), note: $("#note").value.trim() }); toast("Profilo salvato"); };
+  $("#saveProfilo").onclick = () => { store.set("profilo", { nome: $("#nome").value.trim(), note: $("#note").value.trim(), obiettivi: $("#obiettivi").value.trim() }); toast("Profilo salvato"); };
   $("#saveAi").onclick = () => { if (!validKey($("#gk").value)) return; store.set("groqKey", $("#gk").value.trim()); store.set("groqModel", $("#gm").value); toast("Impostazioni IA salvate"); };
   $("#loadModels").onclick = async () => {
     store.set("groqKey", $("#gk").value.trim());

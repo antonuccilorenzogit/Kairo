@@ -4,7 +4,7 @@ import { computeDay, computeHistory } from "./metrics.js";
 import { ensureSchema, SCHEMA_VERSION } from "./schema.js";
 import { dailyAdvice, chat, testAI, groqModels, DEFAULT_GROQ_MODEL, FALLBACK_MODEL } from "./coach.js";
 
-const VERSION = "1.2.0";
+const VERSION = "1.3.0";
 // Metrics that arrive already summed per day / per hour
 const DAILY = new Set(["passi", "kcal_attive", "kcal_riposo", "dist_piedi", "piani", "dist_bici",
   "dist_nuoto", "bracciate", "kcal_cibo", "proteine", "carboidrati", "grassi", "acqua"]);

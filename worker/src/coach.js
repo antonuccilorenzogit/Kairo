@@ -9,6 +9,8 @@ export const DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b";
 export const FALLBACK_MODELS = ["@cf/meta/llama-3.1-8b-instruct-fp8", "@cf/mistralai/mistral-small-3.1-24b-instruct", "@cf/meta/llama-3.2-3b-instruct"];
 export const FALLBACK_MODEL = FALLBACK_MODELS[0];
 
+// advice cached before this date was written with an older prompt and is regenerated
+const PROMPT_DATE = "2026-10-11T14:45:00Z";
 const fmtMin = (m) => (m == null ? "n/d" : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`);
 
 // One compact line per day: the LLM receives numbers already computed, never raw samples.
@@ -19,23 +21,74 @@ export async function buildContext(db, today, days = 14) {
     const parts = [
       d.giorno,
       `recupero ${r.score ?? "n/d"} (${r.stato})`,
-      `HRV ${n.hrv_ms ?? "n/d"}ms${r.componenti.hrv.baseline ? ` [media ${r.componenti.hrv.baseline}]` : ""}`,
-      `FC riposo ${n.fcr_bpm ?? "n/d"}${r.componenti.fc_riposo.baseline ? ` [media ${r.componenti.fc_riposo.baseline}]` : ""}`,
-      s ? `sonno ${fmtMin(s.durata_min)} punteggio ${s.punteggio} (${s.inizio.slice(11, 16)}-${s.fine.slice(11, 16)}, profondo ${s.fasi_min.profondo}m, REM ${s.fasi_min.rem}m)` : "sonno n/d",
+      `HRV ${n.hrv_ms ?? "n/d"}ms`,
+      `FC riposo ${n.fcr_bpm ?? "n/d"}`,
+      s ? `sonno ${fmtMin(s.durata_min)} (punteggio ${s.punteggio}, profondo ${s.fasi_min.profondo}m, REM ${s.fasi_min.rem}m)` : "sonno non registrato",
       `passi ${a.passi ?? "n/d"}`, `kcal attive ${a.kcal_attive ?? "n/d"}`,
     ];
-    if (c) parts.push(`check-in: energia ${c.energia}/5, dolori ${c.dolori}/5, umore ${c.umore}/5, attività ieri ${c.attivita || "n/d"}${c.rpe ? `, RPE ${c.rpe}` : ""}`);
+    if (c) parts.push(`check-in: energia ${c.energia}/5, indolenzimento ${c.dolori}/5, umore ${c.umore}/5, attività del giorno prima ${c.attivita || "n/d"}${c.rpe ? `, fatica percepita ${c.rpe}/10` : ""}${c.durata_min ? ` per ${c.durata_min} min` : ""}`);
     return "- " + parts.join(" · ");
   });
-  return { hist, text: lines.join("\n") };
+  const summary = await buildSummary(db, today, hist);
+  return { hist, text: lines.join("\n"), summary };
 }
 
-const SYSTEM = (profile) => `Sei il coach di Kairo, un'app personale di recupero e allenamento.
-Parli italiano, in modo diretto, amichevole e concreto. Non sei un medico: non fai diagnosi.
-Regole: usa SOLO i numeri forniti, non inventarne. Se un dato manca dillo. Risposte brevi.
-Lo score di recupero (0-100) confronta HRV notturna, FC a riposo, sonno e respirazione con la media personale degli ultimi 60 giorni.
-L'HRV di Apple Watch è SDNN: confrontala solo con la media personale.
-${profile ? `Profilo dell'utente: ${profile}` : ""}`;
+const avg = (xs) => { const v = xs.filter((x) => x != null && Number.isFinite(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+const r1 = (x, d = 0) => (x == null ? "n/d" : Number(x).toFixed(d));
+const daysAgo = (day, n) => new Date(Date.parse(day + "T12:00:00Z") - n * 86400e3).toISOString().slice(0, 10);
+
+// Big picture already digested: trends and long-term values, so the coach can reason instead of listing numbers.
+async function buildSummary(db, today, hist) {
+  const last7 = hist.slice(-7), prev7 = hist.slice(-14, -7);
+  const q = (sql, ...b) => db.prepare(sql).bind(...b).first();
+  const [hrv60, fcr60, vo2now, pesoNow, grassoNow, passi30, nuoto30, bici30] = await Promise.all([
+    q("SELECT avg(value) v, count(*) n FROM samples WHERE metric='hrv' AND ts >= ?", daysAgo(today, 60)),
+    q("SELECT avg(value) v FROM samples WHERE metric='fcr' AND ts >= ?", daysAgo(today, 60)),
+    q("SELECT value v, ts FROM samples WHERE metric='vo2max' ORDER BY ts DESC LIMIT 1"),
+    q("SELECT value v, ts FROM samples WHERE metric='peso' ORDER BY ts DESC LIMIT 1"),
+    q("SELECT value v, ts FROM samples WHERE metric='grasso_pct' ORDER BY ts DESC LIMIT 1"),
+    q("SELECT avg(value) v FROM daily WHERE metric='passi' AND day >= ?", daysAgo(today, 30)),
+    q("SELECT count(*) n, sum(value) v FROM daily WHERE metric='dist_nuoto' AND day >= ?", daysAgo(today, 30)),
+    q("SELECT count(*) n, sum(value) v FROM daily WHERE metric='dist_bici' AND day >= ?", daysAgo(today, 30)),
+  ]);
+  // value N days before the latest measurement, to describe the trend
+  const before = (metric, now, n) => (now ? q(`SELECT value v, ts FROM samples WHERE metric=? AND ts <= ? ORDER BY ts DESC LIMIT 1`, metric, daysAgo(now.ts.slice(0, 10), n)) : null);
+  const [vo2old, pesoOld, grassoOld] = await Promise.all([before("vo2max", vo2now, 180), before("peso", pesoNow, 90), before("grasso_pct", grassoNow, 90)]);
+  const age = (ts) => { const d = Math.round((Date.parse(today) - Date.parse(ts.slice(0, 10))) / 86400e3); return d <= 1 ? "recente" : `di ${d} giorni fa`; };
+  const nights = last7.filter((d) => d.sonno).length;
+  const acts = {};
+  hist.slice(-14).forEach((d) => (d.checkin?.attivita || "").split(",").filter(Boolean).forEach((a) => (acts[a] = (acts[a] || 0) + 1)));
+  const lines = [
+    `Recupero medio: ultimi 7 giorni ${r1(avg(last7.map((d) => d.recupero.score)))}, 7 giorni prima ${r1(avg(prev7.map((d) => d.recupero.score)))}.`,
+    `HRV media 7 giorni ${r1(avg(last7.map((d) => d.notte.hrv_ms)))} ms contro media personale 60 giorni ${r1(hrv60?.v)} ms (più alta = più recuperato).`,
+    `FC a riposo media 7 giorni ${r1(avg(last7.map((d) => d.notte.fcr_bpm)))} contro media 60 giorni ${r1(fcr60?.v)} bpm (più bassa = meglio).`,
+    `Sonno: registrato in ${nights} notti su 7${nights ? `, durata media ${fmtMin(Math.round(avg(last7.map((d) => d.sonno?.durata_min))))}` : ""}.`,
+    `Passi: media 7 giorni ${r1(avg(last7.map((d) => d.attivita.passi)))}, media 30 giorni ${r1(passi30?.v)}.`,
+    vo2now ? `VO2max ${r1(vo2now.v, 1)} (misura ${age(vo2now.ts)})${vo2old ? `; 6 mesi prima era ${r1(vo2old.v, 1)}` : ""}.` : "VO2max non disponibile.",
+    pesoNow ? `Peso ${r1(pesoNow.v, 1)} kg (misura ${age(pesoNow.ts)})${pesoOld ? `; 3 mesi prima ${r1(pesoOld.v, 1)} kg` : ""}${grassoNow ? `. Massa grassa ${r1(grassoNow.v, 1)}%${grassoOld ? ` (3 mesi prima ${r1(grassoOld.v, 1)}%)` : ""}` : ""}.` : "Peso non disponibile.",
+    `Ultimi 30 giorni registrati dal Watch: nuoto in ${nuoto30?.n || 0} giorni${nuoto30?.n ? ` (${r1(nuoto30.v)} m in totale)` : ""}, bici in ${bici30?.n || 0} giorni${bici30?.n ? ` (${r1(bici30.v, 1)} km in totale)` : ""}.`,
+    Object.keys(acts).length ? `Attività dichiarate nei check-in degli ultimi 14 giorni: ${Object.entries(acts).map(([k, v]) => `${k} ${v}`).join(", ")}.` : "Nessun check-in negli ultimi 14 giorni.",
+  ];
+  return lines.join("\n");
+}
+
+const SYSTEM = (profile) => `Sei il coach di Kairo: un allenatore personale esperto di recupero, sonno e allenamento. Parli italiano, dai del tu, con il tono di un coach umano che conosce bene la persona: caldo, diretto, motivante, mai robotico.
+
+COME RAGIONI
+- Prima capisci, poi parli: guarda i trend (media 7 giorni contro la media personale), non il singolo giorno. Un giorno storto non è un problema, una settimana sì.
+- Collega i dati agli obiettivi della persona. Se non li conosci, proponi tu un obiettivo sensato e chiedi se è quello giusto.
+- Usa SOLO i numeri forniti, non inventarne. Se un dato manca (es. sonno non registrato perché non dorme con il Watch), dillo in una frase e spiega perché servirebbe.
+- Non sei un medico: niente diagnosi; se qualcosa è preoccupante suggerisci di parlarne con un medico.
+
+COME RISPONDI
+- Interpreta, non elencare: spiega cosa significano i dati per lui, in parole semplici. Cita al massimo 2 o 3 numeri, solo quelli che contano.
+- Niente elenco di tutte le metriche, niente titoli, niente tabelle. Paragrafi brevi, come un messaggio di un coach.
+- Per una valutazione generale segui questo filo: com'è la situazione in una frase → cosa sta andando bene → 1 o 2 cose da migliorare e perché → obiettivo concreto per le prossime 2-4 settimane con 2-3 azioni pratiche → una domanda per conoscerlo meglio (solo se utile).
+- Puoi usare **grassetto** per 1-2 concetti chiave e un elenco puntato solo per le azioni pratiche.
+
+COSA SAI DEI DATI
+Lo score di recupero (0-100) confronta HRV notturna, FC a riposo, sonno e respirazione con la media personale degli ultimi 60 giorni. L'HRV di Apple Watch è SDNN: confrontala con la media personale, non con altre persone. Il VO2max è il miglior indicatore della forma aerobica.
+${profile ? `\nCHI È LA PERSONA\n${profile}` : ""}`;
 
 function parseQuota(h) {
   const g = (k) => h.get(k);
@@ -59,7 +112,7 @@ async function countCall(db, provider) {
 }
 
 async function callGroq(key, model, messages) {
-  const body = { model, messages, temperature: 0.4, max_tokens: 900 };
+  const body = { model, messages, temperature: 0.6, max_tokens: 1200 };
   if (model.startsWith("openai/gpt-oss")) body.reasoning_effort = "low";
   const res = await fetch(GROQ_URL, {
     method: "POST",
@@ -118,12 +171,12 @@ export async function ask(env, req, messages) {
 export async function dailyAdvice(env, req, today, force, profile) {
   if (!force) {
     const cached = await env.DB.prepare("SELECT * FROM advice WHERE day = ?").bind(today).first();
-    if (cached) return { testo: cached.text, provider: cached.provider, model: cached.model, cache: true };
+    if (cached && cached.created >= PROMPT_DATE) return { testo: cached.text, provider: cached.provider, model: cached.model, cache: true };
   }
   const ctx = await buildContext(env.DB, today, 10);
   const messages = [
     { role: "system", content: SYSTEM(profile) },
-    { role: "user", content: `Dati degli ultimi giorni (l'ultima riga è oggi):\n${ctx.text}\n\nScrivi il consiglio di oggi in massimo 2 frasi (max 45 parole): com'è il recupero e cosa conviene fare oggi con l'allenamento. Niente elenchi, niente titoli.` },
+    { role: "user", content: `Quadro generale:\n${ctx.summary}\n\nUltimi giorni (l'ultima riga è oggi):\n${ctx.text}\n\nScrivi il consiglio di oggi come un messaggio del coach: massimo 2 frasi (max 45 parole). Di' com'è messo oggi rispetto al solito e cosa conviene fare con l'allenamento, in modo concreto (tipo e intensità). Al massimo un numero. Niente elenchi, niente titoli.` },
   ];
   const r = await ask(env, req, messages);
   if (r.errore) return r;
@@ -135,7 +188,7 @@ export async function dailyAdvice(env, req, today, force, profile) {
 export async function chat(env, req, today, history, profile) {
   const ctx = await buildContext(env.DB, today, 21);
   const messages = [
-    { role: "system", content: SYSTEM(profile) + `\n\nDati degli ultimi 21 giorni (l'ultima riga è oggi):\n${ctx.text}\n\nRispondi in modo conciso (max 120 parole), cita i numeri che usi.` },
+    { role: "system", content: SYSTEM(profile) + `\n\nQUADRO GENERALE\n${ctx.summary}\n\nULTIMI 21 GIORNI (l'ultima riga è oggi)\n${ctx.text}\n\nLunghezza: risposte brevi (max 90 parole) per domande semplici, fino a 200 parole per valutazioni generali o piani.` },
     ...history.slice(-10).map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: String(m.content).slice(0, 2000) })),
   ];
   const r = await ask(env, req, messages);

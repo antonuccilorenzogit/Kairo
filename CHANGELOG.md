@@ -2,6 +2,15 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.3.0] — 2026-10-11
+
+### Migliorato
+- **Coach più umano**: interpreta i dati invece di elencarli, guarda i trend (7 giorni contro la media personale), dice cosa va bene, cosa migliorare e propone un obiettivo con azioni concrete.
+- Il coach riceve un **quadro generale** già calcolato: VO2max e peso/massa grassa con il loro andamento, HRV e FC a riposo rispetto alla media, notti registrate, passi, nuoto e bici, attività dei check-in.
+- Nuovo campo **I tuoi obiettivi** nel profilo: il coach collega i consigli ai tuoi obiettivi (se mancano, ne propone uno).
+- Le risposte del coach mostrano grassetti ed elenchi invece dei simboli `**`.
+- Nuovi suggerimenti nella chat: «Fammi una valutazione della mia forma», «Su cosa devo lavorare questo mese?».
+
 ## [1.2.0] — 2026-10-11
 
 ### Semplificato
