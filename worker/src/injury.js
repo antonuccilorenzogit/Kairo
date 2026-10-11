@@ -115,7 +115,13 @@ export async function injuryPlan(env, req, { day, today, profile, profileText, f
 - LIMITE DI SICUREZZA calcolato da Kairo: al massimo "${lim.modalita}" (${lim.motivo}). Ordine dal più prudente: riposo < resto del corpo < riabilitazione. NON proporre più di questo.
 
 Scegli cosa fare oggi tra: "riposo" (proteggere la zona, muovere solo il resto in modo leggerissimo), "resto del corpo" (mini allenamento per le parti non coinvolte, senza caricare la zona), "riabilitazione" (esercizi dolci e progressivi per la zona, più qualcosa per il resto del corpo).
-Regole: dolore massimo 3/10 durante gli esercizi; il giorno dopo il dolore non deve peggiorare; niente sport abituali che coinvolgono la zona; se la persona cita indicazioni del medico o del fisioterapista, seguile; esercizi a corpo libero o con elastico, con serie e ripetizioni o tempi precisi, spiegati in modo semplice; niente diagnosi.
+Regole:
+- Le indicazioni del medico, del chirurgo o del fisioterapista scritte nella descrizione sono VINCOLI ASSOLUTI, più importanti di tutto il resto. Divieto di carico → nessun esercizio in piedi sull'arto, niente camminate "sul posto" o con appoggio: per quell'arto solo esercizi da sdraiato o seduto. Limite di flessione o di movimento → non superarlo mai e scrivilo nell'esercizio. Dopo un intervento, per la zona operata proponi solo esercizi semplici e prudenti (isometrie, mobilizzazione nel range consentito) e ricorda di seguire il programma del fisioterapista.
+- Ogni esercizio deve essere fattibile davvero nella sua situazione: con le stampelle le mani sono occupate, quindi niente esercizi di braccia mentre cammina; gli esercizi per il resto del corpo si fanno seduti o sdraiati se non può stare in piedi su due gambe.
+- Niente "riscaldamento" o "defaticamento" di riempimento: solo blocchi che servono davvero.
+- Dolore massimo 3/10 durante gli esercizi; il giorno dopo il dolore non deve peggiorare; niente sport abituali che coinvolgono la zona.
+- Esercizi a corpo libero o con elastico, con serie e ripetizioni o tempi precisi. Scrivi in italiano semplice, senza nomi inglesi: spiega in poche parole come si fa ogni esercizio (posizione di partenza e movimento).
+- Niente diagnosi.
 Rispondi SOLO con JSON: {"modalita":"riposo|resto del corpo|riabilitazione","titolo":"max 5 parole","durata_min":20,"struttura":[{"fase":"...","dettaglio":"esercizi concreti con serie, ripetizioni o tempi"}],"perche":"una frase sul perché oggi","attenzione":"quando fermarsi o sentire un medico, specifico per questo infortunio"}`;
   let plan = null;
   const r = await ask(env, req, [{ role: "system", content: `Sei l'allenatore di Kairo, esperto di rientro dagli infortuni sportivi. Rispondi solo con JSON valido.\n${profileText}` }, { role: "user", content: prompt }]);
