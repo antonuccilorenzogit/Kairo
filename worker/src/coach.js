@@ -158,10 +158,17 @@ async function callWorkersAI(env, messages) {
   throw last || new Error("Nessuna risposta dal modello di riserva");
 }
 
+// Groq key and model: this device's (header) → Cloudflare secret → saved on the server for all devices.
+export async function groqConfig(env, req) {
+  const row = async (k) => (await env.DB.prepare("SELECT value FROM settings WHERE key = ?").bind(k).first())?.value || "";
+  const key = req.headers.get("x-groq-key") || env.GROQ_API_KEY || (await row("groq_key"));
+  const model = req.headers.get("x-groq-model") || (await row("groq_model")) || DEFAULT_GROQ_MODEL;
+  return { key, model };
+}
+
 // Ask the LLM. Tries Groq first (if a key is available), then Workers AI.
 export async function ask(env, req, messages) {
-  const key = req.headers.get("x-groq-key") || env.GROQ_API_KEY || "";
-  const model = req.headers.get("x-groq-model") || DEFAULT_GROQ_MODEL;
+  const { key, model } = await groqConfig(env, req);
   let groqError = null;
   if (key) {
     try {
@@ -241,7 +248,7 @@ export async function testAI(env, req) {
 }
 
 export async function groqModels(req, env) {
-  const key = req.headers.get("x-groq-key") || env.GROQ_API_KEY || "";
+  const { key } = await groqConfig(env, req);
   if (!key) return { errore: "Nessuna chiave Groq" };
   const res = await fetch("https://api.groq.com/openai/v1/models", { headers: { authorization: `Bearer ${key}` } });
   const data = await res.json().catch(() => ({}));

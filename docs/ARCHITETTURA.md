@@ -7,7 +7,7 @@
 | Comando **HealthSync** | iPhone | legge Apple Salute, crea un JSON, ne salva una copia in iCloud Drive (`Kairo/`) e lo invia a `POST /api/ingest` |
 | **Worker** (`worker/src`) | Cloudflare | riceve i dati, li deduplica, calcola le metriche, parla con l'IA, serve l'app |
 | **D1** | Cloudflare | database SQLite; schema creato automaticamente da `schema.js` |
-| **Web app** (`worker/public`) | browser | PWA in JavaScript senza build; tiene codice e chiave Groq in `localStorage` |
+| **Web app** (`worker/public`) | browser | PWA in JavaScript senza build; tiene in `localStorage` solo il codice di accesso, l'allenamento in corso e la coda offline |
 | **Groq** / **Workers AI** | esterni | modelli linguistici per consiglio e chat |
 
 ## Sicurezza
@@ -17,7 +17,7 @@
 - **Link di collegamento**: `/api/sync/<token>` con un token casuale di 32 caratteri. Accetta solo l'invio dei dati (POST). Si rigenera da *Impostazioni*.
 - **Validazione:** vengono salvate solo metriche conosciute, con data valida (dal 2000 a domani) e valori plausibili (es. HRV 1–400 ms, FC 20–250 bpm); il resto viene scartato e contato. Corpo massimo 20 MB, al massimo 60.000 valori per invio. Check-in: scale 1–5, RPE 1–10, attività da un elenco.
 - Nessun header CORS (solo l'app sullo stesso dominio e l'app Comandi usano l'API); pagine con Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff`, nessun referrer.
-- La chiave Groq viaggia nell'header `x-groq-key` e non viene salvata sul server. Gli errori interni non mostrano dettagli tecnici.
+- La chiave Groq è salvata in `settings.groq_key` (`/api/ia/chiave`: POST salva, DELETE rimuove, GET restituisce solo le ultime 4 cifre); non entra in diagnostica, backup ed esportazioni. Ordine di precedenza: header `x-groq-key` del dispositivo → segreto Cloudflare `GROQ_API_KEY` → chiave salvata. Le versioni precedenti la tenevano nel browser: l'app la sposta sul server al primo avvio. Gli errori interni non mostrano dettagli tecnici.
 
 ## Niente doppioni
 - **Misure puntuali** (HRV, FC, peso…): chiave unica sull'istante (`metric` + secondi dall'epoca), quindi lo stesso valore inviato più volte, anche con un fuso orario diverso, resta una riga sola.

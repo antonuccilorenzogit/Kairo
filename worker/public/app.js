@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.8.0";
+const APP_VERSION = "1.8.1";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -1060,7 +1060,7 @@ views.impostazioni = async (el) => {
       + row("sport", inj ? "🩹" : "🏅", "Sport e infortunio", inj ? `<span class="bad">infortunio attivo</span>` : esc(sports || "nessuno"))
       + row("memoria", "🧠", "Cosa ricorda il coach", "", "rowMem"))}
     ${group("App", row("notifiche", "🔔", "Notifiche", "", "rowPush")
-      + row("ia", "✨", "Coach IA", c.groqKey ? "Groq" : "modello di riserva")
+      + row("ia", "✨", "Coach IA", "", "rowIa")
       + row("collegamento", "📱", "Collegamento iPhone", "", "rowSync"))}
     ${group("Dati", row("importa", "⬇️", "Importa dati", "Salute, Hevy, Strong")
       + row("backup", "💾", "Backup ed esportazione", "", "rowBk")
@@ -1070,6 +1070,7 @@ views.impostazioni = async (el) => {
       + row("info", "ℹ️", "Informazioni e open source"))}
     <div class="small muted center" style="display:flex;justify-content:center">Kairo ${APP_VERSION}</div>`;
   const set = (id, html) => { const v = $(`#${id} [data-val]`); if (v) v.innerHTML = html; };
+  api("/api/ia/chiave").then((r) => set("rowIa", r.sul_server || r.segreto_cloudflare || cfg().groqKey ? "Groq" : "modello di riserva")).catch(() => {});
   api("/api/memoria").then((r) => set("rowMem", r.memoria.length ? `${r.memoria.length} ricordi` : "niente")).catch(() => {});
   if (pushSupported()) navigator.serviceWorker.ready.then((reg) => reg.pushManager.getSubscription()).then((s) => set("rowPush", s ? "attive" : "spente")).catch(() => {});
   else set("rowPush", "non disponibili");
@@ -1193,37 +1194,66 @@ views.notifiche = async (el) => {
 };
 
 // ---- Coach IA ----
+// The Groq key is saved on your server, so iPhone and PC use the same one (it never comes back in full).
 views.ia = async (el) => {
-  const c = cfg();
   el.innerHTML = `${subHeader("Coach IA")}
     <div class="card col" style="gap:12px">
       <div class="small" style="line-height:1.5;color:var(--text)">Il coach funziona sempre. Con una <b>chiave Groq</b> (gratuita) risponde meglio; senza usa il modello di riserva di Cloudflare.</div>
-      <label class="field">Chiave Groq<input class="input" id="gk" type="password" value="${esc(c.groqKey)}" placeholder="gsk_…" autocomplete="off"><span class="hint">Si crea su <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com</a>. Resta solo su questo dispositivo.</span></label>
+      <div id="keyState" class="card soft small" style="line-height:1.5">…</div>
+      <label class="field"><span id="gkLabel">Chiave Groq</span><input class="input" id="gk" type="password" placeholder="gsk_…" autocomplete="off" autocapitalize="off" spellcheck="false"><span class="hint">Si crea su <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com</a>. Viene salvata sul <b>tuo</b> server e vale su tutti i tuoi dispositivi.</span></label>
       <details><summary class="small" style="cursor:pointer;font-weight:700">Avanzate: scegli il modello</summary>
-        <div class="col" style="gap:8px;padding-top:10px"><select class="input" id="gm"><option value="">Predefinito</option>${c.groqModel ? `<option selected>${esc(c.groqModel)}</option>` : ""}</select><button class="btn ghost" id="loadModels">Carica modelli</button></div></details>
+        <div class="col" style="gap:8px;padding-top:10px"><select class="input" id="gm"><option value="">Predefinito</option></select><button class="btn ghost" id="loadModels">Carica modelli</button></div></details>
       <div class="row"><button class="btn primary" id="saveAi" style="flex:1">Salva</button><button class="btn ghost" id="testAi" style="flex:1">Prova</button></div>
       <div id="aiOut" class="small muted"></div></div>`;
-  $("#saveAi").onclick = () => { if (!validKey($("#gk").value)) return; store.set("groqKey", $("#gk").value.trim()); store.set("groqModel", $("#gm").value); toast("Salvato"); };
+  let st = {};
+  const show = async () => {
+    try { st = await api("/api/ia/chiave"); } catch (e) { $("#keyState").textContent = e.message; return; }
+    $("#keyState").innerHTML = st.sul_server ? `✓ Chiave salvata sul tuo server (…${esc(st.finale)}): vale su iPhone e PC. <button class="small" id="rmKey" style="background:none;border:0;color:var(--red-ink);font-weight:800;cursor:pointer;padding:0">Rimuovi</button>`
+      : st.segreto_cloudflare ? "✓ Chiave impostata come segreto su Cloudflare." : "Nessuna chiave: il coach usa il modello di riserva.";
+    $("#gkLabel").textContent = st.sul_server ? "Sostituisci la chiave" : "Chiave Groq";
+    if (st.modello && !$("#gm").querySelector(`option[value="${CSS.escape(st.modello)}"]`)) $("#gm").insertAdjacentHTML("beforeend", `<option value="${esc(st.modello)}" selected>${esc(st.modello)}</option>`);
+    const rm = $("#rmKey"); if (rm) rm.onclick = async () => { if (!confirm("Rimuovere la chiave Groq dal server? Il coach userà il modello di riserva.")) return; await api("/api/ia/chiave", { method: "DELETE" }); show(); };
+  };
+  show();
+  const save = async () => {
+    const k = $("#gk").value.trim();
+    if (!validKey(k)) return false;
+    const r = await api("/api/ia/chiave", { method: "POST", body: { ...(k ? { chiave: k } : {}), modello: $("#gm").value } });
+    if (r.errore) { toast(r.errore); return false; }
+    store.del("groqKey"); store.del("groqModel"); $("#gk").value = ""; await show(); return true;
+  };
+  $("#saveAi").onclick = async () => { try { if (await save()) toast("Salvato: vale su tutti i tuoi dispositivi"); } catch (e) { toast(e.message); } };
   $("#loadModels").onclick = async () => {
-    store.set("groqKey", $("#gk").value.trim());
     const out = $("#aiOut"); out.textContent = "Carico i modelli…";
     try {
+      if ($("#gk").value.trim() && !(await save())) return;
       const r = await api("/api/ai/modelli");
       if (r.errore) { out.textContent = r.errore; return; }
-      const cur = cfg().groqModel;
-      $("#gm").innerHTML = '<option value="">Predefinito (openai/gpt-oss-120b)</option>' + r.modelli.map((m) => `<option ${m === cur ? "selected" : ""}>${esc(m)}</option>`).join("");
+      const cur = $("#gm").value || st.modello;
+      $("#gm").innerHTML = '<option value="">Predefinito (openai/gpt-oss-120b)</option>' + r.modelli.map((m) => `<option value="${esc(m)}" ${m === cur ? "selected" : ""}>${esc(m)}</option>`).join("");
       out.textContent = `${r.modelli.length} modelli disponibili.`;
     } catch (e) { out.textContent = e.message; }
   };
   $("#testAi").onclick = async () => {
-    store.set("groqKey", $("#gk").value.trim()); store.set("groqModel", $("#gm").value);
     const out = $("#aiOut"); out.textContent = "Provo…";
     try {
+      if ($("#gk").value.trim() && !(await save())) { out.textContent = ""; return; }
       const r = await api("/api/ai/test", { method: "POST" });
       out.innerHTML = r.errore ? `<span class="bad">${esc(r.errore)}</span>` : `<span class="good">Funziona</span> · ${r.provider === "groq" ? "Groq" : "modello di riserva"} · ${r.latenza_ms} ms${r.quota?.richieste_rimaste ? ` · ${esc(r.quota.richieste_rimaste)} richieste rimaste oggi` : ""}${r.avviso ? `<br>${esc(r.avviso)}` : ""}`;
     } catch (e) { out.textContent = e.message; }
   };
 };
+
+// A key saved only on this device (older versions) moves to the server once, so the PC uses it too.
+async function migrateGroqKey() {
+  const k = cfg().groqKey; if (!k) return;
+  try {
+    const st = await api("/api/ia/chiave");
+    if (!st.sul_server) await api("/api/ia/chiave", { method: "POST", body: { chiave: k, ...(cfg().groqModel ? { modello: cfg().groqModel } : {}) } });
+    store.del("groqKey"); store.del("groqModel");
+    if (!st.sul_server) toast("Chiave Groq salvata sul tuo server: ora vale anche sul PC");
+  } catch (_) {}
+}
 
 // ---- Collegamento iPhone ----
 views.collegamento = async (el) => {
@@ -1775,7 +1805,7 @@ views["configura-ia"] = async (el) => {
       <button class="btn primary" id="save">Salva e prova</button>
       <div id="out" class="small" style="line-height:1.5"></div>
       <button class="btn ghost" id="skip">Lo faccio dopo</button></div>
-    <div class="small muted center">La chiave resta solo su questo dispositivo. Puoi cambiarla in Impostazioni.</div>`;
+    <div class="small muted center">La chiave viene salvata sul tuo server e vale su tutti i tuoi dispositivi. Puoi cambiarla in Impostazioni → Coach IA.</div>`;
   $("#save").onclick = async () => {
     const k = $("#gk").value.trim();
     if (!k) return ($("#out").textContent = "Incolla prima la chiave, oppure tocca «Lo faccio dopo».");
@@ -1785,6 +1815,7 @@ views["configura-ia"] = async (el) => {
       const r = await api("/api/ai/test", { method: "POST" });
       if (r.errore) { $("#out").innerHTML = `<span class="bad">${esc(r.errore)}</span>`; return; }
       if (r.provider !== "groq") { $("#out").innerHTML = `<span class="bad">Groq non ha risposto${r.avviso ? ": " + esc(r.avviso) : ""}</span>`; return; }
+      await api("/api/ia/chiave", { method: "POST", body: { chiave: k } }); store.del("groqKey");
       toast("Chiave Groq funzionante"); route("guida");
     } catch (e) { $("#out").innerHTML = `<span class="bad">${esc(e.message)}</span>`; }
   };
@@ -1807,7 +1838,7 @@ async function router() {
     const info = await api("/api/info").catch(() => null);
     return route(info && info.setup_richiesto ? "benvenuto" : "accesso");
   }
-  if (!profileLoaded) { profileLoaded = true; loadProfile(); }
+  if (!profileLoaded) { profileLoaded = true; loadProfile(); migrateGroqKey(); }
   const view = views[name] || views.oggi;
   renderTabs(TABS.some(([k]) => k === name) ? name : null);
   window.scrollTo(0, 0);

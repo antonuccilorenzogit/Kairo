@@ -23,7 +23,7 @@ const dropTodayAdvice = (db, day) => db.prepare("DELETE FROM advice WHERE day IN
 import { recomputeTrimp } from "./load.js";
 import { getVapid, sendPush, validEndpoint } from "./push.js";
 
-const VERSION = "1.8.0";
+const VERSION = "1.8.1";
 
 // No CORS headers: only the Kairo app (same origin) and the Shortcuts app (not a browser) talk to the API.
 const json = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), {
@@ -155,9 +155,9 @@ async function diagnostics(env) {
     db.prepare("SELECT metric, count(*) n, min(day) da, max(day) a FROM daily GROUP BY metric ORDER BY metric"),
     db.prepare("SELECT count(*) n, min(start) da, max(end) a FROM sleep"),
     db.prepare("SELECT received, modulo, esportato, righe, versione FROM imports ORDER BY id DESC LIMIT 12"),
-    db.prepare("SELECT key, value FROM settings WHERE key LIKE 'ai_%' OR key IN ('schema_version','setup_at','last_backup')"),
+    db.prepare("SELECT key, value FROM settings WHERE key LIKE 'ai_%' OR key IN ('schema_version','setup_at','last_backup','groq_model') OR (key = 'groq_key' AND value != '')"),
   ]);
-  const settings = Object.fromEntries(r[5].results.map((x) => [x.key, x.value]));
+  const settings = Object.fromEntries(r[5].results.map((x) => [x.key, x.key === "groq_key" ? "1" : x.value]));
   const day = new Date().toISOString().slice(0, 10);
   let dbSize = null;
   try { dbSize = (await db.prepare("SELECT 1").run()).meta?.size_after ?? null; } catch (_) {}
@@ -172,7 +172,8 @@ async function diagnostics(env) {
       chiamate_oggi_groq: Number(settings[`ai_calls_groq_${day}`] || 0),
       chiamate_oggi_riserva: Number(settings[`ai_calls_workers_ai_${day}`] || 0),
       riserva_disponibile: !!env.AI, modello_riserva: FALLBACK_MODEL, modello_predefinito: DEFAULT_GROQ_MODEL,
-      chiave_groq_sul_server: !!env.GROQ_API_KEY,
+      chiave_groq_sul_server: !!env.GROQ_API_KEY || !!settings.groq_key,
+      modello_sul_server: settings.groq_model || null,
     },
   };
 }
@@ -411,6 +412,23 @@ async function api(req, env, url) {
   }
   if (p === "/api/ai/test" && req.method === "POST") return json(await testAI(env, req));
   if (p === "/api/ai/modelli") return json(await groqModels(req, env));
+  // Groq key saved on the server, so every device (iPhone, PC) uses it. It is never sent back in full.
+  if (p === "/api/ia/chiave") {
+    const set = (k, v) => env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(k, v).run();
+    if (req.method === "POST") {
+      const b = (await readJson(req)) || {};
+      const key = String(b.chiave || "").trim(), model = String(b.modello || "").trim();
+      if (key && !/^gsk_[A-Za-z0-9]{20,200}$/.test(key)) return json({ errore: "La chiave Groq inizia con gsk_ e non ha spazi: ricopiala da console.groq.com." }, 400);
+      if (model && !/^[\w./:-]{1,100}$/.test(model)) return json({ errore: "Modello non valido" }, 400);
+      if (key) await set("groq_key", key);
+      if (b.modello !== undefined) await set("groq_model", model);
+    } else if (req.method === "DELETE") {
+      await env.DB.prepare("DELETE FROM settings WHERE key IN ('groq_key','groq_model')").run();
+    }
+    const k = (await env.DB.prepare("SELECT value FROM settings WHERE key = 'groq_key'").first())?.value || "";
+    const m = (await env.DB.prepare("SELECT value FROM settings WHERE key = 'groq_model'").first())?.value || "";
+    return json({ sul_server: !!k, finale: k ? k.slice(-4) : null, modello: m || null, segreto_cloudflare: !!env.GROQ_API_KEY });
+  }
   if (p === "/api/diagnostica") return json(await diagnostics(env));
   if (p === "/api/codice" && req.method === "POST") {
     const b = (await readJson(req)) || {};

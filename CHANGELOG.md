@@ -2,6 +2,11 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.8.1] — 2026-10-11
+
+### Migliorato
+- **Tutto uguale su iPhone e PC**: la chiave Groq ora è salvata sul tuo server, così anche sul PC il coach usa Groq e non il modello di riserva. Chi l'aveva sul telefono se la ritrova spostata da sola al primo avvio. L'app ne mostra solo le ultime 4 cifre; non entra in backup ed esportazioni; si toglie da *Impostazioni → Coach IA*. Memoria del coach, profilo, chat, infortunio, schede e dati erano già sincronizzati.
+
 ## [1.8.0] — 2026-10-11
 
 ### Migliorato

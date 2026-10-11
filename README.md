@@ -49,7 +49,8 @@ Open source, gratuito, i dati restano nel <i>tuo</i> account.</p>
 ```
 
 - **Nessun server centrale**: ognuno pubblica la propria copia di Kairo sul proprio account Cloudflare, gratuito.
-- **Le chiavi restano sui tuoi dispositivi**: il codice di accesso e la chiave Groq sono salvati nel browser e inviati solo al tuo server.
+- **Le chiavi restano a te**: il codice di accesso è sul tuo dispositivo (sul server solo il suo hash); la chiave Groq è salvata sul *tuo* server, così vale su iPhone e PC, e non viene mai rimandata intera all'app né inclusa in backup ed esportazioni.
+- **Tutto è sincronizzato tra i dispositivi**: profilo, memoria del coach, chat, infortunio, schede e dati sono sul server; aprendo Kairo sul PC con lo stesso codice trovi tutto.
 - **All'IA arrivano solo riassunti numerici**, mai i dati grezzi, più le tue domande e i ricordi del coach (che vedi e cancelli dalle Impostazioni).
 
 Dettagli tecnici in [docs/ARCHITETTURA.md](docs/ARCHITETTURA.md).

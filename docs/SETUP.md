@@ -27,7 +27,7 @@ Sono solo due parti: **1. crei il server** (dal PC) e **2. colleghi l'iPhone** (
 Apri l'indirizzo **sull'iPhone, in Safari**. L'app ti accompagna da sola:
 
 1. **Crea il codice di accesso** (almeno 10 caratteri) e salvalo nel portachiavi o in Note. Ti servirà per aprire Kairo su altri dispositivi.
-2. **Coach IA (facoltativo):** se vuoi un coach più preciso, crea una chiave gratuita su [console.groq.com/keys](https://console.groq.com/keys) e incollala. Puoi anche saltare questo passo: il coach funziona lo stesso con un modello gratuito di Cloudflare.
+2. **Coach IA (facoltativo):** se vuoi un coach più preciso, crea una chiave gratuita su [console.groq.com/keys](https://console.groq.com/keys) e incollala: viene salvata sul tuo server e vale anche sul PC. Puoi anche saltare questo passo: il coach funziona lo stesso con un modello gratuito di Cloudflare.
 3. **Segui la Guida** che compare, 7 passi:
    1. **Prima di iniziare:** iPhone → *Impostazioni → App → Comandi → Avanzate* → attiva **Consenti condivisione di grandi quantità di dati**.
    2. **Installa il comando:** tocca **① Copia il link di collegamento**, poi **② Scarica HealthSync** → *Scarica* → apri il file dai download → **Configura comando** → incolla il link → **Aggiungi comando**.
