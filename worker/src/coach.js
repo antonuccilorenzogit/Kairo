@@ -11,7 +11,7 @@ export const FALLBACK_MODELS = ["@cf/meta/llama-3.1-8b-instruct-fp8", "@cf/mistr
 export const FALLBACK_MODEL = FALLBACK_MODELS[0];
 
 // advice cached before this date was written with an older prompt and is regenerated
-const PROMPT_DATE = "2026-10-11T19:30:00Z";
+const PROMPT_DATE = "2026-10-11T19:45:00Z";
 const fmtMin = (m) => (m == null ? "n/d" : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`);
 
 // One compact line per day: the LLM receives numbers already computed, never raw samples.
@@ -191,7 +191,7 @@ export async function dailyAdvice(env, req, today, force, profile) {
   const ctx = await buildContext(env.DB, today, 10);
   const messages = [
     { role: "system", content: SYSTEM(profile) },
-    { role: "user", content: `Quadro generale:\n${ctx.summary}\n\nUltimi giorni (l'ultima riga è oggi):\n${ctx.text}\n\nScrivi il consiglio di oggi come un messaggio del coach: massimo 2 frasi (max 45 parole). Di' com'è messo oggi rispetto al solito e cosa fare con l'allenamento, seguendo l'ALLENAMENTO CONSIGLIATO e adattandolo ai suoi sport. Se c'è un'ATTENZIONE, parti da quella. Al massimo un numero. Niente elenchi, niente titoli.` },
+    { role: "user", content: `Quadro generale:\n${ctx.summary}\n\nUltimi giorni (l'ultima riga è oggi):\n${ctx.text}\n\nScrivi il messaggio del coach di stamattina: massimo 2 frasi (max 40 parole). Di' com'è messo oggi rispetto al solito (recupero, sonno) e una cosa da curare oggi (sonno, idratazione, intensità). Non descrivere la seduta: l'allenamento di oggi è già proposto a parte. Se c'è un'ATTENZIONE, parti da quella. Al massimo un numero. Niente elenchi, niente titoli.` },
   ];
   const r = await ask(env, req, messages);
   if (r.errore) return r;

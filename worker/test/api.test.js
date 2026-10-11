@@ -181,7 +181,7 @@ test("migrazione da un database della versione 1 senza perdere dati", async () =
   await setup(env);
   assert.equal(await count(env, "samples"), 2, "il doppione con fuso diverso viene unito");
   assert.equal(await count(env, "sleep"), 1);
-  assert.equal((await db.prepare("SELECT value FROM settings WHERE key='schema_version'").first()).value, "3");
+  assert.equal((await db.prepare("SELECT value FROM settings WHERE key='schema_version'").first()).value, "4");
 });
 
 test("richieste OPTIONS e pagine dell'app", async () => {

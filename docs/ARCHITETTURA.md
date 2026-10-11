@@ -57,7 +57,10 @@
 | GET/POST | `/api/profilo` | profilo (età, sesso, obiettivi, FC max, sveglia, sonno necessario, fuso) |
 | GET/DELETE | `/api/chat` | conversazione con il coach (salvata sul server) |
 | GET | `/api/settimana?a=` | report dei 7 giorni fino ad `a` · POST `/api/settimana/coach` resoconto del coach |
-| GET/POST | `/api/forza` | progressi di forza · importa serie (`{"serie":[…]}`) |
+| GET/POST | `/api/forza` | progressi di forza · salva serie (`{"serie":[…]}`: import da Hevy/Strong o allenamento fatto in Kairo) |
+| POST | `/api/allenamento/oggi` | allenamento del giorno (`{"forza":true}` rigenera, `{"altro":true,"escludi":"nuoto"}` propone un altro sport) |
+| GET/PUT | `/api/schede` | schede di palestra (e ultima seduta di ogni esercizio) · PUT sostituisce l'elenco |
+| POST | `/api/schede/ia` | trasforma una descrizione a parole in schede (non le salva) |
 | GET | `/api/push/chiave` · POST/DELETE `/api/push/iscrivi` · POST `/api/push/prova` | notifiche push |
 
 ## Formato dei dati
@@ -100,6 +103,8 @@ Nessuna app (Whoop, Oura, Garmin, Bevel) pubblica la formula esatta dei suoi pun
 - **Allenamento consigliato:** fascia di carico per oggi in multipli della media a 28 giorni: recupero verde 0,9–1,5, giallo 0,5–1,0, rosso 0–0,5; con rapporto > 1,3 il massimo scende a 0,8, con rapporto < 0,8 e recupero verde sale a 1,6. Livello: seduta dura (massimo ≥ 1,4), normale (≥ 0,95), leggera (≥ 0,6), riposo attivo.
 - **Allarmi:** "malanno" se per due giorni di fila l'HRV è ≥ 1 DS sotto la media e la FC a riposo ≥ 1 DS sopra (o la respirazione ≥ 1 DS sopra); "sovraccarico" se da tre giorni l'HRV è sotto l'intervallo normale e il rapporto acuto:cronico supera 1,3.
 - **Fabbisogno di sonno stanotte** (principio di Whoop): base (profilo, predefinito 8 h) + fino a 45 minuti se il carico di oggi supera il solito + un settimo del debito degli ultimi 7 giorni (massimo 60 minuti). Orario per andare a letto = sveglia − fabbisogno − 15 minuti per addormentarsi. Notti senza Watch: le ore dichiarate nel check-in (conta solo la durata).
+- **Allenamento del giorno:** prima le regole scelgono sport e intensità massima: intensità da allenamento consigliato (dura → intenso, normale → medio, leggera/riposo → leggero) o dal recupero; con un allarme sempre leggero e niente pesi; tra gli sport attivi nel profilo vince quello fatto meno di recente (check-in, serie di palestra, distanze di nuoto e bici dal Watch), evitando quello di ieri; per la palestra la scheda successiva a quella fatta per ultima. Poi l'IA scrive la seduta (JSON validato): può cambiare sport tra quelli attivi ma l'intensità viene sempre limitata a quella delle regole. Senza IA si usano sedute tipo per ogni sport e intensità. Una proposta al giorno, in cache.
+- **Allenamento in palestra:** la seduta vive nel telefono (localStorage) finché non la termini; serie con kg e ripetizioni precompilate dall'ultima volta; doppia progressione (tutte le serie al massimo del range → +2,5 kg, +1 kg sotto i 20 kg). A fine seduta l'RPE della sessione entra nel carico (session-RPE). Senza rete il salvataggio resta in coda e viene inviato alla prima occasione.
 - **Forza:** massimale stimato con la formula di Epley, peso × (1 + ripetizioni/30), sulla serie migliore di ogni seduta (1–12 ripetizioni, riscaldamento escluso).
 - **VO₂max:** classificazione con le tabelle della Cooper Institute (le stesse di Garmin). **Età del cuore:** l'età in cui il tuo VO₂max sarebbe al 50° percentile (media tra 40° e 60°), interpolata tra le decadi, minimo 20 anni, come la Fitness Age di Garmin.
 - **Composizione corporea:** categorie di massa grassa dell'American Council on Exercise; BMI secondo l'OMS; FC a riposo secondo l'American Heart Association (60–100 normale, 40–60 sportivi).

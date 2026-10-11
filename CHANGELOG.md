@@ -5,18 +5,20 @@ Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https
 ## [Non pubblicato]
 
 ### Aggiunto
-- **Allenamento consigliato del giorno** nella pagina Oggi: una sola indicazione (seduta dura, normale, leggera, riposo attivo) e la fascia di carico per oggi, calcolate da recupero e carico.
+- **Allenamento del giorno dall'IA**: sceglie tra i tuoi sport (palestra, nuoto, bici, corsa, attivabili in Impostazioni) cosa fare, con quale intensità (leggero, medio, intenso) e, per nuoto, bici e corsa, la seduta completa con riscaldamento, tecnica e andature, parte centrale e defaticamento; per la palestra quale scheda. Recupero, carico e allarmi limitano l'intensità; «Altra proposta» cambia sport; senza IA usa sedute tipo.
+- **Sezione Palestra** (nella barra in basso): schede con serie e range di ripetizioni, **compilate dal coach** a partire da una descrizione; **allenamento in corso** sul telefono anche senza rete, con carichi dell'ultima volta e suggerimento di progressione, RPE della seduta a fine allenamento; progressione dei massimali.
+- **Importa dati** da Salute, Hevy e **Strong** in un'unica pagina.
 - **Carico di allenamento**: TRIMP di Edwards dalla frequenza cardiaca (FC max misurata o stimata con Tanaka) e session-RPE di Foster per la palestra; rapporto acuto:cronico 7/28 giorni con stato (scarico, mantenimento, costruzione, attenzione, eccesso) e grafico di 28 giorni.
 - **Allarmi** di malanno in arrivo o fatica accumulata, mostrati solo quando servono.
 - **Sonno: quanto ti serve stanotte** e a che ora andare a letto (base + carico del giorno + debito); **notti senza Watch** con le ore dichiarate nel check-in.
 - **Report settimanale** con il resoconto del coach.
-- **Forza**: import dei tuoi allenamenti da Hevy (CSV), massimale stimato con Epley, record e serie per settimana nella pagina Corpo; le sedute con RPE entrano nel carico.
+- **Forza**: massimale stimato con Epley, record e serie per settimana; le sedute con RPE entrano nel carico.
 - **Notifiche** (solo due al giorno): recupero e allenamento consigliato la mattina, orario per andare a letto la sera. Web Push senza servizi esterni.
 - **Profilo e conversazione con il coach salvati sul server**: uguali su iPhone e PC; nuovi campi FC massima, sveglia, sonno necessario.
 - **Pagina Corpo**: composizione corporea, qualità del cambiamento (ricomposizione, definizione…), "Motore" con VO₂max, età del cuore e frequenza cardiaca, diario e confronto di due misure.
 - Profilo con età e sesso (per età del cuore e riferimenti).
 - **Backup automatici** ogni settimana e prima di ogni cancellazione (ultime 8 copie), con download e **ripristino** dalle Impostazioni.
-- **39 test automatici** e controllo su GitHub a ogni modifica.
+- **45 test automatici** e controllo su GitHub a ogni modifica.
 
 ### Migliorato
 - **Pagina Oggi essenziale**: recupero, allenamento di oggi, sonno, coach, check-in. I dettagli (HRV, FC, passi) sono nelle pagine dedicate; la respirazione compare solo quando abbassa il recupero.

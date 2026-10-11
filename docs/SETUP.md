@@ -55,9 +55,15 @@ La pagina *Impostazioni → Diagnostica* ti dice se c'è una versione nuova.
 
 Apri Kairo **dall'icona sulla schermata Home** (su iPhone le notifiche funzionano solo così, iOS 16.4 o successivo), vai in *Impostazioni → Notifiche → Attiva* e consenti. Ricevi solo due notifiche al giorno: la mattina, appena arrivano i dati della notte, recupero e allenamento consigliato; la sera, circa 30 minuti prima dell'orario consigliato per andare a letto (imposta la sveglia abituale nel profilo).
 
-## Allenamenti di forza da Hevy
+## Palestra e allenamento del giorno
 
-In Hevy: *Profilo → Impostazioni → Esporta e importa dati → Esporta allenamenti*. Poi in Kairo: *Impostazioni → Importa dati da Salute → Allenamenti di forza da Hevy* e scegli il file `.csv`. Ripetilo quando vuoi (per esempio una volta al mese): le serie già importate non vengono duplicate. I progressi compaiono nella pagina *Corpo*.
+- In *Impostazioni → Profilo* scegli i tuoi sport (palestra, nuoto, bici, corsa): l'allenamento del giorno nella pagina Oggi sceglie solo tra questi.
+- In *Palestra* tocca **✨ Crea con il coach** e descrivi i tuoi allenamenti (es. «Scheda A petto: panca 4x8-10, croci 3x12…»): controlla l'anteprima e salva. Puoi anche crearle o modificarle a mano.
+- **Inizia allenamento**: segna kg e ripetizioni di ogni serie e tocca ✓. La seduta resta sul telefono anche senza rete; a fine allenamento indica quanto è stato duro (1–10).
+
+## Allenamenti di forza da Hevy o Strong
+
+In Hevy: *Profilo → Impostazioni → Esporta e importa dati → Esporta allenamenti*; in Strong: *Profilo → Impostazioni → Esporta dati*. Poi in Kairo: *Impostazioni → Importa dati* e scegli il file `.csv` (il formato viene riconosciuto da solo). Ripetilo quando vuoi (per esempio una volta al mese): le serie già importate non vengono duplicate. I progressi compaiono nella pagina *Palestra*.
 
 ## Backup
 

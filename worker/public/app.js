@@ -76,6 +76,7 @@ const ico = {
   oggi: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 17a8 8 0 0 1 16 0"/><path d="M2 17h20M12 4v3M5 8l2 2M19 8l-2 2"/></svg>',
   recupero: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>',
   sonno: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',
+  palestra: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11"/></svg>',
   corpo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="4.5" r="2.5"/><path d="M12 8v7M7 10.5l5-2 5 2M9 21l3-6 3 6"/></svg>',
   coach: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>',
   gear: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
@@ -116,7 +117,7 @@ function bean(score, size = 150) {
 }
 
 /* ---------- layout ---------- */
-const TABS = [["oggi", "Oggi"], ["recupero", "Recupero"], ["sonno", "Sonno"], ["corpo", "Corpo"], ["coach", "Coach"]];
+const TABS = [["oggi", "Oggi"], ["palestra", "Palestra"], ["sonno", "Sonno"], ["corpo", "Corpo"], ["coach", "Coach"]];
 function renderTabs(active) {
   const nav = $("#tabbar");
   if (!active) { nav.hidden = true; return; }
@@ -176,11 +177,8 @@ views.oggi = async (el) => {
         ? `<div class="h2">In calibrazione</div><div class="muted small">Servono almeno 5 notti con HRV e FC a riposo (ne ho ${r.giorni_baseline}).</div>`
         : `<div class="row" style="gap:8px;align-items:baseline"><span style="font-size:42px;font-weight:900;line-height:1">${r.score}</span><span class="h2 ${st.cls}">${st.label}</span></div>
            <div class="muted small">Recupero${delta != null ? ` · ${delta >= 0 ? "▲" : "▼"} ${Math.abs(delta)} da ieri` : ""}${r.calibrazione ? " · stima provvisoria" : ""}</div>`}</div>${ico.chevron}</a>
-    <button class="card col" id="loadCard" style="border:0;text-align:left;cursor:pointer;gap:10px">
-      <div class="row between" style="width:100%"><div class="label">Allenamento di oggi</div><span class="small ${stCls}" style="font-weight:800">${stLabel}</span></div>
-      ${cs ? `<div><div class="h2">${esc(cs.titolo)}</div><div class="small" style="color:var(--text);line-height:1.45;margin-top:2px">${esc(cs.testo)}.</div></div>${loadBar}`
-        : `<div class="small" style="color:var(--text);line-height:1.5">${r.score == null ? "Appena Kairo conosce il tuo recupero ti dico quanto spingere." : r.score >= 67 ? "<b>Recuperato:</b> via libera a una seduta impegnativa." : r.score >= 34 ? "<b>Recupero parziale:</b> allenamento normale, senza strafare." : "<b>Recupero basso:</b> meglio un giorno leggero."} Il carico preciso arriva dopo 2 settimane di dati del Watch.</div>`}
-    </button>
+    <div class="card col" id="workout" style="gap:10px"><div class="row between"><div class="label">Allenamento di oggi</div><button class="small ${stCls}" id="loadCard" style="font-weight:800;background:none;border:0;cursor:pointer;padding:0">${stLabel} ⓘ</button></div>
+      <div class="skeleton" style="height:22px;width:60%"></div><div class="skeleton" style="height:60px"></div></div>
     <a class="card row between" href="#/sonno" style="text-decoration:none;color:inherit;gap:12px">
       <div class="col" style="gap:2px"><div class="label">Sonno</div>
         <div style="font-weight:800">${sleepNow ? `Stanotte ${sleepNow}` : "Nessun sonno registrato"}</div>
@@ -194,11 +192,35 @@ views.oggi = async (el) => {
     <a class="card row between" href="#/settimana" style="text-decoration:none;color:inherit;${new Date().getDay() === 1 ? "background:var(--soft)" : ""}"><div class="col" style="gap:2px"><div style="font-weight:900">La tua settimana</div><div class="small muted">${new Date().getDay() === 1 ? "Il resoconto della settimana è pronto" : "Carico, recupero, sonno e forma degli ultimi 7 giorni"}</div></div>${ico.chevron}</a>`;
   el.querySelectorAll("[data-checkin]").forEach((b) => b.addEventListener("click", () => checkinSheet(d.checkin, !d.sonno || d.sonno.manuale)));
   $("#loadCard").onclick = () => loadSheet();
+  loadWorkout(false);
   // the advice arrives asynchronously so the page is usable immediately
   api("/api/coach/oggi", { method: "POST", body: {} })
     .then((a) => { const box = $("#advice"); if (box) box.innerHTML = md(a.errore ? a.errore : a.testo); })
     .catch((e) => { const box = $("#advice"); if (box) box.textContent = e.message; });
 };
+
+// Today's workout proposed by the AI within the limits of recovery and load
+const SPORT = { palestra: "Palestra", nuoto: "Nuoto", bici: "Bici", corsa: "Corsa" };
+const INT_LABEL = { leggero: ["Leggero", "good"], medio: ["Medio", "mid"], intenso: ["Intenso", "bad"] };
+async function loadWorkout(force, escludi) {
+  const box = $("#workout"); if (!box) return;
+  const head = box.firstElementChild.outerHTML;
+  if (force) box.innerHTML = head + '<div class="skeleton" style="height:22px;width:60%"></div><div class="skeleton" style="height:60px"></div>';
+  let w;
+  try { w = await api("/api/allenamento/oggi", { method: "POST", body: force ? { altro: !!escludi, escludi, forza: true } : {} }); }
+  catch (e) { if ($("#workout")) $("#workout").innerHTML = head + `<div class="small bad">${esc(e.message)}</div>`; return; }
+  if (!$("#workout")) return;
+  const [il, ic] = INT_LABEL[w.intensita] || ["", "muted"];
+  $("#workout").innerHTML = head + `
+    <div class="row between" style="align-items:flex-start;gap:10px"><div class="col" style="gap:2px"><div class="h2">${esc(SPORT[w.sport])} · ${esc(w.titolo)}</div>
+      <div class="small muted">${w.durata_min} min circa${w.scheda ? ` · <b style="color:var(--ink)">${esc(w.scheda)}</b>` : ""}</div></div><span class="pill ${ic}">${il}</span></div>
+    <div class="col" style="gap:8px">${w.struttura.map((x) => `<div class="small" style="line-height:1.45"><b>${esc(x.fase)}</b> · ${esc(x.dettaglio)}</div>`).join("")}</div>
+    <div class="small muted" style="line-height:1.45">${esc(w.perche)}</div>
+    <div class="row" style="gap:8px">${w.sport === "palestra" && w.scheda ? `<button class="btn primary" id="wStart" style="flex:2;min-height:44px">Inizia ${esc(w.scheda)}</button>` : ""}<button class="btn ghost" id="wOther" style="flex:1;min-height:44px">Altra proposta</button></div>`;
+  $("#loadCard").onclick = () => loadSheet();
+  $("#wOther").onclick = () => loadWorkout(true, w.sport);
+  const st = $("#wStart"); if (st) st.onclick = async () => { const { schede } = await api("/api/schede"); const sc = schede.find((x) => x.nome === w.scheda); if (sc) startSession(sc); };
+}
 
 // Training load: last 28 days and how to read it
 async function loadSheet() {
@@ -572,7 +594,7 @@ function vo2InfoSheet(vo2, age, sex) {
 
 views.corpo = async (el) => {
   el.innerHTML = header("Corpo") + loading(3);
-  const [data, forza] = await Promise.all([api("/api/corpo"), api("/api/forza").catch(() => null)]);
+  const data = await api("/api/corpo");
   const prof = cfg().profilo, age = Number(prof.eta) || null, sex = prof.sesso || "";
   const ms = data.misure, last = ms[ms.length - 1];
   const today = todayStr();
@@ -645,22 +667,6 @@ views.corpo = async (el) => {
     </div>`;
   }
 
-  // strength: the main lifts, estimated one-rep max (Epley)
-  if (forza && forza.esercizi.length) {
-    const top = forza.esercizi.slice(0, 3);
-    const maxSets = Math.max(1, ...forza.serie_per_settimana);
-    html += `<div class="card col" style="gap:10px"><div class="row between"><div class="label">Forza</div><span class="small muted">massimale stimato</span></div>
-      <div class="list">${top.map((e, i) => {
-        const cur = e.max_4_settimane, prev = e.max_4_precedenti, d = cur != null && prev != null ? cur - prev : null;
-        const stuck = e.settimane_dal_record != null && e.settimane_dal_record >= 4;
-        return `<button class="item" data-ex="${i}"><div class="col" style="gap:2px;text-align:left"><b>${esc(e.esercizio)}</b><span class="small ${stuck ? "mid" : "muted"}">${stuck ? `nessun record da ${e.settimane_dal_record} settimane` : `record ${fmtNum(e.record, 1)} kg`}</span></div>
-          <div style="text-align:right"><div class="big" style="font-size:20px">${cur != null ? fmtNum(cur, 1) : "–"} <span class="small muted">kg</span></div>${d != null ? `<span class="small ${d >= 0 ? "good" : "bad"}">${signed(d, 1)} in 4 settimane</span>` : ""}</div></button>`; }).join("")}</div>
-      <div class="col" style="gap:4px"><div class="small muted">Serie per settimana (ultime 8)</div><div class="row" style="gap:4px;align-items:flex-end;height:44px">${forza.serie_per_settimana.map((n, i) => `<div style="flex:1;height:${Math.max(3, (n / maxSets) * 44)}px;background:${i === 7 ? "var(--orange)" : "#C9CEDB"};border-radius:4px" title="${n} serie"></div>`).join("")}</div></div>
-    </div>`;
-  } else {
-    html += `<a class="card row between" href="#/importa" style="text-decoration:none;color:inherit"><div class="col" style="gap:2px"><div class="label">Forza</div><div class="small" style="color:var(--text)">Importa i tuoi allenamenti da Hevy per vedere i progressi sugli esercizi principali.</div></div>${ico.chevron}</a>`;
-  }
-
   // 3 · measurement diary
   if (ms.length) {
     const rows = [...ms].reverse().slice(0, 60);
@@ -693,11 +699,6 @@ views.corpo = async (el) => {
     el.querySelectorAll("#qseg button").forEach((b) => (b.onclick = () => drawQuad(Number(b.dataset.q))));
     $("#fatInfo").onclick = () => fatInfoSheet(last, sex);
   }
-  el.querySelectorAll("[data-ex]").forEach((b) => (b.onclick = () => {
-    const e = forza.esercizi[Number(b.dataset.ex)];
-    openSheet(`${sheetHead(esc(e.esercizio))}<div class="small muted">Massimale stimato (formula di Epley) della serie migliore di ogni seduta</div>${timeChart(e.storico, "#FF8A1F", "")}
-      <div style="line-height:1.55;color:var(--text)">${e.settimane_dal_record >= 4 ? `Nessun nuovo record da <b>${e.settimane_dal_record} settimane</b>. Di solito aiuta una settimana di scarico (−40% di serie) e poi ripartire con un piccolo aumento di carico o un cambio di ripetizioni.` : `Ultimo record il ${fmtDate(e.record_il, { day: "numeric", month: "long" })}: la progressione sta funzionando.`}</div>`, "Esercizio");
-  }));
   const vi = $("#vo2Info"); if (vi) vi.onclick = () => vo2InfoSheet(vo2[vo2.length - 1][1], age, sex || "M");
   // compare two measurements
   const picked = [];
@@ -719,6 +720,202 @@ views.corpo = async (el) => {
         <b style="flex:1;text-align:right" class="${x == null || y == null || !g ? "" : (y - x) * g >= 0 ? "good" : "bad"}">${x == null || y == null ? "–" : signed(y - x, 1)}</b></div>`).join("")}</div>`, "Confronto misure");
   };
 };
+
+/* ---------- gym: routines, live session, progress ---------- */
+const localIso = (d = new Date()) => {
+  const off = -d.getTimezoneOffset(), pad = (n) => String(Math.abs(Math.trunc(n))).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}${off >= 0 ? "+" : "-"}${pad(off / 60)}:${pad(off % 60)}`;
+};
+const kgStep = (kg) => (kg >= 20 ? 2.5 : 1);
+// double progression: all sets at the top of the range last time → add weight, otherwise same weight and more reps
+function progression(ex, last) {
+  if (!last || !last.serie.length) return { testo: "Prima volta: scegli un carico con cui arrivi al range con 2 ripetizioni in riserva.", kg: null };
+  const done = last.serie.filter((x) => x.reps != null);
+  const kg = Math.max(...last.serie.map((x) => x.kg || 0)) || null;
+  const allTop = done.length >= Math.min(ex.serie, last.serie.length) && done.every((x) => x.reps >= ex.max);
+  const lastTxt = `Ultima volta: ${last.serie.map((x) => `${x.kg != null ? fmtNum(x.kg, 1) + " kg × " : ""}${x.reps ?? "–"}`).join(", ")}`;
+  if (kg && allTop) return { testo: `${lastTxt}. Hai chiuso il range: prova ${fmtNum(kg + kgStep(kg), 1)} kg.`, kg: kg + kgStep(kg) };
+  return { testo: `${lastTxt}. ${kg ? `Stesso carico, punta a ${ex.max} ripetizioni.` : ""}`, kg };
+}
+
+async function startSession(scheda) {
+  const cur = store.get("sessione", null);
+  if (cur && !confirm(`C'è già un allenamento in corso (${cur.nome}). Vuoi abbandonarlo e iniziare ${scheda.nome}?`)) return route("sessione");
+  let ultimo = {};
+  try { ultimo = (await api("/api/schede")).ultimo || {}; } catch (_) {}
+  store.set("sessione", {
+    id: scheda.id, nome: scheda.nome, inizio: localIso(), inizioMs: Date.now(),
+    esercizi: scheda.esercizi.map((e) => {
+      const pr = progression(e, ultimo[e.nome]);
+      return { nome: e.nome, min: e.min, max: e.max, note: e.note || "", consiglio: pr.testo,
+        serie: Array.from({ length: e.serie }, (_, i) => ({ kg: pr.kg ?? ultimo[e.nome]?.serie[i]?.kg ?? null, reps: null, fatto: false })) };
+    }),
+  });
+  route("sessione");
+}
+
+// sessions finished without connection wait here and are sent later
+async function flushQueue() {
+  const q = store.get("coda", []);
+  if (!q.length) return 0;
+  const left = [];
+  for (const job of q) { try { await api("/api/forza", { method: "POST", body: { serie: job } }); } catch (_) { left.push(job); } }
+  store.set("coda", left);
+  return q.length - left.length;
+}
+
+views.palestra = async (el) => {
+  el.innerHTML = header("Palestra") + loading(2);
+  const sent = await flushQueue();
+  const [{ schede }, forza] = await Promise.all([api("/api/schede"), api("/api/forza").catch(() => null)]);
+  const cur = store.get("sessione", null), queued = store.get("coda", []).length;
+  let html = header("Palestra");
+  if (sent) html += `<div class="card soft small">Inviati ${sent} allenamenti salvati senza rete ✓</div>`;
+  if (queued) html += `<div class="card soft small">${queued} allenamenti in attesa di connessione: li invio appena c'è rete.</div>`;
+  if (cur) html += `<a class="btn orange block" href="#/sessione" style="justify-content:space-between;min-height:60px;border-radius:20px"><span class="col" style="gap:0;text-align:left"><span style="font-weight:900">Allenamento in corso</span><span class="small" style="font-weight:600">${esc(cur.nome)} · ${Math.round((Date.now() - cur.inizioMs) / 60000)} min</span></span>${ico.arrow}</a>`;
+  html += `<div class="row between" style="padding:0 2px"><div class="label">Le tue schede</div><button class="small" id="aiSchede" style="background:none;border:0;color:var(--orange-ink);font-weight:800;cursor:pointer">✨ Crea con il coach</button></div>`;
+  html += schede.length ? schede.map((sc, i) => `<div class="card col" style="gap:10px">
+      <div class="row between"><div class="h2">${esc(sc.nome)}</div><a class="small" href="#/scheda?id=${encodeURIComponent(sc.id)}" style="font-weight:800">Modifica</a></div>
+      <div class="small muted" style="line-height:1.5">${sc.esercizi.map((e) => `${esc(e.nome)} <span style="white-space:nowrap">${e.serie}×${e.min}${e.max !== e.min ? "–" + e.max : ""}</span>`).join(" · ")}</div>
+      <button class="btn primary" data-start="${i}">Inizia allenamento</button></div>`).join("")
+    : `<div class="card col" style="gap:10px"><div class="h2">Nessuna scheda</div><div class="small" style="line-height:1.5;color:var(--text)">Descrivi al coach i tuoi allenamenti (es. «Lunedì: panca 4x8-10, croci 3x12…») e compila lui le schede. Oppure creale a mano.</div>
+      <button class="btn primary" id="aiSchede2">✨ Crea le schede con il coach</button><a class="btn ghost" href="#/scheda?id=nuova">Crea a mano</a></div>`;
+  if (schede.length) html += `<a class="btn ghost" href="#/scheda?id=nuova">+ Nuova scheda</a>`;
+  // progress of the main lifts
+  if (forza && forza.esercizi.length) {
+    const maxSets = Math.max(1, ...forza.serie_per_settimana);
+    html += `<div class="card col" style="gap:10px"><div class="row between"><div class="label">Progressione dei carichi</div><span class="small muted">massimale stimato</span></div>
+      <div class="list">${forza.esercizi.slice(0, 5).map((e, i) => {
+        const cur2 = e.max_4_settimane, prev = e.max_4_precedenti, d = cur2 != null && prev != null ? cur2 - prev : null, stuck = e.settimane_dal_record >= 4;
+        return `<button class="item" data-ex="${i}"><div class="col" style="gap:2px;text-align:left"><b>${esc(e.esercizio)}</b><span class="small ${stuck ? "mid" : "muted"}">${stuck ? `nessun record da ${e.settimane_dal_record} settimane` : `record ${fmtNum(e.record, 1)} kg`}</span></div>
+          <div style="text-align:right"><div class="big" style="font-size:20px">${cur2 != null ? fmtNum(cur2, 1) : "–"} <span class="small muted">kg</span></div>${d != null ? `<span class="small ${d >= 0 ? "good" : "bad"}">${signed(d, 1)} in 4 settimane</span>` : ""}</div></button>`; }).join("")}</div>
+      <div class="col" style="gap:4px"><div class="small muted">Serie per settimana (ultime 8)</div><div class="row" style="gap:4px;align-items:flex-end;height:44px">${forza.serie_per_settimana.map((n, i) => `<div style="flex:1;height:${Math.max(3, (n / maxSets) * 44)}px;background:${i === 7 ? "var(--orange)" : "#C9CEDB"};border-radius:4px" title="${n} serie"></div>`).join("")}</div></div></div>`;
+  }
+  el.innerHTML = html;
+  el.querySelectorAll("[data-start]").forEach((b) => (b.onclick = () => startSession(schede[Number(b.dataset.start)])));
+  for (const id of ["#aiSchede", "#aiSchede2"]) { const b = $(id); if (b) b.onclick = () => aiSchedeSheet(schede); }
+  el.querySelectorAll("[data-ex]").forEach((b) => (b.onclick = () => {
+    const e = forza.esercizi[Number(b.dataset.ex)];
+    openSheet(`${sheetHead(esc(e.esercizio))}<div class="small muted">Massimale stimato (formula di Epley) della serie migliore di ogni seduta</div>${timeChart(e.storico, "#FF8A1F", "")}
+      <div style="line-height:1.55;color:var(--text)">${e.settimane_dal_record >= 4 ? `Nessun nuovo record da <b>${e.settimane_dal_record} settimane</b>. Di solito aiuta una settimana di scarico (−40% di serie) e poi ripartire con un piccolo aumento di carico o un cambio di ripetizioni.` : `Ultimo record il ${fmtDate(e.record_il, { day: "numeric", month: "long" })}: la progressione sta funzionando.`}</div>`, "Esercizio");
+  }));
+};
+
+// The coach turns a free description into routines; you check them before saving.
+function aiSchedeSheet(current) {
+  const w = openSheet(`${sheetHead("Schede con il coach")}
+    <div class="small" style="line-height:1.5;color:var(--text)">Scrivi i tuoi allenamenti come li diresti a un amico: giorni, esercizi, serie e ripetizioni. Il coach li trasforma in schede.</div>
+    <textarea class="input" id="aiTxt" rows="8" style="padding:12px;min-height:180px" placeholder="Es.\nScheda A petto e tricipiti: panca piana 4x8-10, panca inclinata manubri 3x10-12, croci ai cavi 3x12-15, french press 3x10\nScheda B schiena: trazioni 4x6-8, rematore bilanciere 4x8-10…"></textarea>
+    <button class="btn primary" id="aiGo">Compila le schede</button><div id="aiOut"></div>`, "Schede con il coach");
+  w.querySelector("#aiGo").onclick = async () => {
+    const out = w.querySelector("#aiOut"), txt = w.querySelector("#aiTxt").value;
+    out.innerHTML = '<div class="skeleton" style="height:80px"></div>';
+    try {
+      const r = await api("/api/schede/ia", { method: "POST", body: { testo: txt } });
+      if (r.errore) { out.innerHTML = `<div class="small bad">${esc(r.errore)}</div>`; return; }
+      out.innerHTML = `<div class="small muted">${r.fonte === "ia" ? "Compilate dal coach" : "Lette dal testo (IA non disponibile)"}: controlla e salva.</div>
+        ${r.schede.map((sc) => `<div class="card col" style="gap:6px"><b>${esc(sc.nome)}</b>${sc.esercizi.map((e) => `<div class="row between small"><span>${esc(e.nome)}</span><b>${e.serie} × ${e.min}${e.max !== e.min ? "–" + e.max : ""}</b></div>`).join("")}</div>`).join("")}
+        <div class="row">${current.length ? `<button class="btn ghost" id="aiAdd" style="flex:1">Aggiungi alle mie</button>` : ""}<button class="btn primary" id="aiSave" style="flex:1">${current.length ? "Sostituisci le mie" : "Salva le schede"}</button></div>`;
+      const save = async (list) => { try { await api("/api/schede", { method: "PUT", body: { schede: list } }); closeSheet(); toast("Schede salvate"); router(); } catch (e) { toast(e.message); } };
+      out.querySelector("#aiSave").onclick = () => save(r.schede);
+      const add = out.querySelector("#aiAdd"); if (add) add.onclick = () => save([...current, ...r.schede]);
+    } catch (e) { out.innerHTML = `<div class="small bad">${esc(e.message)}</div>`; }
+  };
+}
+
+// Manual editor of one routine
+views.scheda = async (el) => {
+  const id = new URLSearchParams(location.hash.split("?")[1] || "").get("id");
+  const { schede } = await api("/api/schede");
+  const isNew = id === "nuova";
+  const sc = isNew ? { id: "s" + Date.now().toString(36), nome: `Scheda ${String.fromCharCode(65 + schede.length)}`, esercizi: [{ nome: "", serie: 3, min: 8, max: 10, note: "" }] } : JSON.parse(JSON.stringify(schede.find((x) => x.id === id) || {}));
+  if (!sc.esercizi) return route("palestra");
+  const draw = () => {
+    el.innerHTML = `${header(isNew ? "Nuova scheda" : "Modifica scheda", { back: "palestra", gear: false })}
+      <div class="card col" style="gap:10px"><label class="field">Nome<input class="input" id="scNome" value="${esc(sc.nome)}" maxlength="60"></label></div>
+      ${sc.esercizi.map((e, i) => `<div class="card col" style="gap:8px">
+        <div class="row" style="gap:8px"><input class="input" data-f="nome" data-i="${i}" value="${esc(e.nome)}" placeholder="Esercizio" maxlength="80"><button class="iconbtn" data-del="${i}" aria-label="Elimina esercizio" style="background:var(--bg)">${ico.close}</button></div>
+        <div class="row" style="gap:8px"><label class="field" style="flex:1;font-size:13px">Serie<input class="input" type="number" inputmode="numeric" min="1" max="10" data-f="serie" data-i="${i}" value="${e.serie}"></label>
+          <label class="field" style="flex:1;font-size:13px">Rip. min<input class="input" type="number" inputmode="numeric" min="1" max="50" data-f="min" data-i="${i}" value="${e.min}"></label>
+          <label class="field" style="flex:1;font-size:13px">Rip. max<input class="input" type="number" inputmode="numeric" min="1" max="60" data-f="max" data-i="${i}" value="${e.max}"></label></div></div>`).join("")}
+      <button class="btn ghost" id="addEx">+ Aggiungi esercizio</button>
+      <button class="btn primary" id="saveSc">Salva scheda</button>
+      ${isNew ? "" : `<button class="btn danger" id="delSc">Elimina scheda</button>`}`;
+    el.querySelectorAll("[data-f]").forEach((inp) => (inp.oninput = () => { const e = sc.esercizi[Number(inp.dataset.i)]; e[inp.dataset.f] = inp.dataset.f === "nome" ? inp.value : Number(inp.value); }));
+    el.querySelectorAll("[data-del]").forEach((b) => (b.onclick = () => { sc.esercizi.splice(Number(b.dataset.del), 1); draw(); }));
+    $("#scNome").oninput = (e) => (sc.nome = e.target.value);
+    $("#addEx").onclick = () => { sc.esercizi.push({ nome: "", serie: 3, min: 8, max: 10, note: "" }); draw(); };
+    $("#saveSc").onclick = async () => {
+      sc.esercizi = sc.esercizi.filter((e) => e.nome.trim());
+      for (const e of sc.esercizi) if (e.max < e.min) e.max = e.min;
+      const list = isNew ? [...schede, sc] : schede.map((x) => (x.id === sc.id ? sc : x));
+      try { await api("/api/schede", { method: "PUT", body: { schede: list } }); toast("Scheda salvata"); route("palestra"); } catch (err) { toast(err.message); }
+    };
+    const del = $("#delSc");
+    if (del) del.onclick = async () => { if (!confirm(`Eliminare ${sc.nome}? Gli allenamenti già fatti restano.`)) return; await api("/api/schede", { method: "PUT", body: { schede: schede.filter((x) => x.id !== sc.id) } }); route("palestra"); };
+  };
+  draw();
+};
+
+// Live session: stays on the phone (works offline), sent to the server when you finish
+let wakeLock = null;
+views.sessione = async (el) => {
+  const ses = store.get("sessione", null);
+  if (!ses) return route("palestra");
+  try { wakeLock = await navigator.wakeLock?.request("screen"); } catch (_) {}
+  const save = () => store.set("sessione", ses);
+  const draw = () => {
+    const done = ses.esercizi.reduce((a, e) => a + e.serie.filter((x) => x.fatto).length, 0), tot = ses.esercizi.reduce((a, e) => a + e.serie.length, 0);
+    el.innerHTML = `${header(esc(ses.nome), { back: "palestra", gear: false, sub: `${Math.round((Date.now() - ses.inizioMs) / 60000)} min · ${done}/${tot} serie` })}
+      ${ses.esercizi.map((e, i) => `<div class="card col" style="gap:8px">
+        <div class="row between"><div class="h2" style="font-size:18px">${esc(e.nome)}</div><span class="small muted" style="white-space:nowrap">${e.min}${e.max !== e.min ? "–" + e.max : ""} rip.</span></div>
+        ${e.consiglio ? `<div class="small muted" style="line-height:1.4">${esc(e.consiglio)}</div>` : ""}
+        ${e.serie.map((x, j) => `<div class="row" style="gap:8px;${x.fatto ? "opacity:.6" : ""}">
+          <span class="small" style="width:52px;font-weight:800">Serie ${j + 1}</span>
+          <input class="input" type="number" inputmode="decimal" step="0.5" min="0" placeholder="kg" data-k="${i}.${j}" value="${x.kg ?? ""}" style="flex:1;min-height:44px" aria-label="Chili serie ${j + 1}">
+          <input class="input" type="number" inputmode="numeric" min="0" max="100" placeholder="${e.min}${e.max !== e.min ? "–" + e.max : ""}" data-r="${i}.${j}" value="${x.reps ?? ""}" style="flex:1;min-height:44px" aria-label="Ripetizioni serie ${j + 1}">
+          <button class="choice" data-ok="${i}.${j}" aria-pressed="${x.fatto}" style="min-height:44px;width:52px" aria-label="Serie fatta">✓</button></div>`).join("")}
+        <button class="small" data-add="${i}" style="background:none;border:0;color:var(--orange-ink);font-weight:800;cursor:pointer;align-self:flex-start">+ serie</button></div>`).join("")}
+      <button class="btn primary block" id="finish">Termina allenamento</button>
+      <button class="btn ghost block" id="abandon">Abbandona</button>`;
+    const at = (v) => v.split(".").map(Number);
+    el.querySelectorAll("[data-k]").forEach((inp) => (inp.onchange = () => { const [i, j] = at(inp.dataset.k); ses.esercizi[i].serie[j].kg = inp.value === "" ? null : Number(inp.value); save(); }));
+    el.querySelectorAll("[data-r]").forEach((inp) => (inp.onchange = () => { const [i, j] = at(inp.dataset.r); ses.esercizi[i].serie[j].reps = inp.value === "" ? null : Number(inp.value); save(); }));
+    el.querySelectorAll("[data-ok]").forEach((b) => (b.onclick = () => {
+      const [i, j] = at(b.dataset.ok), x = ses.esercizi[i].serie[j];
+      x.fatto = !x.fatto;
+      if (x.fatto && x.reps == null) x.reps = ses.esercizi[i].max; // tick without typing = top of the range
+      // the next set starts with the same weight
+      const nx = ses.esercizi[i].serie[j + 1]; if (x.fatto && nx && nx.kg == null) nx.kg = x.kg;
+      save(); const y = window.scrollY; draw(); window.scrollTo(0, y);
+    }));
+    el.querySelectorAll("[data-add]").forEach((b) => (b.onclick = () => { const e = ses.esercizi[Number(b.dataset.add)]; e.serie.push({ kg: e.serie[e.serie.length - 1]?.kg ?? null, reps: null, fatto: false }); save(); draw(); }));
+    $("#abandon").onclick = () => { if (confirm("Abbandonare l'allenamento? Le serie segnate non verranno salvate.")) { store.del("sessione"); route("palestra"); } };
+    $("#finish").onclick = () => finishSheet(ses);
+  };
+  draw();
+};
+
+// End of session: how hard was it (session RPE), then send — or keep it queued without connection
+function finishSheet(ses) {
+  let rpe = 7;
+  const w = openSheet(`${sheetHead("Fine allenamento")}
+    <div class="col" style="gap:6px"><label class="row between" for="rpeF" style="font-weight:800"><span>Quanto è stato duro?</span><span id="rpeV" style="color:var(--orange-ink)">7/10</span></label>
+      <input id="rpeF" type="range" min="1" max="10" value="7"><div class="row between small muted"><span>1 facilissimo</span><span>10 al limite</span></div></div>
+    <div class="small muted" style="line-height:1.5">Serve a calcolare il carico della seduta (durata × fatica, metodo di Foster).</div>
+    <button class="btn primary block" id="sendF">Salva allenamento</button>`, "Fine allenamento");
+  w.querySelector("#rpeF").oninput = (e) => { rpe = Number(e.target.value); w.querySelector("#rpeV").textContent = rpe + "/10"; };
+  w.querySelector("#sendF").onclick = async () => {
+    const end = localIso();
+    const serie = ses.esercizi.flatMap((e) => e.serie.filter((x) => x.fatto).map((x, j) => ({ start: ses.inizio, end, workout: ses.nome, exercise: e.nome, set_index: j, set_type: "normal", weight: x.kg, reps: x.reps, rpe, fonte: "kairo" })));
+    if (!serie.length) { toast("Nessuna serie segnata"); return; }
+    try { await api("/api/forza", { method: "POST", body: { serie } }); toast(`Salvato: ${serie.length} serie`); }
+    catch (_) { store.set("coda", [...store.get("coda", []), serie]); toast("Senza rete: lo invio appena possibile"); }
+    store.del("sessione");
+    try { await wakeLock?.release(); } catch (_) {}
+    closeSheet(); route("palestra");
+  };
+}
 
 /* ---------- check-in ---------- */
 function checkinSheet(existing, askSleep = false) {
@@ -770,6 +967,7 @@ views.impostazioni = async (el) => {
       <label class="field">Nome<input class="input" id="nome" value="${esc(c.profilo.nome)}" autocomplete="given-name"></label>
       <div class="grid2"><label class="field">Età<input class="input" id="eta" type="number" inputmode="numeric" min="12" max="99" value="${esc(c.profilo.eta || "")}"></label>
         <label class="field">Sesso<select class="input" id="sesso"><option value="">–</option><option value="M" ${c.profilo.sesso === "M" ? "selected" : ""}>Uomo</option><option value="F" ${c.profilo.sesso === "F" ? "selected" : ""}>Donna</option></select></label></div>
+      <div class="field"><span>I tuoi sport</span><div class="acts" style="grid-template-columns:repeat(4,minmax(0,1fr))" id="sports">${[["palestra", "Palestra"], ["nuoto", "Nuoto"], ["bici", "Bici"], ["corsa", "Corsa"]].map(([k, l]) => `<button type="button" class="choice" data-sport="${k}" aria-pressed="${(c.profilo.sport || ["palestra", "nuoto", "bici", "corsa"]).includes(k)}">${l}</button>`).join("")}</div><span class="hint">L'allenamento consigliato ogni giorno sceglie solo tra questi.</span></div>
       <label class="field">I tuoi obiettivi<textarea class="input" id="obiettivi" rows="2" style="padding:12px;min-height:64px" placeholder="Es. scendere al 12% di grasso, nuotare 2 km senza fermarmi">${esc(c.profilo.obiettivi || "")}</textarea></label>
       <label class="field">Chi sei e come ti alleni<textarea class="input" id="note" rows="3" style="padding:12px;min-height:84px" placeholder="Es. palestra 3 volte a settimana, nuoto 1-2 volte, bici nel weekend">${esc(c.profilo.note)}</textarea></label>
       <div class="grid2"><label class="field">Sveglia abituale<input class="input" id="sveglia" type="time" value="${esc(c.profilo.sveglia || "")}"><span class="hint">Per l'orario consigliato per andare a letto.</span></label>
@@ -808,7 +1006,7 @@ views.impostazioni = async (el) => {
     <div class="card list">
       <a class="item" href="#/diagnostica">Diagnostica ${ico.chevron}</a>
       <a class="item" href="#/guida">Guida e tutorial ${ico.chevron}</a>
-      <a class="item" href="#/importa">Importa dati da Salute (esportazione) ${ico.chevron}</a>
+      <a class="item" href="#/importa">Importa dati (Salute, Hevy, Strong) ${ico.chevron}</a>
       <a class="item" href="#/info">Informazioni, licenze e open source ${ico.chevron}</a>
       <a class="item" href="/api/export" id="export">Esporta tutti i dati (JSON) ${ico.chevron}</a>
       <button class="item" id="logout">Esci da questo dispositivo ${ico.chevron}</button>
@@ -818,10 +1016,13 @@ views.impostazioni = async (el) => {
 
   $("#saveProfilo").onclick = async () => {
     const body = { nome: $("#nome").value.trim(), eta: $("#eta").value.trim(), sesso: $("#sesso").value, note: $("#note").value.trim(), obiettivi: $("#obiettivi").value.trim(),
-      sveglia: $("#sveglia").value, sonno_min: Number($("#sonnomin").value), fc_max: $("#fcmax").value.trim(), tz: tz() };
+      sveglia: $("#sveglia").value, sonno_min: Number($("#sonnomin").value), fc_max: $("#fcmax").value.trim(), tz: tz(),
+      sport: [...el.querySelectorAll("[data-sport]")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.dataset.sport) };
+    if (!body.sport.length) { toast("Scegli almeno uno sport"); return; }
     try { const saved = await api("/api/profilo", { method: "POST", body }); store.set("profilo", saved); toast("Profilo salvato"); }
     catch (e) { toast(e.message); }
   };
+  el.querySelectorAll("[data-sport]").forEach((b) => (b.onclick = () => b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") !== "true")));
   // ---- notifications (web push; on iPhone only for the app added to the Home Screen) ----
   const pushOk = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
   const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
@@ -1173,7 +1374,7 @@ views.guida = async (el) => {
 /* ---------- import from the Apple Health export ---------- */
 views.importa = async (el) => {
   const cutoff = (days) => shiftDay(todayStr(), -days);
-  el.innerHTML = `${header("Importa da Salute", { back: "impostazioni", gear: false })}
+  el.innerHTML = `${header("Importa dati", { back: "impostazioni", gear: false, sub: "Da Salute e dalle app di allenamento" })}
     <div class="card col" style="gap:12px"><div class="h2">1 · Esporta da Salute</div>
       <ol class="steps"><li>Apri l'app <b>Salute</b> sull'iPhone.</li>
         <li>Tocca la tua <b>foto</b> (o iniziali) in alto a destra.</li>
@@ -1187,8 +1388,10 @@ views.importa = async (el) => {
       <div class="small muted">Il file viene letto <b>su questo dispositivo</b>: al tuo server arrivano solo i valori che Kairo usa (non ECG, non posizioni GPS, non documenti clinici).</div>
       <div id="prog"></div></div>
     <div id="result"></div>
-    <div class="card col" style="gap:12px"><div class="h2">Allenamenti di forza da Hevy</div>
-      <ol class="steps"><li>Apri <b>Hevy</b> → <b>Profilo</b> → ⚙️ <b>Impostazioni</b> → <b>Esporta e importa dati</b> → <b>Esporta allenamenti</b>.</li>
+    <div class="card col" style="gap:12px"><div class="h2">Allenamenti di palestra da altre app</div>
+      <div class="small" style="line-height:1.5;color:var(--text)">Kairo riconosce da solo il file di <b>Hevy</b> e di <b>Strong</b>.</div>
+      <ol class="steps"><li><b>Hevy:</b> Profilo → ⚙️ Impostazioni → <b>Esporta e importa dati</b> → <b>Esporta allenamenti</b>.</li>
+        <li><b>Strong:</b> Profilo → ⚙️ Impostazioni → <b>Esporta dati</b>.</li>
         <li>Salva il file <b>.csv</b> su File e sceglilo qui sotto. Puoi ripeterlo quando vuoi: le serie già importate non vengono duplicate.</li></ol>
       <input type="file" id="hevyFile" accept=".csv,text/csv" class="input" style="padding:10px">
       <div id="hevyOut" class="small"></div></div>`;
@@ -1270,6 +1473,33 @@ function hevyDate(s) {
   const off = -d.getTimezoneOffset(), pad = (n) => String(Math.abs(n)).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00${off >= 0 ? "+" : "-"}${pad(Math.trunc(off / 60))}:${pad(off % 60)}`;
 }
+// Strong CSV: Date, Workout Name, Duration, Exercise Name, Set Order, Weight, Reps, Distance, Seconds, Notes, Workout Notes, RPE
+async function importStrong(rows, head, out) {
+  const col = (n) => head.indexOf(n);
+  const dur = (s) => { const h = /(\d+)\s*h/.exec(s || ""), m = /(\d+)\s*m/.exec(s || ""); return (h ? Number(h[1]) * 60 : 0) + (m ? Number(m[1]) : 0) || null; };
+  const sets = []; let bad = 0;
+  for (const r of rows) {
+    const startD = new Date(String(r[col("date")] || "").replace(" ", "T"));
+    if (isNaN(startD)) { bad++; continue; }
+    const min = dur(r[col("duration")]);
+    const so = String(r[col("set order")] || "");
+    if (!/^\d+$/.test(so)) continue; // warm-up (W) and drop sets are not counted
+    sets.push({ start: localIso(startD), end: min ? localIso(new Date(startD.getTime() + min * 60000)) : null, workout: r[col("workout name")], exercise: r[col("exercise name")],
+      set_index: Number(so) - 1, set_type: "normal", weight: r[col("weight")] === "" ? null : Number(String(r[col("weight")]).replace(",", ".")),
+      reps: r[col("reps")] === "" ? null : Number(r[col("reps")]), rpe: col("rpe") >= 0 && r[col("rpe")] !== "" ? Number(r[col("rpe")]) : null, fonte: "strong" });
+  }
+  return sendSets(sets, bad, out);
+}
+async function sendSets(sets, bad, out) {
+  let saved = 0, discarded = bad;
+  for (const [i, part] of chunks(sets, 2000).entries()) {
+    out.textContent = `Invio ${i + 1} di ${Math.ceil(sets.length / 2000)}…`;
+    const r = await api("/api/forza", { method: "POST", body: { serie: part } });
+    saved += r.righe; discarded += r.scartate;
+  }
+  const workouts = new Set(sets.map((x) => x.start)).size;
+  out.innerHTML = `<span class="good">Importate ${fmtNum(saved)} serie da ${fmtNum(workouts)} allenamenti.</span>${discarded ? ` <span class="muted">${fmtNum(discarded)} righe scartate.</span>` : ""} <a href="#/palestra">Vedi i progressi</a>`;
+}
 async function importHevy(f, out) {
   if (!f) return;
   try {
@@ -1277,7 +1507,8 @@ async function importHevy(f, out) {
     const rows = parseCsv(await f.text());
     const head = rows.shift().map((h) => h.trim().toLowerCase());
     const col = (n) => head.indexOf(n);
-    if (col("exercise_title") < 0 || col("start_time") < 0) throw new Error("Non sembra un export di Hevy (mancano le colonne exercise_title e start_time).");
+    if (col("exercise name") >= 0 && col("set order") >= 0) return importStrong(rows, head, out);
+    if (col("exercise_title") < 0 || col("start_time") < 0) throw new Error("Formato non riconosciuto: serve l'export CSV di Hevy o di Strong.");
     const lbs = col("weight_kg") < 0 && col("weight_lbs") >= 0;
     const sets = [];
     let bad = 0;
@@ -1289,14 +1520,7 @@ async function importHevy(f, out) {
         weight: w === "" || w == null ? null : Math.round(Number(w) * (lbs ? 0.45359237 : 1) * 100) / 100, reps: r[col("reps")] === "" ? null : Number(r[col("reps")]),
         rpe: col("rpe") >= 0 && r[col("rpe")] !== "" ? Number(r[col("rpe")]) : null, fonte: "hevy" });
     }
-    let saved = 0, discarded = bad;
-    for (const [i, part] of chunks(sets, 2000).entries()) {
-      out.textContent = `Invio ${i + 1} di ${Math.ceil(sets.length / 2000)}…`;
-      const r = await api("/api/forza", { method: "POST", body: { serie: part } });
-      saved += r.righe; discarded += r.scartate;
-    }
-    const workouts = new Set(sets.map((x) => x.start)).size;
-    out.innerHTML = `<span class="good">Importate ${fmtNum(saved)} serie da ${fmtNum(workouts)} allenamenti.</span>${discarded ? ` <span class="muted">${fmtNum(discarded)} righe scartate.</span>` : ""} <a href="#/corpo">Vedi i progressi</a>`;
+    return sendSets(sets, bad, out);
   } catch (e) { out.innerHTML = `<span class="bad">${esc(e.message)}</span>`; }
 }
 

@@ -5,6 +5,7 @@ import { ensureSchema, SCHEMA_VERSION } from "./schema.js";
 import { dailyAdvice, chat, testAI, groqModels, weeklyCoach, DEFAULT_GROQ_MODEL, FALLBACK_MODEL } from "./coach.js";
 import { saveSets, strengthSummary } from "./strength.js";
 import { weeklyReport } from "./report.js";
+import { recommendWorkout, getSchede, saveSchede, lastSets, schedeFromText } from "./workout.js";
 import { sha256, safeEqual, clientIp, lockedFor, recordFailure, clearFailures, pruneFailures, codeProblem } from "./security.js";
 import { parsePayload, cleanCheckin, MAX_BODY_BYTES } from "./validate.js";
 import { exportData, createBackup, listBackups, readBackup, restoreData } from "./backup.js";
@@ -273,6 +274,27 @@ async function api(req, env, url) {
     const rep = await weeklyReport(env.DB, validDay(url.searchParams.get("a")) || yesterday);
     if (p === "/api/settimana") return json(rep);
     return json(await weeklyCoach(env, req, rep, profileText(await getProfile(env.DB))));
+  }
+  if (p === "/api/allenamento/oggi" && req.method === "POST") {
+    const b = (await readJson(req)) || {};
+    const profile = await getProfile(env.DB);
+    const hist = await computeHistory(env.DB, todayLocal(tz), 8);
+    return json(await recommendWorkout(env, req, { hist, profile, profileText: profileText(profile), schede: await getSchede(env.DB),
+      force: !!b.forza || !!b.altro, exclude: b.altro && ["palestra", "nuoto", "bici", "corsa"].includes(b.escludi) ? b.escludi : null }));
+  }
+  if (p === "/api/schede") {
+    if (req.method === "PUT" || req.method === "POST") {
+      const b = await readJson(req);
+      const r = await saveSchede(env.DB, b?.schede);
+      if (r.errore) return json(r, 400);
+    }
+    const schede = await getSchede(env.DB);
+    return json({ schede, ultimo: await lastSets(env.DB, [...new Set(schede.flatMap((s) => s.esercizi.map((e) => e.nome)))]) });
+  }
+  if (p === "/api/schede/ia" && req.method === "POST") {
+    const b = (await readJson(req)) || {};
+    if (!String(b.testo || "").trim()) return json({ errore: "Descrivi i tuoi allenamenti" }, 400);
+    return json(await schedeFromText(env, req, b.testo));
   }
   if (p === "/api/forza") {
     if (req.method === "POST") {

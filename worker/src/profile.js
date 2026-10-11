@@ -1,6 +1,7 @@
 // User profile, stored on the server so every device (iPhone, PC) and the coach see the same data.
 
 export const DEFAULT_SLEEP_NEED = 480; // minutes (centre of the AASM 7-9 h range)
+export const SPORTS = ["palestra", "nuoto", "bici", "corsa"];
 
 const str = (v, n) => (v == null ? "" : String(v).trim().slice(0, n));
 const intIn = (v, lo, hi) => { const n = Number(v); return v === "" || v == null || !Number.isFinite(n) ? null : n >= lo && n <= hi ? Math.round(n) : undefined; };
@@ -15,6 +16,7 @@ export function cleanProfile(p) {
     fc_max: intIn(p?.fc_max, 120, 230),                // measured maximum heart rate, if known
     sonno_min: intIn(p?.sonno_min, 360, 600) ?? null,  // personal sleep need
     sveglia: /^\d{2}:\d{2}$/.test(String(p?.sveglia || "")) ? p.sveglia : "",
+    sport: Array.isArray(p?.sport) ? [...new Set(p.sport.filter((x) => SPORTS.includes(x)))] : ["palestra", "nuoto", "bici", "corsa"],
     tz: /^[A-Za-z_]+(\/[A-Za-z0-9_+-]+){0,2}$/.test(String(p?.tz || "")) ? p.tz : "Europe/Rome",
   };
   const bad = Object.entries(out).filter(([, v]) => v === undefined).map(([k]) => k);
@@ -43,5 +45,6 @@ export function profileText(p) {
     p.sesso ? (p.sesso === "F" ? "È una donna." : "È un uomo.") : "",
     p.note ? `Di sé dice: ${p.note}` : "",
     p.obiettivi ? `I suoi obiettivi: ${p.obiettivi}` : "Non ha ancora indicato i suoi obiettivi.",
+    p.sport && p.sport.length ? `Sport che pratica: ${p.sport.join(", ")}.` : "",
   ].filter(Boolean).join("\n");
 }

@@ -1,6 +1,6 @@
 // Database schema. Applied automatically on the first request (idempotent),
 // so a fresh deployment needs no manual migration step.
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export const SCHEMA = [
   // Point samples (HRV, resting HR, SpO2, respiration, weight, heart rate…).
@@ -45,6 +45,9 @@ export const SCHEMA = [
      start TEXT NOT NULL, exercise TEXT NOT NULL, set_index INTEGER NOT NULL,
      set_type TEXT, weight REAL, reps INTEGER, rpe REAL, workout TEXT, end TEXT, fonte TEXT,
      PRIMARY KEY (start, exercise, set_index))`,
+  // Gym routines ("schede"): exercises with sets and a rep range, as JSON
+  `CREATE TABLE IF NOT EXISTS schede (
+     id TEXT PRIMARY KEY, nome TEXT NOT NULL, ordine INTEGER NOT NULL, esercizi TEXT NOT NULL, updated TEXT NOT NULL)`,
   // Web-push subscriptions (one per device that enabled notifications)
   `CREATE TABLE IF NOT EXISTS push_subs (
      endpoint TEXT PRIMARY KEY, p256dh TEXT NOT NULL, auth TEXT NOT NULL, created TEXT NOT NULL)`,
