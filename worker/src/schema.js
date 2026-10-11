@@ -24,6 +24,8 @@ export const SCHEMA = [
      start TEXT NOT NULL, end TEXT NOT NULL, stage TEXT NOT NULL,
      PRIMARY KEY (start, end, stage))`,
   `CREATE INDEX IF NOT EXISTS idx_sleep_end ON sleep(end)`,
+  `CREATE INDEX IF NOT EXISTS idx_sleep_start ON sleep(start)`,
+  `CREATE INDEX IF NOT EXISTS idx_daily_day ON daily(day)`,
   // Daily check-in
   `CREATE TABLE IF NOT EXISTS checkin (
      day TEXT PRIMARY KEY, energia INTEGER, dolori INTEGER, umore INTEGER,

@@ -83,6 +83,9 @@ async function eveningPush(env, origin) {
   const subs = await env.DB.prepare("SELECT count(*) n FROM push_subs").first();
   if (!subs.n) return;
   const prof = await getProfile(env.DB);
+  // the bedtime is between 19:00 and 02:00: outside that window there is nothing to compute
+  const hourNow = Number(new Intl.DateTimeFormat("en-GB", { timeZone: prof.tz, hour: "2-digit", hourCycle: "h23" }).format(new Date()));
+  if (hourNow >= 2 && hourNow < 19) return;
   const day = todayLocal(prof.tz);
   const d = await computeDay(env.DB, day);
   const st = d.sonno_stanotte;
@@ -99,10 +102,11 @@ async function eveningPush(env, origin) {
 
 async function ingest(payload, env, origin) {
   const db = env.DB, rows = parsePayload(payload), stmts = [];
-  for (const [m, ts, t, v] of rows.samples) stmts.push(db.prepare("INSERT OR REPLACE INTO samples(metric,ts,t,value) VALUES(?,?,?,?)").bind(m, ts, t, v));
+  // a measurement already stored (same instant) is skipped: no write is spent on data we already have
+  for (const [m, ts, t, v] of rows.samples) stmts.push(db.prepare("INSERT INTO samples(metric,ts,t,value) VALUES(?,?,?,?) ON CONFLICT DO NOTHING").bind(m, ts, t, v));
   // daily and hourly totals arrive already summed by Health: keep the highest value seen (a day only grows)
-  for (const [m, d, v] of rows.daily) stmts.push(db.prepare("INSERT INTO daily(metric,day,value) VALUES(?,?,?) ON CONFLICT(metric,day) DO UPDATE SET value=max(value,excluded.value)").bind(m, d, v));
-  for (const [m, h, v] of rows.hourly) stmts.push(db.prepare("INSERT INTO hourly(metric,hour,value) VALUES(?,?,?) ON CONFLICT(metric,hour) DO UPDATE SET value=max(value,excluded.value)").bind(m, h, v));
+  for (const [m, d, v] of rows.daily) stmts.push(db.prepare("INSERT INTO daily(metric,day,value) VALUES(?,?,?) ON CONFLICT(metric,day) DO UPDATE SET value=excluded.value WHERE excluded.value > daily.value").bind(m, d, v));
+  for (const [m, h, v] of rows.hourly) stmts.push(db.prepare("INSERT INTO hourly(metric,hour,value) VALUES(?,?,?) ON CONFLICT(metric,hour) DO UPDATE SET value=excluded.value WHERE excluded.value > hourly.value").bind(m, h, v));
   for (const [s, e, st] of rows.sleep) stmts.push(db.prepare("INSERT OR IGNORE INTO sleep(start,end,stage) VALUES(?,?,?)").bind(s, e, st));
   for (let i = 0; i < stmts.length; i += 400) await db.batch(stmts.slice(i, i + 400));
   // new heart-rate samples → recompute the training load of those days
