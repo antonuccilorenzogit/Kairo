@@ -5,7 +5,7 @@
 
 const APP_VERSION = "1.1.0";
 // Public repository (used for the update check and the "open source" links).
-const GITHUB_REPO = "antonuccilorenzogit/kairo";
+const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
 
 /* ---------- storage (safe wrapper: storage can be unavailable) ---------- */

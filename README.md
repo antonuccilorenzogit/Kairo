@@ -9,7 +9,7 @@ Recupero, sonno e allenamento dai dati del tuo Apple Watch, con un coach IA.<br>
 Open source, gratuito, i dati restano nel <i>tuo</i> account.</p>
 
 <p align="center">
-  <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/antonuccilorenzogit/kairo/tree/main/worker"><img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare"></a>
+  <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/antonuccilorenzogit/Kairo/tree/main/worker"><img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare"></a>
 </p>
 
 <p align="center">
@@ -106,7 +106,7 @@ La pagina *Impostazioni → Diagnostica* controlla: raggiungibilità e latenza d
 ## Sviluppo
 
 ```bash
-git clone https://github.com/antonuccilorenzogit/kairo && cd kairo/worker
+git clone https://github.com/antonuccilorenzogit/Kairo && cd kairo/worker
 npm install
 npx wrangler dev          # server + app in locale su http://localhost:8787
 npx wrangler deploy       # pubblica sul tuo account
