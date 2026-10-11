@@ -52,7 +52,25 @@ Più `modulo`, `versione`, `esportato`. Esempio:
 Le metriche giornaliere (`passi`, `kcal_attive`, …) arrivano già sommate per giorno; il server tiene il valore massimo visto per ogni giorno e ignora gli zeri con cui Comandi riempie i giorni senza dati.
 
 ## Metriche
-- **Sonno:** le fasi vengono raggruppate in sessioni (pausa > 2 h = nuova sessione) e assegnate al giorno del risveglio. Punteggio = durata (50, obiettivo 8 h) + efficienza (20) + quota profondo+REM (20, obiettivo 40%) + regolarità dell'orario a 7 giorni (10).
+
+Nessuna app (Whoop, Oura, Garmin, Bevel) pubblica la formula esatta dei suoi punteggi. Kairo usa i **metodi pubblicati** che queste app dichiarano di usare e le **soglie della letteratura**; i pesi sono di Kairo e sono tutti in `worker/src/metrics.js`.
+
+- **Sessioni di sonno:** le fasi vengono raggruppate in sessioni (pausa > 2 h = nuova sessione) e assegnate al giorno del risveglio.
+- **Punteggio del sonno** (contributi come Oura, 0–100 ciascuno):
+  - durata 35%: 7–9 h raccomandate (AASM, Watson et al. 2015), pieno punteggio da 8 h, 0 sotto 4 h;
+  - efficienza 20%: ≥ 85% buona qualità, ≤ 74% scarsa (National Sleep Foundation, Ohayon et al. 2017);
+  - sonno profondo 10% (≥ 15% del sonno) e REM 10% (≥ 20%), riferimenti Oura;
+  - regolarità 15%: Sleep Regularity Index (Phillips et al. 2017) sugli ultimi 7 giorni, scala tarata sulla popolazione UK Biobank (mediana 81, IQR 73,8–86,3; Windred et al. 2024); con meno di 2 coppie di notti consecutive si usa la costanza di orario di letto e risveglio;
+  - orario 10%: punto medio del sonno tra 00:00 e 03:00 (Oura).
 - **Valori notturni:** HRV, respirazione e SpO₂ misurate durante la sessione principale; senza sonno registrato, l'HRV usa le 24 ore precedenti a mezzogiorno.
-- **Baseline:** media e deviazione standard dei 60 giorni precedenti (minimo 5 valori). L'HRV è confrontata in scala logaritmica.
-- **Score di Recupero:** `50 + 20 × z̄`, dove `z̄` è la media pesata degli z-score: HRV 40%, FC a riposo 25% (segno invertito), sonno 25%, respirazione 10% (segno invertito); limitato tra 0 e 100. È "provvisorio" finché la baseline ha meno di 14 giorni.
+- **Baseline:** media e deviazione standard dei 60 giorni precedenti (minimo 5 valori), come la "normal range" di HRV4Training.
+- **Score di Recupero** (struttura della Readiness di Oura, fasce di Whoop): media pesata di contributi 0–100, dove 60 = "come al solito":
+  - HRV 35%: logaritmo naturale (Plews et al.); 60% valore di stanotte, 40% media mobile a 7 giorni, con variazioni entro ±0,5 DS considerate trascurabili (smallest worthwhile change);
+  - FC a riposo 20%: scostamento dalla media a lungo termine;
+  - sonno della notte 25%: il punteggio del sonno;
+  - bilancio di sonno 10%: media delle ultime 14 notti rispetto a 8 h (Oura "Sleep balance");
+  - respirazione notturna 10%: penalizza solo l'aumento rispetto alla media (segnale usato da Whoop).
+  
+  Contributo = `60 + 20 × z` (limitato a 0–100). Se un dato manca, gli altri si ridistribuiscono il peso. Fasce: 67–100 verde, 34–66 giallo, 0–33 rosso (Whoop). È "provvisorio" finché la baseline ha meno di 14 giorni.
+- **VO₂max:** classificazione con le tabelle della Cooper Institute (le stesse di Garmin). **Età del cuore:** l'età in cui il tuo VO₂max sarebbe al 50° percentile (media tra 40° e 60°), interpolata tra le decadi, minimo 20 anni, come la Fitness Age di Garmin.
+- **Composizione corporea:** categorie di massa grassa dell'American Council on Exercise; BMI secondo l'OMS; FC a riposo secondo l'American Heart Association (60–100 normale, 40–60 sportivi).

@@ -1,10 +1,33 @@
 // Calcolo delle metriche: sonno, valori notturni, baseline personali, Score di Recupero.
+//
+// Metodi e fonti (nessuna app pubblica la formula esatta dei suoi punteggi: qui si usano i metodi
+// pubblicati e validati che quelle app dichiarano di usare, con soglie tratte dalla letteratura):
+// - HRV: logaritmo naturale (Plews et al. 2012-2013), media mobile 7 giorni confrontata con la
+//   "normal range" a 60 giorni ± 0,5 DS = smallest worthwhile change (Plews; HRV4Training usa 60 giorni).
+// - Struttura del Recupero come la Readiness di Oura: contributi 0-100 per HRV (oggi e bilancio),
+//   FC a riposo rispetto alla media a lungo termine, sonno della notte, bilancio di sonno a 14 giorni,
+//   più la frequenza respiratoria notturna (usata da Whoop). Fasce finali come Whoop: 67+ verde, 34-66 giallo.
+// - Punteggio del sonno con i contributi di Oura (durata, efficienza, profondo, REM, regolarità, orario)
+//   e le soglie di AASM/NSF: 7-9 h (Watson 2015), efficienza >= 85% (Ohayon 2017), profondo ~15-20%
+//   e REM ~20-25% (Oura; Ohayon 2004), punto medio del sonno tra 00:00 e 03:00 (Oura).
+// - Regolarità: Sleep Regularity Index (Phillips et al. 2017) su 7 giorni; riferimento UK Biobank
+//   (Windred 2024): mediana 81, intervallo interquartile 73,8-86,3.
 
 const BASELINE_DAYS = 60;   // finestra della media personale
 const MIN_BASELINE = 5;     // notti minime per considerare affidabile una baseline
 const GAP_MS = 2 * 3600e3;  // pausa oltre la quale due blocchi di sonno sono sessioni diverse
 
 const DAY_MS = 86400e3;
+const SLEEP_NEED_MIN = 480;  // fabbisogno di riferimento: 8 h (centro dell'intervallo AASM 7-9 h)
+// interpolazione lineare a tratti: points = [[x, y], ...] ordinati per x
+const pw = (x, points) => {
+  if (x <= points[0][0]) return points[0][1];
+  for (let i = 1; i < points.length; i++) {
+    const [x1, y1] = points[i], [x0, y0] = points[i - 1];
+    if (x <= x1) return y0 + ((x - x0) / (x1 - x0)) * (y1 - y0);
+  }
+  return points[points.length - 1][1];
+};
 const addDays = (d, n) => new Date(Date.parse(d + "T12:00:00Z") + n * DAY_MS).toISOString().slice(0, 10);
 const t = (iso) => Date.parse(iso);
 const mean = (a) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : null);
@@ -97,12 +120,20 @@ function rawDay(day, data, sessionsByDay) {
         rem: Math.round(main.min.rem), veglia: Math.round(main.min.awake) },
       efficienza: r1(eff * 100, 0),
       quota_profondo_rem: r1(quality * 100, 0),
+      quota_profondo: r1((main.min.deep / Math.max(main.asleepMin, 1)) * 100, 0),
+      quota_rem: r1((main.min.rem / Math.max(main.asleepMin, 1)) * 100, 0),
       pisolini_min: Math.round(napsMin),
       _bed: bedtimeMinutes(main.startIso),
-      _parziale: {
-        durata: clamp(main.asleepMin / 480, 0, 1) * 50,
-        efficienza: clamp((eff - 0.75) / 0.20, 0, 1) * 20,
-        qualita: clamp(quality / 0.40, 0, 1) * 20,
+      _wake: bedtimeMinutes(main.endIso),
+      _midH: (18 + (bedtimeMinutes(main.startIso) + main.spanMin / 2) / 60) % 24, // ora locale del punto medio
+      _contributi: {
+        // AASM/NSF: 7-9 h raccomandate; pieno punteggio da 8 h, 0 sotto le 4 h
+        durata: pw(main.asleepMin, [[240, 0], [420, 85], [480, 100]]),
+        // NSF (Ohayon 2017): >= 85% buona qualità, <= 74% scarsa
+        efficienza: pw(eff * 100, [[65, 0], [75, 50], [85, 85], [92, 100]]),
+        // profondo: adulti 15-20% del sonno (Oura); REM: 20-25% (circa 1,5 h)
+        profondo: pw((main.min.deep / Math.max(main.asleepMin, 1)) * 100, [[0, 0], [10, 60], [15, 100]]),
+        rem: pw((main.min.rem / Math.max(main.asleepMin, 1)) * 100, [[0, 0], [15, 70], [20, 100]]),
       },
     };
   }
@@ -123,65 +154,113 @@ function baseline(values, floor) {
   return { media: mean(values), dev: Math.max(std(values) || 0, floor), n: values.length };
 }
 
-function finalize(days, idx) {
+// Sleep Regularity Index (Phillips et al. 2017): probabilità che a 24 h di distanza lo stato
+// (sonno/veglia) sia lo stesso, minuto per minuto; SRI = 200·P − 100 (100 = perfettamente regolare).
+function sri(masks) {
+  const pairs = [];
+  for (let i = 1; i < masks.length; i++) {
+    const a = masks[i - 1], b = masks[i];
+    if (!a || !b) continue;
+    let same = 0;
+    for (let m = 0; m < 1440; m++) if (a[m] === b[m]) same++;
+    pairs.push(same / 1440);
+  }
+  return pairs.length >= 2 ? 200 * mean(pairs) - 100 : null;
+}
+
+// trasforma uno z-score (rispetto alla media personale) in un contributo 0-100: 60 = come al solito
+const zScore = (z) => clamp(60 + 20 * clamp(z, -3, 2), 0, 100);
+
+function finalize(days, idx, maskOf) {
   const today = days[idx];
   const prev = days.slice(Math.max(0, idx - BASELINE_DAYS), idx);
+  const week = days.slice(Math.max(0, idx - 6), idx + 1);
 
-  // punteggio sonno con regolarità (orario di addormentamento negli ultimi 7 giorni)
+  // ---- punteggio del sonno (contributi stile Oura, soglie AASM/NSF) ----
   if (today.sonno) {
-    const beds = days.slice(Math.max(0, idx - 6), idx + 1).map((d) => d.sonno && d.sonno._bed).filter((x) => x != null);
-    const reg = beds.length >= 3 ? std(beds) : null;
-    const p = today.sonno._parziale;
-    const regPts = reg == null ? 7 : clamp(1 - reg / 90, 0, 1) * 10;
-    today.sonno.regolarita_min = r1(reg, 0);
-    today.sonno.punteggio = Math.round(p.durata + p.efficienza + p.qualita + regPts);
+    const masks = week.map((d) => (d.sonno ? maskOf(d.giorno) : null));
+    const s = sri(masks);
+    const beds = week.map((d) => d.sonno && d.sonno._bed).filter((x) => x != null);
+    const wakes = week.map((d) => d.sonno && d.sonno._wake).filter((x) => x != null);
+    const sdBed = beds.length >= 3 ? std(beds) : null, sdWake = wakes.length >= 3 ? std(wakes) : null;
+    const c = today.sonno._contributi;
+    // regolarità: SRI se ci sono almeno 2 coppie di notti consecutive, altrimenti la costanza di orari (Oura)
+    c.regolarita = s != null ? pw(s, [[40, 0], [60, 30], [73.8, 60], [81, 80], [86.3, 95], [90, 100]])
+      : sdBed != null ? pw((sdBed + (sdWake ?? sdBed)) / 2, [[0, 100], [30, 85], [60, 60], [120, 0]]) : null;
+    // orario: punto medio del sonno ideale tra le 00:00 e le 03:00 (Oura)
+    const midH = today.sonno._midH;
+    const fromIdeal = midH >= 0 && midH <= 3 ? 0 : midH > 3 && midH < 12 ? midH - 3 : midH >= 12 ? 24 - midH : 0;
+    c.orario = pw(fromIdeal, [[0, 100], [1, 85], [2, 65], [4, 20], [6, 0]]);
+    const W = { durata: 0.35, efficienza: 0.20, profondo: 0.10, rem: 0.10, regolarita: 0.15, orario: 0.10 };
+    const parts = Object.entries(W).filter(([k]) => c[k] != null);
+    const wSum = parts.reduce((a, [, w]) => a + w, 0);
+    today.sonno.punteggio = Math.round(parts.reduce((a, [k, w]) => a + w * c[k], 0) / wSum);
+    today.sonno.contributi = Object.fromEntries(Object.entries(c).map(([k, v]) => [k, v == null ? null : Math.round(v)]));
+    today.sonno.sri = r1(s, 0);
+    today.sonno.regolarita_min = r1(sdBed, 0);
   }
 
+  // ---- bilancio di sonno: media delle ultime 14 notti rispetto al fabbisogno (Oura "Sleep balance") ----
+  const last14 = days.slice(Math.max(0, idx - 13), idx + 1).filter((d) => d.sonno);
+  const balance = last14.length >= 3 ? mean(last14.map((d) => d.sonno.durata_min)) - SLEEP_NEED_MIN : null;
+
+  // ---- baseline personali (60 giorni, solo giorni precedenti) ----
   const vals = (f) => prev.map(f).filter((x) => x != null && Number.isFinite(x));
-  const bHrv = baseline(vals((d) => (d.notte.hrv_ms ? Math.log(d.notte.hrv_ms) : null)), 0.10);
-  const bFcr = baseline(vals((d) => d.notte.fcr_bpm), 1.5);
-  const bResp = baseline(vals((d) => d.notte.resp_rpm), 0.3);
-  const bSleep = baseline(vals((d) => d.sonno && d.sonno.punteggio), 8);
+  const bHrv = baseline(vals((d) => (d.notte.hrv_ms ? Math.log(d.notte.hrv_ms) : null)), 0.08);
+  const bFcr = baseline(vals((d) => d.notte.fcr_bpm), 2);
+  const bResp = baseline(vals((d) => d.notte.resp_rpm), 0.4);
 
   const comp = {};
-  const add = (name, value, base, transform, sign, weight, unit) => {
-    if (value == null) { comp[name] = { valore: null, peso: weight }; return; }
-    const x = transform(value);
-    const ok = base && !base.insufficiente;
-    const z = ok ? (x - base.media) / base.dev : null;
-    comp[name] = {
-      valore: value, unita: unit, peso: weight,
-      baseline: ok ? r1(transform === Math.log ? Math.exp(base.media) : base.media) : null,
-      z: r1(z, 2), contributo: z == null ? null : sign * z, giorni_baseline: base.n,
-    };
-  };
-  add("hrv", today.notte.hrv_ms, bHrv, Math.log, +1, 0.40, "ms");
-  add("fc_riposo", today.notte.fcr_bpm, bFcr, (x) => x, -1, 0.25, "bpm");
-  add("sonno", today.sonno && today.sonno.punteggio, bSleep, (x) => x, +1, 0.25, "punti");
-  add("respirazione", today.notte.resp_rpm, bResp, (x) => x, -1, 0.10, "resp/min");
-
-  // se il sonno non ha ancora baseline, uso un riferimento assoluto (75 ± 12)
-  if (comp.sonno.valore != null && comp.sonno.contributo == null) {
-    comp.sonno.contributo = (comp.sonno.valore - 75) / 12;
-    comp.sonno.z = r1(comp.sonno.contributo, 2);
+  // HRV: 60% valore di stanotte, 40% media mobile 7 giorni (cambi entro ±0,5 DS = variazione trascurabile)
+  {
+    const v = today.notte.hrv_ms, ok = !bHrv.insufficiente;
+    let score = null, z = null;
+    if (v != null && ok) {
+      z = (Math.log(v) - bHrv.media) / bHrv.dev;
+      const lnWeek = week.map((d) => d.notte.hrv_ms).filter((x) => x).map(Math.log);
+      let zt = 0;
+      if (lnWeek.length >= 3) {
+        const diff = mean(lnWeek) - bHrv.media, swc = 0.5 * bHrv.dev;
+        zt = Math.abs(diff) <= swc ? 0 : (diff - Math.sign(diff) * swc) / bHrv.dev;
+      }
+      score = 0.6 * zScore(z) + 0.4 * zScore(zt);
+    }
+    comp.hrv = { valore: v, unita: "ms", peso: 0.35, baseline: ok ? r1(Math.exp(bHrv.media)) : null, z: r1(z, 2), punteggio: score, giorni_baseline: bHrv.n,
+      normale: ok ? [r1(Math.exp(bHrv.media - 0.5 * bHrv.dev)), r1(Math.exp(bHrv.media + 0.5 * bHrv.dev))] : null };
+  }
+  // FC a riposo: rispetto alla media a lungo termine (Oura: cala se 3-5 bpm sopra la media)
+  {
+    const v = today.notte.fcr_bpm, ok = !bFcr.insufficiente;
+    const z = v != null && ok ? -(v - bFcr.media) / bFcr.dev : null;
+    comp.fc_riposo = { valore: v, unita: "bpm", peso: 0.20, baseline: ok ? r1(bFcr.media) : null, z: r1(z, 2), punteggio: z == null ? null : zScore(z), giorni_baseline: bFcr.n };
+  }
+  // sonno della notte: il suo punteggio è già 0-100
+  comp.sonno = { valore: today.sonno ? today.sonno.punteggio : null, unita: "punti", peso: 0.25, baseline: null, z: null, punteggio: today.sonno ? today.sonno.punteggio : null };
+  // bilancio di sonno a 14 giorni
+  comp.bilancio_sonno = { valore: balance == null ? null : Math.round(balance), unita: "min/notte", peso: 0.10, baseline: SLEEP_NEED_MIN,
+    punteggio: balance == null ? null : pw(balance, [[-150, 0], [-120, 20], [-60, 65], [-30, 85], [0, 100]]) };
+  // respirazione: conta solo l'aumento rispetto alla media (segnale precoce di stanchezza o malanno)
+  {
+    const v = today.notte.resp_rpm, ok = !bResp.insufficiente;
+    const up = v != null && ok ? Math.max(0, (v - bResp.media) / bResp.dev) : null;
+    comp.respirazione = { valore: v, unita: "resp/min", peso: 0.10, baseline: ok ? r1(bResp.media) : null, z: v != null && ok ? r1((v - bResp.media) / bResp.dev, 2) : null,
+      punteggio: up == null ? null : clamp(70 - 25 * up, 0, 100), giorni_baseline: bResp.n };
   }
 
-  const usable = Object.values(comp).filter((c) => c.contributo != null);
+  const usable = Object.values(comp).filter((c) => c.punteggio != null);
   const wSum = usable.reduce((s, c) => s + c.peso, 0);
   let score = null;
-  if (usable.length && (comp.hrv.contributo != null || comp.fc_riposo.contributo != null)) {
-    const zc = usable.reduce((s, c) => s + c.peso * clamp(c.contributo, -3, 3), 0) / wSum;
-    score = Math.round(clamp(50 + 20 * zc, 0, 100));
+  if (usable.length && (comp.hrv.punteggio != null || comp.fc_riposo.punteggio != null)) {
+    score = Math.round(clamp(usable.reduce((s, c) => s + c.peso * c.punteggio, 0) / wSum, 0, 100));
   }
   const giorniDati = Math.min(bHrv.n, bFcr.n);
+  for (const c of Object.values(comp)) if (c.punteggio != null) c.punteggio = Math.round(c.punteggio);
   today.recupero = {
     score,
     stato: score == null ? "calibrazione" : score >= 67 ? "recuperato" : score >= 34 ? "parziale" : "basso",
     calibrazione: giorniDati < 14,
     giorni_baseline: giorniDati,
-    componenti: Object.fromEntries(Object.entries(comp).map(([k, c]) => {
-      const { contributo, ...rest } = c; return [k, rest];
-    })),
+    componenti: comp,
   };
   return today;
 }
@@ -194,9 +273,21 @@ export async function computeHistory(db, endDay, nDays) {
   const days = [];
   for (let d = from; d <= endDay; d = addDays(d, 1)) days.push(rawDay(d, data, sessionsByDay));
   // baseline e punteggi in ordine cronologico (la regolarità usa i giorni precedenti)
-  for (let i = 0; i < days.length; i++) finalize(days, i);
+  // maschera minuto per minuto (mezzogiorno → mezzogiorno) degli intervalli di sonno, per il SRI
+  const asleep = data.sleepRows.filter((r) => r.stage !== "awake" && r.stage !== "inbed").map((r) => [t(r.start), t(r.end)]);
+  const maskCache = {};
+  const maskOf = (day) => {
+    if (maskCache[day]) return maskCache[day];
+    const end = t(day + "T12:00:00Z"), start = end - DAY_MS, m = new Uint8Array(1440);
+    for (const [s, e] of asleep) {
+      if (e <= start || s >= end) continue;
+      for (let i = Math.max(0, Math.floor((s - start) / 60e3)); i < Math.min(1440, Math.ceil((e - start) / 60e3)); i++) m[i] = 1;
+    }
+    return (maskCache[day] = m);
+  };
+  for (let i = 0; i < days.length; i++) finalize(days, i, maskOf);
   const out = days.filter((d) => d.giorno >= start);
-  for (const d of out) if (d.sonno) { delete d.sonno._bed; delete d.sonno._parziale; }
+  for (const d of out) if (d.sonno) { delete d.sonno._bed; delete d.sonno._wake; delete d.sonno._midH; delete d.sonno._contributi; }
   return out;
 }
 

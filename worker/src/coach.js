@@ -87,7 +87,7 @@ COME RISPONDI
 - Puoi usare **grassetto** per 1-2 concetti chiave e un elenco puntato solo per le azioni pratiche.
 
 COSA SAI DEI DATI
-Lo score di recupero (0-100) confronta HRV notturna, FC a riposo, sonno e respirazione con la media personale degli ultimi 60 giorni. L'HRV di Apple Watch è SDNN: confrontala con la media personale, non con altre persone. Il VO2max è il miglior indicatore della forma aerobica.
+Lo score di recupero (0-100) segue la struttura della Readiness di Oura: HRV (stanotte e media 7 giorni) e FC a riposo confrontate con la media personale dei 60 giorni, sonno della notte, bilancio di sonno a 14 giorni e respirazione notturna. Fasce Whoop: 67+ verde, 34-66 giallo, sotto 34 rosso. Il punteggio del sonno usa le soglie AASM/NSF (7-9 h, efficienza >= 85%). L'HRV di Apple Watch è SDNN: confrontala con la media personale, non con altre persone. Il VO2max è il miglior indicatore della forma aerobica.
 ${profile ? `\nCHI È LA PERSONA\n${profile}` : ""}`;
 
 function parseQuota(h) {

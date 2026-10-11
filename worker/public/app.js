@@ -207,6 +207,7 @@ function md(text) {
 }
 
 /* explanation panels for the recovery components */
+const SLEEP_NEED = 480; // fabbisogno di riferimento in minuti (8 h)
 function infoSheet(kind, d) {
   const c = d.recupero.componenti;
   const pos = (v, a, b) => Math.max(0, Math.min(100, (v - a) / (b - a) * 100));
@@ -221,23 +222,39 @@ function infoSheet(kind, d) {
     const b = c.hrv.baseline;
     html = sheetHead("HRV · variabilità del battito")
       + body("Il cuore non batte come un metronomo: tra un battito e l'altro il tempo cambia di qualche millisecondo. Più cambia, più il corpo è rilassato e pronto. Stanchezza, stress o un malanno in arrivo rendono il battito più rigido e l'HRV scende.")
-      + range("Uomini 18–29 anni con Apple Watch (indicativo)", 45, 105, 20, 140, b ?? d.notte.hrv_ms, ["20 ms", "tipico 45–105 · mediana 65", "140"])
-      + you(b ? `media personale ${fmtNum(b)} ms, oggi ${fmtNum(d.notte.hrv_ms)} ms. Conta il confronto con te stesso: l'HRV dipende molto anche dalla genetica e dall'età.` : "non ho ancora abbastanza notti per la tua media personale.")
+      + range("Adulti sani, SDNN a breve termine (Nunan et al. 2010)", 32, 93, 10, 140, b ?? d.notte.hrv_ms, ["10 ms", "tipico 32–93 · media 50", "140"])
+      + you(b ? `media personale ${fmtNum(b)} ms${c.hrv.normale ? `, la tua fascia normale è ${fmtNum(c.hrv.normale[0])}–${fmtNum(c.hrv.normale[1])} ms` : ""}; oggi ${fmtNum(d.notte.hrv_ms)} ms. Conta il confronto con te stesso: l'HRV dipende molto da genetica ed età.` : "non ho ancora abbastanza notti per la tua media personale.")
+      + body("<b>Come lo uso:</b> confronto il logaritmo dell'HRV di stanotte e la media degli ultimi 7 giorni con la tua media dei 60 giorni precedenti. Le variazioni entro ±0,5 deviazioni standard sono considerate normali oscillazioni (metodo di Plews e HRV4Training).")
       + tip("L'HRV è più alta di notte. Per questo Kairo usa le misure fatte mentre dormi: quelle di giorno cambiano con caffè, stress e movimento. Apple Watch misura la SDNN, quindi i valori non sono confrontabili con Whoop o Oura (che usano la RMSSD).");
   } else if (kind === "fc_riposo") {
     const b = c.fc_riposo.baseline;
     const saved = b ? Math.max(0, Math.round((70 - b) * 1440)) : null;
     html = sheetHead("FC a riposo · il motore al minimo")
       + body("Quanti battiti al minuto servono al cuore quando non fai niente. Un cuore allenato pompa più sangue a ogni colpo, quindi gliene servono meno. Se sale di 5+ bpm sopra la tua media per più giorni, spesso indica fatica, poco sonno o un malanno.")
-      + range("Atleti 40–60 · adulti 60–100 bpm", 40, 60, 35, 100, b ?? d.notte.fcr_bpm, ["35", "zona sportivi", "100"], true)
+      + range("Sportivi ben allenati 40–60 · adulti 60–100 bpm (American Heart Association)", 40, 60, 35, 100, b ?? d.notte.fcr_bpm, ["35", "zona sportivi", "100"], true)
       + you(b ? `media personale ${fmtNum(b)} bpm, oggi ${fmtNum(d.notte.fcr_bpm)}.` : "non ho ancora abbastanza giorni per la tua media.")
       + (saved ? tip(`Rispetto a chi ha 70 bpm a riposo, il tuo cuore fa circa <b>${fmtNum(saved)} battiti in meno al giorno</b>: ${fmtNum(saved * 365 / 1e6, 1)} milioni in un anno.`) : "");
   } else if (kind === "sonno") {
     const s = d.sonno;
     html = sheetHead("Punteggio del sonno")
-      + body("Combina quanto hai dormito (50 punti, obiettivo 8 h), quanto del tempo a letto hai passato dormendo (20), la quota di sonno profondo e REM (20) e la regolarità dell'orario negli ultimi 7 giorni (10).")
-      + you(s ? `${s.punteggio}/100 · ${fmtMin(s.durata_min)} di sonno, efficienza ${s.efficienza}%, addormentato alle ${hhmm(s.inizio)}.` : "nessuna notte registrata: dormi con il Watch per avere questo dato.")
+      + body("Stessi ingredienti del punteggio di Oura, con le soglie delle linee guida sul sonno:")
+      + `<div class="card list">${[["Durata", "durata", "35%", "7–9 h raccomandate (AASM); pieno punteggio da 8 h"], ["Efficienza", "efficienza", "20%", "≥ 85% del tempo a letto dormendo (National Sleep Foundation)"], ["Sonno profondo", "profondo", "10%", "almeno 15% del sonno"], ["REM", "rem", "10%", "almeno 20% del sonno"], ["Regolarità", "regolarita", "15%", "Sleep Regularity Index sugli ultimi 7 giorni"], ["Orario", "orario", "10%", "punto medio del sonno tra 00:00 e 03:00"]]
+          .map(([l, k, w, why]) => `<div class="item"><div class="col" style="gap:2px"><b>${l} <span class="small muted">${w}</span></b><span class="small muted">${why}</span></div><b>${s && s.contributi && s.contributi[k] != null ? s.contributi[k] : "–"}</b></div>`).join("")}</div>`
+      + you(s ? `${s.punteggio}/100 · ${fmtMin(s.durata_min)} di sonno, efficienza ${s.efficienza}%, profondo ${s.quota_profondo}%, REM ${s.quota_rem}%${s.sri != null ? `, regolarità (SRI) ${s.sri}` : ""}.` : "nessuna notte registrata: dormi con il Watch per avere questo dato.")
       + tip("Il sonno profondo si concentra nella prima metà della notte, il REM verso il mattino: andare a letto tardi taglia soprattutto il profondo, quello che ripara i muscoli.");
+  } else if (kind === "bilancio") {
+    const v = c.bilancio_sonno.valore;
+    html = sheetHead("Bilancio di sonno")
+      + body("Confronta quanto hai dormito in media nelle ultime 14 notti registrate con il fabbisogno di riferimento di 8 ore (centro dell'intervallo 7–9 h raccomandato per gli adulti). Una notte corta si recupera; un debito che dura settimane pesa sul recupero. È lo stesso principio del «Sleep balance» di Oura.")
+      + you(v == null ? "servono almeno 3 notti registrate nelle ultime 2 settimane." : v >= 0 ? `in media dormi ${fmtMin(SLEEP_NEED + v)} a notte: sei in pari.` : `in media dormi ${fmtMin(SLEEP_NEED + v)} a notte, ${fmtMin(-v)} meno del fabbisogno.`)
+      + tip("Il debito di sonno non si azzera con una sola dormita lunga: servono più notti di fila un po' più lunghe del solito.");
+  } else if (kind === "metodo") {
+    const w = Object.entries(c).map(([k, x]) => [k, x.peso, x.punteggio]);
+    const names = { hrv: "HRV", fc_riposo: "FC a riposo", sonno: "Sonno della notte", bilancio_sonno: "Bilancio di sonno (14 giorni)", respirazione: "Respirazione notturna" };
+    html = sheetHead("Come si calcola il Recupero")
+      + body("Ogni ingrediente riceve un punteggio da 0 a 100, dove 60 significa «come al solito per te». Il Recupero è la loro media pesata; se un dato manca, gli altri si ridistribuiscono il peso. Le fasce sono quelle di Whoop: 67–100 verde, 34–66 giallo, 0–33 rosso.")
+      + `<div class="card list">${w.map(([k, p, sc]) => `<div class="item"><span>${names[k]} <span class="small muted">${Math.round(p * 100)}%</span></span><b>${sc ?? "–"}</b></div>`).join("")}</div>`
+      + body("La struttura segue la Readiness di Oura (FC a riposo e HRV confrontate con le tue medie, sonno e bilancio di sonno); l'HRV usa il metodo di Plews e HRV4Training; la respirazione notturna è un segnale usato da Whoop. Nessuna di queste app pubblica la formula esatta: i pesi sono di Kairo e il codice è pubblico su GitHub.");
   } else {
     html = sheetHead("Respirazione notturna")
       + body("Quanti respiri fai al minuto mentre dormi. È molto stabile: un aumento di 1–2 respiri al minuto per più notti può segnalare affaticamento o un malanno in arrivo.")
@@ -256,15 +273,16 @@ views.recupero = async (el) => {
     ["hrv", "HRV", d.notte.hrv_ms != null ? `${fmtNum(d.notte.hrv_ms)} ms` : "–", r.componenti.hrv],
     ["fc_riposo", "FC a riposo", d.notte.fcr_bpm != null ? `${fmtNum(d.notte.fcr_bpm)} bpm` : "–", r.componenti.fc_riposo],
     ["sonno", "Sonno", d.sonno ? `${d.sonno.punteggio} pt` : "–", r.componenti.sonno],
+    ["bilancio_sonno", "Bilancio sonno 14 gg", r.componenti.bilancio_sonno.valore != null ? (r.componenti.bilancio_sonno.valore >= 0 ? "in pari" : `−${fmtMin(-r.componenti.bilancio_sonno.valore)}/notte`) : "–", r.componenti.bilancio_sonno],
     ["respirazione", "Respirazione", d.notte.resp_rpm != null ? fmtNum(d.notte.resp_rpm, 1) : "–", r.componenti.respirazione],
   ];
-  const sign = { hrv: 1, fc_riposo: -1, sonno: 1, respirazione: -1 };
   const compRow = ([k, name, val, c]) => {
-    const z = c.z == null ? 0 : c.z * sign[k];
+    // ogni contributo vale 0-100; 60 = come al solito: la barra mostra quanto si discosta
+    const z = c.punteggio == null ? 0 : (c.punteggio - 60) / 20;
     const w = Math.min(Math.abs(z), 3) / 3 * 50;
     const color = z > 0.05 ? "var(--green)" : z < -0.05 ? "var(--red)" : "#C9CEDB";
-    const media = c.baseline != null ? `media ${fmtNum(c.baseline, k === "respirazione" ? 1 : 0)}` : c.valore == null ? "nessun dato" : "in calibrazione";
-    return `<button class="comp" data-info="${k === "respirazione" ? "resp" : k}" aria-label="Cosa significa ${name}">
+    const media = c.punteggio != null ? `${c.punteggio}/100` : c.valore == null ? "nessun dato" : "in calibrazione";
+    return `<button class="comp" data-info="${k === "respirazione" ? "resp" : k === "bilancio_sonno" ? "bilancio" : k}" aria-label="Cosa significa ${name}">
       <div class="row between" style="width:100%"><div class="row" style="gap:6px;font-weight:800">${name} ${ico.info} <span class="small muted" style="font-weight:600">${Math.round(c.peso * 100)}%</span></div>
       <div style="font-weight:800">${val} <span class="small muted" style="font-weight:600">${media}</span></div></div>
       <div class="track"><div class="zero"></div><div class="bar" style="left:${z >= 0 ? 50 : 50 - w}%;width:${Math.max(w, 1.5)}%;background:${color}"></div></div></button>`;
@@ -275,13 +293,14 @@ views.recupero = async (el) => {
     return `<div class="col" style="align-items:center;gap:4px;flex:1"><div style="height:90px;width:100%;display:flex;align-items:flex-end;justify-content:center"><div title="${h.giorno}: ${s ?? "n/d"}" style="width:70%;max-width:18px;border-radius:6px;height:${s == null ? 4 : Math.max(6, s * 0.9)}px;background:${s == null ? "#E2E5EC" : sc.fill}"></div></div><div class="small muted" style="font-size:11px">${fmtDate(h.giorno, { day: "numeric" })}</div></div>`;
   }).join("");
   el.innerHTML = `${header("Recupero", { sub: fmtDate(d.giorno, { weekday: "short", day: "numeric", month: "short" }) })}
-    <div class="card row" style="gap:14px">${bean(r.score, 46)}<div class="col" style="gap:2px"><div style="font-size:30px;font-weight:900;line-height:1">${r.score ?? "–"} <span class="${st.cls}" style="font-size:16px">${st.label}</span></div><div class="small muted">Rispetto ai tuoi ultimi 60 giorni${r.calibrazione ? ` · baseline ${r.giorni_baseline} gg` : ""}</div></div></div>
+    <div class="card row" style="gap:14px">${bean(r.score, 46)}<div class="col" style="gap:2px"><div style="font-size:30px;font-weight:900;line-height:1">${r.score ?? "–"} <span class="${st.cls}" style="font-size:16px">${st.label}</span></div><div class="small muted">Rispetto ai tuoi ultimi 60 giorni${r.calibrazione ? ` · baseline ${r.giorni_baseline} gg` : ""}</div><button class="small" id="howScore" style="background:none;border:0;padding:0;color:var(--orange-ink);text-align:left;cursor:pointer;font-weight:700">Come si calcola?</button></div></div>
     <div class="card" style="padding:16px 16px 10px"><div class="row between" style="padding:0 2px 6px"><div class="label">Cosa ha pesato oggi</div><div class="small muted">tocca per capire</div></div>
       ${comps.map(compRow).join("")}
       <div class="row between small muted" style="padding:8px 2px 4px"><div>← peggiora</div><div>migliora →</div></div></div>
     <div class="card"><div class="label" style="margin-bottom:8px">Ultimi 14 giorni</div><div class="row" style="gap:2px;align-items:flex-end">${bars}</div></div>
     ${mesi.length > 1 ? `<button class="card col" data-info="hrv" style="border:0;text-align:left;cursor:pointer;gap:8px"><div class="row between" style="width:100%"><div class="label">HRV · media mensile</div><div class="small muted">${mesi.length} mesi</div></div>${lineChart(mesi.map((m) => m.media), mesi.map((m) => m.mese.slice(5)))}</button>` : ""}`;
   el.querySelectorAll("[data-info]").forEach((b) => b.addEventListener("click", () => infoSheet(b.dataset.info, d)));
+  $("#howScore").onclick = () => infoSheet("metodo", d);
 };
 
 function lineChart(vals, labels) {
@@ -335,7 +354,8 @@ views.sonno = async (el) => {
       </div>`
       : `<div class="card col center" style="gap:8px">${bean(null, 90)}<div class="h2">Nessun dato del sonno stanotte</div><div class="muted small" style="max-width:300px">Per avere sonno, respirazione e HRV notturna indossa il Watch mentre dormi. Carica il Watch mentre fai colazione o la doccia.</div></div>`}
     <div class="card"><div class="row between" style="margin-bottom:8px"><div class="label">Ultimi 7 giorni</div>${nNights ? `<div class="small ${debt < 0 ? "bad" : "good"}" style="font-weight:800">${debt < 0 ? "Debito" : "Surplus"} ${fmtMin(Math.abs(debt))} su 8 h</div>` : ""}</div><div class="row" style="gap:2px;align-items:flex-end">${week}</div></div>
-    ${s && s.regolarita_min != null ? `<div class="card soft"><div style="line-height:1.45">Il tuo orario di addormentamento varia di circa <b>${s.regolarita_min} minuti</b> da una sera all'altra. ${s.regolarita_min > 60 ? "Più regolarità di solito significa sonno più profondo." : "Ottima regolarità."}</div></div>` : ""}`;
+    ${s && s.sri != null ? `<div class="card soft"><div style="line-height:1.45"><b>Regolarità ${s.sri}/100</b> (Sleep Regularity Index). ${s.sri >= 86 ? "Sei tra il quarto più regolare della popolazione: ottimo." : s.sri >= 74 ? "Nella media della popolazione (mediana 81)." : "Sotto la media della popolazione (mediana 81): orari più costanti aiutano recupero e sonno profondo."}</div></div>`
+      : s && s.regolarita_min != null ? `<div class="card soft"><div style="line-height:1.45">Il tuo orario di addormentamento varia di circa <b>${s.regolarita_min} minuti</b> da una sera all'altra. ${s.regolarita_min > 60 ? "Più regolarità di solito significa sonno più profondo." : "Ottima regolarità."}</div></div>` : ""}`;
   el.querySelectorAll("[data-info]").forEach((b) => b.addEventListener("click", () => infoSheet("sonno", d)));
 };
 
@@ -372,23 +392,40 @@ const fatKg = (m) => (m && m.peso != null && m.grasso_pct != null ? (m.peso * m.
 const leanKg = (m) => (m ? (m.massa_magra ?? (fatKg(m) != null ? m.peso - fatKg(m) : null)) : null);
 const daysBetween = (a, b) => Math.round((Date.parse(b + "T12:00:00Z") - Date.parse(a + "T12:00:00Z")) / 86400e3);
 const signed = (x, d = 1, unit = "") => (x == null ? "–" : `${x > 0 ? "▲" : x < 0 ? "▼" : "="} ${fmtNum(Math.abs(x), d)}${unit}`);
-// reference VO2max (approximate population median by age and sex, from ACSM-style norms)
-const vo2Median = (age, sex) => (sex === "F" ? 39 - 0.35 * (age - 25) : 48 - 0.42 * (age - 25));
-const fitnessAge = (vo2, sex) => Math.max(18, Math.min(90, Math.round(25 + (( sex === "F" ? 39 : 48) - vo2) / (sex === "F" ? 0.35 : 0.42))));
+// VO2max: tabelle della Cooper Institute (le stesse delle classificazioni Garmin), mL/kg/min.
+// Colonne: 20-29, 30-39, 40-49, 50-59, 60-69, 70-79 · righe: 40°, 60°, 80°, 95° percentile
+const COOPER = {
+  M: { p40: [41.7, 40.5, 38.5, 35.6, 32.3, 29.4], p60: [45.4, 44.0, 42.4, 39.2, 35.5, 32.3], p80: [51.1, 48.3, 46.4, 43.4, 39.5, 36.7], p95: [55.4, 54.0, 52.5, 48.9, 45.7, 42.1] },
+  F: { p40: [36.1, 34.4, 33.0, 30.1, 27.5, 25.9], p60: [39.5, 37.8, 36.3, 33.0, 30.0, 28.1], p80: [43.9, 42.4, 39.7, 36.7, 33.0, 30.9], p95: [49.6, 47.4, 45.3, 41.1, 37.8, 36.7] },
+};
+const cooperRow = (age, sex) => { const t = COOPER[sex === "F" ? "F" : "M"], i = Math.max(0, Math.min(5, Math.floor((age - 20) / 10))); return { p40: t.p40[i], p60: t.p60[i], p80: t.p80[i], p95: t.p95[i] }; };
+// mediana (50° percentile) per età, interpolata tra i centri delle decadi
+const vo2Median = (age, sex) => {
+  const t = COOPER[sex === "F" ? "F" : "M"], med = t.p40.map((v, i) => (v + t.p60[i]) / 2), x = (Math.max(25, Math.min(75, age)) - 25) / 10, i = Math.min(4, Math.floor(x));
+  return med[i] + (med[i + 1] - med[i]) * (x - i);
+};
+// età fitness come Garmin: l'età in cui il tuo VO2max sarebbe nella media (minimo 20 anni)
+const fitnessAge = (vo2, sex) => {
+  const t = COOPER[sex === "F" ? "F" : "M"], med = t.p40.map((v, i) => (v + t.p60[i]) / 2);
+  if (vo2 >= med[0]) return 20;
+  for (let i = 1; i < med.length; i++) if (vo2 >= med[i]) return Math.round(25 + 10 * (i - 1) + 10 * (med[i - 1] - vo2) / (med[i - 1] - med[i]));
+  return 80;
+};
 function vo2Level(vo2, age, sex) {
-  const m = vo2Median(age, sex);
-  if (vo2 >= m + 7) return ["eccellente per la tua età", "good"];
-  if (vo2 >= m + 3) return ["buono per la tua età", "good"];
-  if (vo2 >= m - 3) return ["nella media per la tua età", "mid"];
-  if (vo2 >= m - 8) return ["sotto la media per la tua età", "mid"];
-  return ["basso per la tua età", "bad"];
+  const r = cooperRow(age, sex);
+  if (vo2 >= r.p95) return ["superiore · oltre il 95° percentile", "good"];
+  if (vo2 >= r.p80) return ["eccellente · oltre l'80° percentile", "good"];
+  if (vo2 >= r.p60) return ["buono · oltre il 60° percentile", "good"];
+  if (vo2 >= r.p40) return ["discreto · oltre il 40° percentile", "mid"];
+  return ["scarso · sotto il 40° percentile", "bad"];
 }
-const fcrLevel = (v) => (v < 50 ? "livello da atleta" : v < 60 ? "ottimo" : v < 70 ? "buono" : v < 80 ? "nella media" : "alto");
+// American Heart Association: 60-100 bpm normale, 40-60 tipico degli sportivi ben allenati
+const fcrLevel = (v) => (v < 40 ? "molto bassa" : v <= 60 ? "fascia degli sportivi (40–60, AHA)" : v <= 100 ? "normale (60–100, AHA)" : "alta: parlane con un medico");
 // average of the last n days up to `day`; null when there are too few values to be meaningful
 const avgUpTo = (series, day, n = 7, min = 3) => { const from = shiftDay(day, -(n - 1)); const v = series.filter(([d]) => d >= from && d <= day).map((r) => r[1]); return v.length >= min ? v.reduce((a, b) => a + b, 0) / v.length : null; };
 const valueBefore = (series, day) => { let out = null; for (const r of series) if (r[0] <= day) out = r; return out; };
 
-function lineChart(points, color, unit, dec = 1) {
+function timeChart(points, color, unit, dec = 1) {
   if (points.length < 2) return `<div class="small muted" style="padding:12px 0">Servono almeno due misure per il grafico.</div>`;
   const W = 340, H = 150, L = 34, R = 10, T = 14, B = 26;
   const vs = points.map((p) => p[1]); let lo = Math.min(...vs), hi = Math.max(...vs);
@@ -440,10 +477,10 @@ function quadrantSvg(dF, dL) {
 }
 
 function fatInfoSheet(m, sex) {
-  const ranges = sex === "F" ? [["Atlete", "14–20%"], ["In forma", "21–24%"], ["Nella media", "25–31%"], ["Alta", "oltre 32%"]] : [["Atleti", "6–13%"], ["In forma", "14–17%"], ["Nella media", "18–24%"], ["Alta", "oltre 25%"]];
+  const ranges = sex === "F" ? [["Grasso essenziale", "10–13%"], ["Atlete", "14–20%"], ["In forma", "21–24%"], ["Nella media", "25–31%"], ["Obesità", "32% e oltre"]] : [["Grasso essenziale", "2–5%"], ["Atleti", "6–13%"], ["In forma", "14–17%"], ["Nella media", "18–24%"], ["Obesità", "25% e oltre"]];
   openSheet(`${sheetHead("Massa grassa")}
     <div style="line-height:1.55;color:var(--text)">È la parte del tuo peso fatta di grasso. Il resto è <b>massa magra</b>: muscoli, ossa, organi e acqua. Due persone con lo stesso peso possono avere un corpo molto diverso: per questo conta più la composizione del peso sulla bilancia.</div>
-    <div class="card list"><div class="label" style="margin-bottom:4px">Riferimenti ${sex === "F" ? "donne" : "uomini"} (indicativi)</div>${ranges.map(([a, b]) => `<div class="item"><span>${a}</span><b>${b}</b></div>`).join("")}</div>
+    <div class="card list"><div class="label" style="margin-bottom:4px">Riferimenti ${sex === "F" ? "donne" : "uomini"} (American Council on Exercise)</div>${ranges.map(([a, b]) => `<div class="item"><span>${a}</span><b>${b}</b></div>`).join("")}</div>
     ${m?.grasso_pct != null ? `<div class="card soft"><b>Tu:</b> ${fmtNum(m.grasso_pct, 1)}% (${fmtNum(fatKg(m), 1)} kg di grasso su ${fmtNum(m.peso, 1)} kg).</div>` : ""}
     <div class="small muted" style="line-height:1.5">Le bilance a impedenza (InBody e simili) variano anche di 1–2 punti in base ad acqua e pasti: misurati sempre nelle stesse condizioni, per esempio la mattina a digiuno.</div>
     ${sex ? "" : `<div class="small muted">Imposta il sesso in Impostazioni per riferimenti precisi.</div>`}`, "Massa grassa");
@@ -451,9 +488,11 @@ function fatInfoSheet(m, sex) {
 function vo2InfoSheet(vo2, age, sex) {
   openSheet(`${sheetHead("VO₂max")}
     <div style="line-height:1.55;color:var(--text)">È la quantità massima di ossigeno che il tuo corpo riesce a usare durante lo sforzo: la "cilindrata" del motore. È il miglior indicatore della forma aerobica ed è legato alla salute a lungo termine. L'Apple Watch lo stima durante camminate e corse all'aperto.</div>
-    ${age ? `<div class="card soft" style="line-height:1.5">Per ${sex === "F" ? "una donna" : "un uomo"} di ${age} anni il valore tipico è circa <b>${fmtNum(vo2Median(age, sex), 0)}</b>. Il tuo è <b>${fmtNum(vo2, 1)}</b>.</div>` : ""}
-    <div class="card soft" style="line-height:1.5"><b>Lo sapevi?</b> L'età del cuore è l'età in cui una persona media ha il tuo stesso VO₂max. Si alza soprattutto con allenamenti aerobici sostenuti e con gli intervalli (per esempio 4 × 4 minuti molto intensi in bici o a nuoto).</div>
-    <div class="small muted">Stime indicative, non una valutazione medica.</div>`, "VO₂max");
+    ${age ? (() => { const r = cooperRow(age, sex); return `<div class="card list"><div class="label" style="margin-bottom:4px">${sex === "F" ? "Donne" : "Uomini"} ${Math.floor(age / 10) * 10}–${Math.floor(age / 10) * 10 + 9} anni (Cooper Institute)</div>
+      ${[["Superiore", `≥ ${fmtNum(r.p95, 1)}`], ["Eccellente", `${fmtNum(r.p80, 1)}–${fmtNum(r.p95, 1)}`], ["Buono", `${fmtNum(r.p60, 1)}–${fmtNum(r.p80, 1)}`], ["Discreto", `${fmtNum(r.p40, 1)}–${fmtNum(r.p60, 1)}`], ["Scarso", `< ${fmtNum(r.p40, 1)}`]].map(([a, b]) => `<div class="item"><span>${a}</span><b>${b}</b></div>`).join("")}
+      <div class="item"><b>Tu</b><b>${fmtNum(vo2, 1)}</b></div></div>`; })() : ""}
+    <div class="card soft" style="line-height:1.5"><b>Età del cuore:</b> è l'età in cui il tuo VO₂max sarebbe nella media (50° percentile), come la «Fitness Age» di Garmin, calcolata sulle stesse tabelle della Cooper Institute. Il minimo della scala è 20 anni. Si abbassa soprattutto con allenamenti aerobici sostenuti e a intervalli (per esempio 4 × 4 minuti molto intensi in bici o a nuoto).</div>
+    <div class="small muted">Il VO₂max dell'Apple Watch è una stima (errore tipico di qualche punto rispetto al test in laboratorio). Non è una valutazione medica.</div>`, "VO₂max");
 }
 
 views.corpo = async (el) => {
@@ -486,7 +525,7 @@ views.corpo = async (el) => {
       : `<div class="muted">La tua bilancia registra solo il peso: per la composizione serve una bilancia a impedenza.</div>`}
       <div class="grid3">
         ${[["Peso", last.peso, prev3?.peso, "kg", -1], ["Magra", lk, leanKg(prev3), "kg", 1], ["BMI", last.bmi, null, "", 0]].map(([l, v, o, u, good]) =>
-          `<div class="mini" style="background:var(--bg)"><span class="label">${l}</span><span class="big">${fmtNum(v, 1)}</span>${o != null && v != null ? `<span class="small ${(v - o) * good >= 0 ? "good" : "bad"}">${signed(v - o, 1, " " + u)}</span>` : l === "BMI" && v ? `<span class="small muted">${v < 18.5 ? "sottopeso" : v < 25 ? "normale" : v < 30 ? "sovrappeso" : "alto"}</span>` : ""}</div>`).join("")}
+          `<div class="mini" style="background:var(--bg)"><span class="label">${l}</span><span class="big">${fmtNum(v, 1)}</span>${o != null && v != null ? `<span class="small ${(v - o) * good >= 0 ? "good" : "bad"}">${signed(v - o, 1, " " + u)}</span>` : l === "BMI" && v ? `<span class="small muted">${v < 18.5 ? "sottopeso" : v < 25 ? "normopeso" : v < 30 ? "sovrappeso" : "obesità"} (OMS)</span>` : ""}</div>`).join("")}
       </div>
       <div class="seg" role="tablist" id="seg">${[["grasso_pct", "Grasso"], ["peso", "Peso"], ["magra", "Muscoli"]].map(([k, l], i) => `<button role="tab" data-s="${k}" aria-selected="${i === 0}">${l}</button>`).join("")}</div>
       <div id="chart"></div></div>`;
@@ -517,12 +556,14 @@ views.corpo = async (el) => {
     html += `<div class="card dark col" style="gap:6px">
       <div class="row between"><div class="label" style="color:#AEB4C6">Motore</div><span class="small" style="color:#AEB4C6">VO₂max e cuore</span></div>
       ${fa ? `<div class="row" style="gap:14px;padding:6px 0 10px"><div style="font-size:64px;font-weight:900;letter-spacing:-2px;line-height:1;color:#FFB547">${fa}</div>
-        <div class="col" style="gap:2px"><div style="font-weight:900;font-size:18px">anni: l'età del tuo cuore</div><div class="small" style="color:#AEB4C6">Stimata dal VO₂max${age ? `. Hai ${age} anni${fa < age ? `: sei ${age - fa} anni "più giovane"` : fa > age ? `: c'è margine per ringiovanirlo` : ""}` : ""}.</div></div></div>`
+        <div class="col" style="gap:2px"><div style="font-weight:900;font-size:18px">anni: l'età del tuo cuore</div><div class="small" style="color:#AEB4C6">${fa === 20 && vNow[1] >= vo2Median(20, sex) ? "Il valore minimo della scala: il tuo VO₂max è sopra la media dei ventenni" : "L'età in cui il tuo VO₂max sarebbe nella media"}${age ? `. Hai ${age} anni` : ""}. Metodo Garmin, tabelle Cooper Institute.</div></div></div>`
       : vNow ? `<div class="small" style="color:#AEB4C6;padding:4px 0 8px">Inserisci età e sesso in <a href="#/impostazioni" style="color:#FFB547">Impostazioni</a> per vedere l'età del tuo cuore.</div>` : ""}
       ${vNow ? row("VO₂max", lvl ? lvl[0] : `misurato ${ago(vNow[0] + "T12:00:00")}`, fmtNum(vNow[1], 1), "", dl(dV, false, "in 6 mesi", 1), false, "vo2Info") : ""}
-      ${vNow && age ? (() => { const m = vo2Median(age, sex || "M"), lo = m - 15, hi = m + 15, pos = Math.max(2, Math.min(98, ((vNow[1] - lo) / (hi - lo)) * 100));
-          return `<div class="rangebar" style="margin:-4px 0 0"><div class="t" style="background:#2E3658"></div><div class="b" style="left:40%;width:20%;background:#3C4A7A"></div><div class="you" style="left:${pos}%;border-color:#1C2340"></div></div>
-          <div class="row between small" style="color:#AEB4C6;margin-top:-4px"><span>${fmtNum(lo, 0)}</span><span>${sex === "F" ? "donne" : "uomini"} di ${age} anni</span><span>${fmtNum(hi, 0)}</span></div>`; })() : ""}
+      ${vNow && age ? (() => { const r = cooperRow(age, sex), lo = r.p40 - 8, hi = r.p95 + 4, at = (v) => Math.max(0, Math.min(100, ((v - lo) / (hi - lo)) * 100));
+          const segs = [[lo, r.p40, "#3A2E3F"], [r.p40, r.p60, "#3C4A7A"], [r.p60, r.p80, "#3D6A5C"], [r.p80, r.p95, "#2E8B5A"], [r.p95, hi, "#5DC796"]];
+          return `<div class="rangebar" style="margin:-2px 0 0">${segs.map(([a, b, c]) => `<div class="b" style="left:${at(a)}%;width:${at(b) - at(a)}%;background:${c};border-radius:0"></div>`).join("")}<div class="you" style="left:${at(vNow[1])}%;border-color:#1C2340"></div></div>
+          <div class="row between small" style="color:#AEB4C6;margin-top:-4px;font-size:11px"><span>scarso</span><span>discreto</span><span>buono</span><span>eccellente</span><span>superiore</span></div>
+          <div class="small" style="color:#AEB4C6;font-size:11px;text-align:center">${sex === "F" ? "Donne" : "Uomini"} ${Math.floor(age / 10) * 10}–${Math.floor(age / 10) * 10 + 9} anni · Cooper Institute</div>`; })() : ""}
       ${fcrNow ? row("FC a riposo", fcrLevel(fcrNow), fmtNum(fcrNow, 0), "bpm", dl(fcrOld != null ? fcrNow - fcrOld : null, true, "in 3 mesi"), true) : ""}
       ${fcwNow ? row("FC camminando", "più bassa = cuore più efficiente", fmtNum(fcwNow, 0), "bpm", dl(fcwOld != null ? fcwNow - fcwOld : null, true, "in 3 mesi"), true) : ""}
       ${tip ? `<div class="card" style="background:#2A3150;margin-top:8px;padding:14px"><div class="small" style="line-height:1.5;color:#E6E8F0"><b>Coach:</b> ${tip}</div></div>` : ""}
@@ -545,8 +586,8 @@ views.corpo = async (el) => {
   if (last) {
     const series = { grasso_pct: ms.filter((m) => m.grasso_pct != null).map((m) => [m.giorno, m.grasso_pct]), peso: ms.filter((m) => m.peso != null).map((m) => [m.giorno, m.peso]), magra: ms.filter((m) => leanKg(m) != null).map((m) => [m.giorno, Math.round(leanKg(m) * 10) / 10]) };
     const conf = { grasso_pct: ["#FF8A1F", "%"], peso: ["#1C2340", ""], magra: ["#2E8B5A", ""] };
-    const drawChart = (k) => { $("#chart").innerHTML = lineChart(series[k].slice(-30), conf[k][0], conf[k][1]); el.querySelectorAll("#seg button").forEach((b) => b.setAttribute("aria-selected", b.dataset.s === k)); };
-    if (!series.grasso_pct.length) { $("#seg").remove(); $("#chart").innerHTML = lineChart(series.peso.slice(-30), "#1C2340", ""); } else drawChart("grasso_pct");
+    const drawChart = (k) => { $("#chart").innerHTML = timeChart(series[k].slice(-30), conf[k][0], conf[k][1]); el.querySelectorAll("#seg button").forEach((b) => b.setAttribute("aria-selected", b.dataset.s === k)); };
+    if (!series.grasso_pct.length) { $("#seg").remove(); $("#chart").innerHTML = timeChart(series.peso.slice(-30), "#1C2340", ""); } else drawChart("grasso_pct");
     el.querySelectorAll("#seg button").forEach((b) => (b.onclick = () => drawChart(b.dataset.s)));
     const drawQuad = (days) => {
       el.querySelectorAll("#qseg button").forEach((b) => b.setAttribute("aria-selected", Number(b.dataset.q) === days));
