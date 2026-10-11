@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeEnv, call, setup, CODE } from "./helpers.js";
-import { allowedMode, injuryArea } from "../src/injury.js";
+import { allowedMode, injuryArea, constraints, violation, ruleBased, MODALITA } from "../src/injury.js";
 
 const fakeAI = (replies) => {
   const seen = [];
@@ -38,7 +38,7 @@ test("modalità infortunio: niente sport, piano del giorno che segue il dolore",
   await call(env, "/api/infortunio", { method: "POST", code: CODE, body: { dal: daysAgo(10) } });
   r = (await plan(env, { dolore: 2 })).data;
   assert.equal(r.modalita, "riabilitazione"); assert.equal(r.dolore, 2); assert.equal(r.area, "inferiore");
-  assert.match(r.struttura.map((x) => x.dettaglio).join(" "), /piegamenti/);
+  assert.match(r.struttura.map((x) => x.dettaglio).join(" "), /da seduto/);
   r = (await plan(env, { dolore: 8 })).data;
   assert.equal(r.modalita, "riposo");
   assert.equal((await plan(env, { dolore: 11 })).status, 400);
@@ -66,4 +66,44 @@ test("l'IA non può andare oltre il limite di sicurezza e il coach conosce l'inf
   await call(env, "/api/coach/chat", { method: "POST", code: CODE, body: { domanda: "Cosa faccio oggi?" } });
   const sys = AI.seen.at(-1)[0].content;
   assert.match(sys, /MODALITÀ INFORTUNIO/); assert.match(sys, /spalla destra dolorante/); assert.match(sys, /Dolore dichiarato[^\n]*8/);
+});
+
+const MENISCO = "Il 17 settembre 2026 artroscopia al ginocchio sinistro: sutura del menisco laterale. Prescrizioni: divieto di carico sull'arto operato per 30 giorni, con utilizzo delle stampelle. Flessione del ginocchio limitata a 90°, mobilizzazione consentita tra 0° e 90°.";
+
+test("prescrizioni riconosciute dal testo e modificabili a mano", () => {
+  const c = constraints({ descrizione: MENISCO, dal: "2026-09-17" });
+  assert.deepEqual(c, { no_carico: true, fino: "2026-10-17", stampelle: true, gradi: 90, altre: "" });
+  // what the person sets explicitly wins (e.g. the surgeon allowed weight bearing)
+  const c2 = constraints({ descrizione: MENISCO, dal: "2026-09-17", prescrizioni: { no_carico: false, gradi: 120 } });
+  assert.equal(c2.no_carico, false); assert.equal(c2.gradi, 120);
+  assert.equal(constraints({ descrizione: "botta alla spalla" }).no_carico, false);
+});
+
+test("un piano che viola le prescrizioni viene riconosciuto", () => {
+  const c = constraints({ descrizione: MENISCO, dal: "2026-09-17" });
+  const plan = (dettaglio) => ({ titolo: "x", struttura: [{ fase: "x", dettaglio }] });
+  assert.ok(violation(plan("Camminata leggera sul posto con stampelle per 3 minuti"), c, "inferiore"));
+  assert.ok(violation(plan("Squat a corpo libero 3 x 10"), c, "inferiore"));
+  assert.ok(violation(plan("Mobilità del ginocchio fino a 110°"), c, "inferiore"));
+  assert.ok(violation(plan("Push-up al muro 3 x 12"), c, "inferiore"));
+  assert.equal(violation(plan("Da sdraiato contrai il quadricipite 10 x 10\", senza appoggiare il piede. Non camminare. Flessione 0-90°."), c, "inferiore"), null);
+});
+
+test("le sedute di riserva rispettano sempre le prescrizioni", () => {
+  const all = { no_carico: true, stampelle: true, gradi: 60, altre: "" };
+  for (const area of ["inferiore", "superiore", "schiena", "più zone", "non chiara"])
+    for (const mode of MODALITA) assert.equal(violation(ruleBased(mode, area, "", all), all, area), null, `${mode} / ${area}`);
+});
+
+test("l'IA che propone di camminare senza carico viene scartata", async () => {
+  const bad = JSON.stringify({ modalita: "riabilitazione", titolo: "Esercizi dolci", durata_min: 25, struttura: [{ fase: "Riscaldamento", dettaglio: "Camminata leggera sul posto con stampelle per 3 minuti, braccia in movimento circolare" }], perche: "x", attenzione: "y" });
+  const AI = fakeAI([bad]);
+  const env = makeEnv({ AI }); await setup(env);
+  await call(env, "/api/infortunio", { method: "POST", code: CODE, body: { attivo: true, descrizione: MENISCO, dal: daysAgo(24) } });
+  const r = (await plan(env, { dolore: 0 })).data;
+  assert.equal(r.fonte, "regole"); assert.match(r.scartato, /carico/);
+  assert.ok(r.vincoli.some((v) => /Movimento massimo 90°/.test(v)));
+  assert.match(AI.seen[0][1].content, /VINCOLI ASSOLUTI/);
+  const g = (await call(env, "/api/infortunio", { code: CODE })).data;
+  assert.equal(g.vincoli.no_carico, true); assert.equal(g.vincoli.gradi, 90);
 });

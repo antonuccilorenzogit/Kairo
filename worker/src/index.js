@@ -11,7 +11,7 @@ import { parsePayload, cleanCheckin, MAX_BODY_BYTES } from "./validate.js";
 import { exportData, createBackup, listBackups, readBackup, restoreData } from "./backup.js";
 import { getProfile, saveProfile, hrMax, profileText } from "./profile.js";
 import { listMemory, addMemory, deleteMemory, memoryText } from "./memory.js";
-import { injuryPlan, injuryText, savePain, clearPain } from "./injury.js";
+import { injuryPlan, injuryText, savePain, clearPain, constraints, constraintList } from "./injury.js";
 
 // What every coach prompt knows about the person: profile + remembered facts.
 const coachProfile = async (db, profile) => {
@@ -23,7 +23,7 @@ const dropTodayAdvice = (db, day) => db.prepare("DELETE FROM advice WHERE day IN
 import { recomputeTrimp } from "./load.js";
 import { getVapid, sendPush, validEndpoint } from "./push.js";
 
-const VERSION = "1.6.0";
+const VERSION = "1.6.1";
 
 // No CORS headers: only the Kairo app (same origin) and the Shortcuts app (not a browser) talk to the API.
 const json = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), {
@@ -248,6 +248,10 @@ async function api(req, env, url) {
     return json(saved);
   }
   // Injury mode on/off without touching the rest of the profile
+  if (p === "/api/infortunio" && req.method === "GET") {
+    const inj = (await getProfile(env.DB)).infortunio;
+    return json({ infortunio: inj, vincoli: constraints(inj), elenco: constraintList(constraints(inj), todayLocal(tz)) });
+  }
   if (p === "/api/infortunio" && req.method === "POST") {
     const b = (await readJson(req)) || {};
     const before = await getProfile(env.DB);

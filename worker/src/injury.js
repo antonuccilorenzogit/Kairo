@@ -34,7 +34,8 @@ const painTrend = (log, since) => Object.entries(log).filter(([d]) => !since || 
 export async function injuryText(db, profile) {
   if (!profile.infortunio?.attivo) return "";
   const t = painTrend(await painLog(db), profile.infortunio.dal);
-  return t.length ? `\nDolore dichiarato (0-10) negli ultimi giorni: ${t.map(([d, v]) => `${d.slice(5)} ${v}`).join(", ")}.` : "\nNon ha ancora indicato quanto gli fa male.";
+  const v = constraintList(constraints(profile.infortunio));
+  return (v.length ? `\nVINCOLI ASSOLUTI prescritti dal medico (non proporre MAI nulla che li violi, nemmeno in chat): ${v.join("; ")}.` : "") + (t.length ? `\nDolore dichiarato (0-10) negli ultimi giorni: ${t.map(([d, v]) => `${d.slice(5)} ${v}`).join(", ")}.` : "\nNon ha ancora indicato quanto gli fa male.");
 }
 
 // ---------- body area from the description ----------
@@ -49,6 +50,58 @@ export function injuryArea(text) {
   return hits.length === 1 ? hits[0] : hits.length ? "più zone" : "non chiara";
 }
 
+// ---------- prescriptions: absolute constraints ----------
+// What the doctor or physio prescribed always wins. Values set explicitly in the app are used as they are;
+// otherwise they are read from the description ("divieto di carico per 30 giorni", "stampelle", "flessione max 90°").
+const NO_LOAD = /(divieto|senza|niente|vietato|non)\s+(di\s+|il\s+)?(carico|caricare|appoggi)|carico\s+(vietato|negato|non consentito|zero|assente)|(non\s+(posso|devo|può)\s+(caricare|appoggiare))|scarico\s+(totale|completo)|non weight/i;
+const addDays = (d, n) => new Date(Date.parse(d + "T12:00:00Z") + n * 86400e3).toISOString().slice(0, 10);
+function detectDegrees(t) {
+  if (!/flession|flett|piega|mobilizz|range|escursion|limit|massim|gradi|°/i.test(t)) return null;
+  const nums = [...t.matchAll(/(\d{1,3})\s*(°|gradi)/gi)].map((m) => Number(m[1])).filter((n) => n > 0 && n <= 180);
+  return nums.length ? Math.max(...nums) : null;
+}
+export function constraints(inj) {
+  const p = inj?.prescrizioni || {};
+  const t = `${inj?.descrizione || ""} ${p.altre || ""}`;
+  const no_carico = p.no_carico ?? NO_LOAD.test(t);
+  let fino = p.fino || "";
+  if (!fino && no_carico && inj?.dal) { const m = t.match(/carico[^.\n]{0,80}?(\d{1,3})\s*giorn/i); if (m) fino = addDays(inj.dal, Number(m[1])); }
+  return { no_carico, fino, stampelle: p.stampelle ?? /stampell/i.test(t), gradi: p.gradi ?? detectDegrees(t), altre: p.altre || "" };
+}
+const fmtD = (d) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+// The constraints in plain words (shown on the card and given to the coach).
+export function constraintList(c, day) {
+  const out = [];
+  if (c.no_carico) out.push(`Niente carico sulla parte infortunata${c.fino ? ` (prescritto fino al ${fmtD(c.fino)}${day && c.fino < day ? ": se il medico ti ha dato il via libera, aggiornalo" : ""})` : ""}`);
+  if (c.stampelle) out.push("Stampelle: niente esercizi con le braccia mentre cammini");
+  if (c.gradi != null) out.push(`Movimento massimo ${c.gradi}°`);
+  if (c.altre) out.push(`Altre indicazioni: ${c.altre}`);
+  return out;
+}
+
+// Words that mean loading the injured limb, per body area (unknown area → all of them).
+const LOAD_WORDS = {
+  inferiore: /in piedi|cammin|sul posto|squat|affond|corsa|corr[ei]re|\bsalt|gradin|scale\b|sulle punte|polpacc|plank|piegament|push|ponte|step\b|cyclette|\bbici|pedal|corda|equilibrio su|una gamba|in ginocchio|sulle ginocchia/i,
+  superiore: /piegament|push|plank|trazion|\bdip|quadrupedi|carponi|bird dog|appoggiat[oi] sulle mani|in appoggio sulle mani|manubri|bilanciere|kettlebell|nuot|bracciat/i,
+  schiena: /squat|stacc|bilanciere|sollev[a-z]* (pes|carich)|affond|corsa|\bsalt/i,
+};
+// Removes negated phrases ("non camminare", "senza appoggiare il piede") before looking for forbidden words.
+const stripNegations = (t) => t.replace(/\b(non|niente|senza|evita(re)?|mai|vietat[oa]|no)\b[^.,;:()]{0,50}/gi, " ");
+export function violation(plan, c, area) {
+  const text = stripNegations([plan.titolo, ...plan.struttura.flatMap((x) => [x.fase, x.dettaglio])].join(" . "));
+  if (c.no_carico) {
+    const re = LOAD_WORDS[area] || null;
+    const hit = re ? text.match(re) : text.match(LOAD_WORDS.inferiore) || text.match(LOAD_WORDS.superiore);
+    if (hit) return `«${hit[0]}» con il divieto di carico`;
+  }
+  if (c.gradi != null) {
+    const over = [...text.matchAll(/(\d{1,3})\s*(°|gradi)/gi)].map((m) => Number(m[1])).find((n) => n > c.gradi && n <= 360);
+    if (over) return `${over}° oltre il limite di ${c.gradi}°`;
+  }
+  if (c.stampelle && /stampell[^.]{0,80}(bracci|circol|alz[ai]|ruot)/i.test(text)) return "esercizi di braccia con le stampelle";
+  return null;
+}
+
 // ---------- rules ----------
 // The most that is allowed today: rest in the first days or with strong pain, then the healthy parts, then rehab.
 export function allowedMode({ dolore, giorni }) {
@@ -60,25 +113,32 @@ export function allowedMode({ dolore, giorni }) {
 }
 
 const REST_OF_BODY = {
-  inferiore: "Parte alta da seduto o a terra, senza caricare la zona: 3 giri di piegamenti (anche sulle ginocchia) 8-12, rematore con elastico o manubrio da seduto 12, alzate laterali 12, dead bug 10 per lato. Recupero 1' tra i giri.",
+  inferiore: "Parte alta, tutto da seduto (sedia stabile), con la gamba infortunata ferma: 3 giri di spinte in avanti con l'elastico 12, rematore con l'elastico 12, alzate laterali con due bottiglie d'acqua 12, curl con l'elastico 15. Poi da sdraiato a pancia in su: addominali sollevando solo le spalle 3 × 12. Recupero 1' tra i giri.",
   superiore: "Gambe e core senza usare le braccia: 3 giri di squat a corpo libero 15, affondi 10 per gamba, ponte glutei 15, polpacci 20, dead bug 10 per lato (braccia ferme). Se non coinvolge la zona, 20' di cyclette facile.",
   schiena: "Niente carichi sulla schiena: camminata 20-30' a passo comodo, poi 3 giri di ponte glutei 12, dead bug 8 per lato e bird dog 8 per lato, lenti e controllati.",
   "più zone": "Solo ciò che non fa male: camminata facile 15-20' se possibile e esercizi di core a terra (dead bug, ponte glutei) senza coinvolgere le zone doloranti.",
   "non chiara": "Allena solo le parti che non fanno male: per esempio camminata facile 20' e 2-3 giri di esercizi a corpo libero lontani dalla zona dolorante (core, ponte glutei, piegamenti).",
 };
+// Same idea, never loading the injured limb (used when the doctor forbade weight bearing).
+const REST_NO_LOAD = {
+  superiore: "Gambe e addominali senza usare il braccio infortunato: 3 giri di squat a corpo libero 15, ponte per i glutei da sdraiato 15, sollevamenti sulle punte 20, addominali da sdraiato con le braccia ferme sul petto 12.",
+  schiena: "Solo da sdraiato, senza pesi: 3 giri di ponte per i glutei 10 lento, sollevamento alternato delle gambe piegate 8 per lato, respirazione profonda con la pancia 2'.",
+};
 const ATTENZIONE = "Fermati e senti un medico o un fisioterapista se il dolore è forte o peggiora, se c'è molto gonfiore, formicolio o perdita di forza, o se non riesci a caricare la zona. Questi consigli non sostituiscono il fisioterapista: se ti ha dato esercizi, segui i suoi.";
 
-function ruleBased(mode, area, motivo) {
+export function ruleBased(mode, area, motivo, c = {}) {
+  const rest = c.no_carico ? REST_NO_LOAD[area] || REST_OF_BODY.inferiore : REST_OF_BODY[area] || REST_OF_BODY["non chiara"];
+  const range = c.gradi != null ? ` (mai oltre ${c.gradi}°)` : "";
   const struttura = mode === "riposo" ? [
     { fase: "Proteggi la zona", dettaglio: "Evita i movimenti che fanno male; tienila sollevata quando puoi e comprimila se è gonfia. Nei primi giorni meglio evitare antinfiammatori e ghiaccio prolungato, salvo indicazione del medico." },
-    { fase: "Muovi il resto", dettaglio: "Una camminata breve o qualche minuto di mobilità delle articolazioni sane, solo se non fa male. Il movimento leggero aiuta il recupero." },
+    { fase: "Muovi il resto", dettaglio: c.no_carico ? "Qualche minuto di movimenti lenti da seduto delle parti sane (spalle, braccia, l'altra gamba), solo se non fa male. Il movimento leggero aiuta il recupero." : "Una camminata breve o qualche minuto di mobilità delle articolazioni sane, solo se non fa male. Il movimento leggero aiuta il recupero." },
     { fase: "Recupera bene", dettaglio: "Dormi almeno 8 ore e mangia proteine a ogni pasto: è il momento in cui il corpo ripara i tessuti." },
   ] : mode === "resto del corpo" ? [
-    { fase: "Resto del corpo", dettaglio: REST_OF_BODY[area] || REST_OF_BODY["non chiara"] },
-    { fase: "Zona infortunata", dettaglio: "Solo movimenti dolci che non fanno male, 2 × 10 lenti, oppure niente se fa male anche così." },
+    { fase: "Resto del corpo", dettaglio: rest },
+    { fase: "Zona infortunata", dettaglio: `Solo movimenti dolci da seduto o sdraiato che non fanno male${range}, 2 × 10 lenti, oppure niente se fa male anche così.` },
   ] : [
-    { fase: "Riabilitazione", dettaglio: "Contrazioni isometriche dei muscoli vicino alla zona (spingi senza muovere) 5 × 30-45\", poi movimenti lenti nel range che non fa male 3 × 12-15. Dolore massimo 3/10 durante." },
-    { fase: "Resto del corpo", dettaglio: REST_OF_BODY[area] || REST_OF_BODY["non chiara"] },
+    { fase: "Riabilitazione", dettaglio: `Da seduto o sdraiato: contrai i muscoli vicino alla zona senza muoverla 10 × 10", poi movimenti lenti nel range che non fa male${range} 3 × 12. Dolore massimo 3/10 durante. Se il fisioterapista ti ha dato esercizi, fai i suoi.` },
+    { fase: "Resto del corpo", dettaglio: rest },
     { fase: "Controllo di domani", dettaglio: "Se domattina il dolore è uguale o minore, puoi ripetere o aumentare un poco; se è peggiorato, torna un passo indietro." },
   ];
   const titolo = mode === "riposo" ? "Riposo attivo" : mode === "resto del corpo" ? "Allena il resto del corpo" : "Riabilitazione dolce";
@@ -98,7 +158,9 @@ export async function injuryPlan(env, req, { day, today, profile, profileText, f
   const dolore = log[day] ?? null;
   const giorni = inj.dal ? Math.max(0, daysBetween(inj.dal, day)) : null;
   const area = injuryArea(inj.descrizione);
-  const firma = JSON.stringify([inj.descrizione, inj.dal, dolore]);
+  const c = constraints(inj);
+  const vincoli = constraintList(c, day);
+  const firma = JSON.stringify([inj.descrizione, inj.dal, inj.prescrizioni, dolore]);
   const key = "A:" + day;
   if (!force) {
     const c = await env.DB.prepare("SELECT text FROM advice WHERE day = ?").bind(key).first();
@@ -107,6 +169,7 @@ export async function injuryPlan(env, req, { day, today, profile, profileText, f
   const lim = allowedMode({ dolore, giorni });
   const trend = painTrend(log, inj.dal);
   const prompt = `MODALITÀ INFORTUNIO. Oggi è ${day}.
+${vincoli.length ? `VINCOLI ASSOLUTI PRESCRITTI (un piano che li viola viene scartato):\n${vincoli.map((v) => `- ${v}`).join("\n")}${c.no_carico ? "\n  → per la parte infortunata nessun esercizio in piedi, in appoggio, camminando o in ginocchio: solo da seduto o sdraiato." : ""}${c.gradi != null ? `\n  → non scrivere mai angoli oltre ${c.gradi}°.` : ""}\n` : ""}
 - Infortunio descritto dalla persona: """${clip(inj.descrizione, 1000) || "non descritto"}"""
 - Iniziato: ${inj.dal || "data non indicata"}${giorni != null ? ` (${giorni} giorni fa)` : ""}. Zona stimata: ${area}.
 - Dolore oggi (0-10): ${dolore ?? "non indicato"}. Andamento: ${trend.length ? trend.map(([d, v]) => `${d.slice(5)}=${v}`).join(", ") : "nessun dato"}.
@@ -135,8 +198,11 @@ Rispondi SOLO con JSON: {"modalita":"riposo|resto del corpo|riabilitazione","tit
       perche: clip(j.perche, 240) || lim.motivo, attenzione: clip(j.attenzione, 300) || ATTENZIONE, fonte: "ia", modello: r.model,
     };
   }
-  if (!plan) plan = ruleBased(lim.modalita, area, lim.motivo);
-  plan = { infortunio: true, ...plan, dolore, giorni, area, limite: lim.modalita, firma };
+  // the prescriptions are checked on the AI's text: a plan that breaks one is discarded
+  let scartato = null;
+  if (plan) { scartato = violation(plan, c, area); if (scartato) plan = null; }
+  if (!plan) plan = ruleBased(lim.modalita, area, lim.motivo, c);
+  plan = { infortunio: true, ...plan, dolore, giorni, area, limite: lim.modalita, vincoli, ...(scartato ? { scartato } : {}), firma };
   await env.DB.prepare("INSERT INTO advice(day,text,provider,model,created) VALUES(?,?,?,?,?) ON CONFLICT(day) DO UPDATE SET text=excluded.text, provider=excluded.provider, model=excluded.model, created=excluded.created")
     .bind(key, JSON.stringify(plan), plan.fonte, plan.modello || null, new Date().toISOString()).run();
   return plan;

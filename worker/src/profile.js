@@ -9,7 +9,20 @@ const intIn = (v, lo, hi) => { const n = Number(v); return v === "" || v == null
 // Injury mode: while active the daily workout becomes rest / rehab / training for the healthy parts.
 export function cleanInjury(i) {
   const dal = /^\d{4}-\d{2}-\d{2}$/.test(String(i?.dal || "")) && Date.parse(i.dal) <= Date.now() + 86400e3 ? i.dal : "";
-  return { attivo: i?.attivo === true, descrizione: str(i?.descrizione, 1000), dal };
+  return { attivo: i?.attivo === true, descrizione: str(i?.descrizione, 1000), dal, prescrizioni: cleanRx(i?.prescrizioni) };
+}
+
+// Doctor's / physio's prescriptions. null = not set: Kairo then reads them from the description.
+export function cleanRx(r) {
+  const bool = (v) => (v === true || v === false ? v : null);
+  const g = Number(r?.gradi);
+  return {
+    no_carico: bool(r?.no_carico),                                         // no weight on the injured limb
+    fino: /^\d{4}-\d{2}-\d{2}$/.test(String(r?.fino || "")) ? r.fino : "", // until when (as prescribed)
+    stampelle: bool(r?.stampelle),
+    gradi: r?.gradi === "" || r?.gradi == null || !Number.isFinite(g) ? null : Math.max(0, Math.min(180, Math.round(g))), // max range of motion
+    altre: str(r?.altre, 500),
+  };
 }
 
 export function cleanProfile(p) {

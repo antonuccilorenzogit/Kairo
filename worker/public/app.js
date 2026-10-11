@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.6.0";
+const APP_VERSION = "1.6.1";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -242,31 +242,52 @@ function renderInjury(w, head) {
       <div class="small muted">${w.durata_min} min circa${w.giorni != null ? ` · giorno ${w.giorni + 1} dall'infortunio` : ""}</div></div><span class="pill ${mc}">${ml}</span></div>
     <div class="col" style="gap:8px">${w.struttura.map((x) => `<div class="small" style="line-height:1.45"><b>${esc(x.fase)}</b> · ${esc(x.dettaglio)}</div>`).join("")}</div>
     <div class="small muted" style="line-height:1.45">${esc(w.perche)}</div>
+    ${w.vincoli?.length ? `<div class="card soft col" style="gap:4px;padding:10px 12px"><div class="small" style="font-weight:800">Indicazioni del medico rispettate</div>${w.vincoli.map((x) => `<div class="small" style="line-height:1.4">✓ ${esc(x)}</div>`).join("")}</div>` : ""}
     <div class="warnbox">${esc(w.attenzione)}</div>
     <div class="row" style="gap:8px"><button class="btn ghost" id="injEdit" style="flex:1;min-height:44px">Modifica infortunio</button><button class="btn primary" id="injOff" style="flex:1;min-height:44px">Sono guarito</button></div>`;
   $("#workout").querySelectorAll("[data-pain]").forEach((b) => (b.onclick = async () => {
     await loadWorkout(true, null, { dolore: Number(b.dataset.pain) });
     api("/api/coach/oggi", { method: "POST", body: {} }).then((a) => { const box = $("#advice"); if (box) box.innerHTML = md(a.errore || a.testo); }).catch(() => {});
   }));
-  $("#injEdit").onclick = async () => injurySheet((await loadProfile()).infortunio || p.infortunio);
+  $("#injEdit").onclick = () => injurySheet();
   $("#injOff").onclick = async () => {
     try { const saved = await api("/api/infortunio", { method: "POST", body: { attivo: false } }); store.set("profilo", saved); toast("Bentornato! Si riparte con calma"); router(); }
     catch (e) { toast(e.message); }
   };
 }
 
-// Describe the injury (from Oggi): what happened, where, since when
-function injurySheet(cur) {
+// Describe the injury and the doctor's prescriptions (absolute constraints for the coach)
+async function injurySheet() {
   const today = todayStr();
-  openSheet(`${sheetHead(cur?.attivo ? "Il tuo infortunio" : "Modalità infortunio")}
+  let data = { infortunio: {}, vincoli: {} };
+  try { data = await api("/api/infortunio"); } catch (_) {}
+  const cur = data.infortunio || {}, v = data.vincoli || {}, rx = cur.prescrizioni || {};
+  const tog = (id, on, label) => `<button type="button" class="choice" id="${id}" aria-pressed="${!!on}" style="text-align:left;padding:0 14px;font-size:15px">${label}</button>`;
+  openSheet(`${sheetHead(cur.attivo ? "Il tuo infortunio" : "Modalità infortunio")}
     <div class="small" style="line-height:1.5;color:var(--text)">Finché è attiva, il coach non ti propone allenamenti normali: ogni giorno ti dice se riposare, quali esercizi riabilitativi fare o come allenare il resto del corpo.</div>
-    <label class="field">Che infortunio hai?<textarea class="input" id="injD" rows="4" maxlength="1000" style="padding:12px;min-height:110px" placeholder="Es. distorsione alla caviglia destra giocando a calcio, è un po' gonfia, appoggio il piede ma fa male girare. Il fisioterapista mi ha detto 2 settimane senza corsa.">${esc(cur?.descrizione || "")}</textarea><span class="hint">Più dettagli dai (dove, come è successo, cosa fa male, cosa ti ha detto il medico), più i consigli sono precisi.</span></label>
-    <label class="field">Da quando<input class="input" id="injDal" type="date" max="${today}" value="${esc(cur?.dal || today)}"></label>
-    <button class="btn primary" id="injSave">${cur?.attivo ? "Salva" : "Attiva modalità infortunio"}</button>`, "Infortunio");
+    <label class="field">Che infortunio hai?<textarea class="input" id="injD" rows="4" maxlength="1000" style="padding:12px;min-height:110px" placeholder="Es. distorsione alla caviglia destra giocando a calcio, è un po' gonfia, appoggio il piede ma fa male girare.">${esc(cur.descrizione || "")}</textarea><span class="hint">Dove, come è successo, cosa fa male, eventuale intervento.</span></label>
+    <label class="field">Da quando<input class="input" id="injDal" type="date" max="${today}" value="${esc(cur.dal || today)}"></label>
+    <div class="col" style="gap:10px"><div class="h2" style="font-size:17px">Indicazioni del medico</div>
+      <div class="small muted" style="line-height:1.45">Sono <b>vincoli assoluti</b>: il coach non propone mai niente che li superi, e se l'IA sbaglia il piano viene scartato. Se le hai scritte sopra, Kairo le ha già riconosciute: controlla.</div>
+      ${tog("rxLoad", v.no_carico, "🚫 Non posso caricare la parte infortunata")}
+      <label class="field" id="rxFinoBox" style="${v.no_carico ? "" : "display:none"}">Senza carico fino al<input class="input" id="rxFino" type="date" value="${esc(v.fino || "")}"></label>
+      ${tog("rxCrutch", v.stampelle, "🦯 Uso le stampelle")}
+      <label class="field">Movimento massimo (gradi)<input class="input" id="rxDeg" type="number" inputmode="numeric" min="0" max="180" placeholder="es. 90 per la flessione del ginocchio" value="${v.gradi ?? ""}"></label>
+      <label class="field">Altre indicazioni<textarea class="input" id="rxOther" rows="2" maxlength="500" style="padding:12px;min-height:64px" placeholder="Es. niente nuoto a rana per 2 mesi, tutore di notte">${esc(rx.altre || "")}</textarea></label></div>
+    <button class="btn primary" id="injSave">${cur.attivo ? "Salva" : "Attiva modalità infortunio"}</button>`, "Infortunio");
+  const press = (id) => { const b = $("#" + id); b.dataset.touched = "1"; b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") !== "true"); };
+  $("#rxLoad").onclick = () => { press("rxLoad"); $("#rxFinoBox").style.display = $("#rxLoad").getAttribute("aria-pressed") === "true" ? "" : "none"; };
+  $("#rxCrutch").onclick = () => press("rxCrutch");
   $("#injSave").onclick = async () => {
     const descrizione = $("#injD").value.trim();
     if (descrizione.length < 3) { toast("Descrivi in breve l'infortunio"); return; }
-    try { const saved = await api("/api/infortunio", { method: "POST", body: { attivo: true, descrizione, dal: $("#injDal").value } }); store.set("profilo", saved); closeSheet(); router(); }
+    // untouched switches stay "not set" (null): Kairo keeps reading them from the description
+    const val = (id, stored) => ($("#" + id).dataset.touched ? $("#" + id).getAttribute("aria-pressed") === "true" : stored ?? null);
+    const deg = $("#rxDeg").value.trim(), fino = $("#rxFino").value;
+    const prescrizioni = { no_carico: val("rxLoad", rx.no_carico), stampelle: val("rxCrutch", rx.stampelle),
+      gradi: deg === String(v.gradi ?? "") ? rx.gradi ?? null : deg === "" ? null : Number(deg),
+      fino: fino && fino !== v.fino ? fino : rx.fino || "", altre: $("#rxOther").value.trim() };
+    try { const saved = await api("/api/infortunio", { method: "POST", body: { attivo: true, descrizione, dal: $("#injDal").value, prescrizioni } }); store.set("profilo", saved); closeSheet(); router(); }
     catch (e) { toast(e.message); }
   };
 }
@@ -1018,9 +1039,7 @@ views.impostazioni = async (el) => {
       <div class="grid2"><label class="field">Età<input class="input" id="eta" type="number" inputmode="numeric" min="12" max="99" value="${esc(c.profilo.eta || "")}"></label>
         <label class="field">Sesso<select class="input" id="sesso"><option value="">–</option><option value="M" ${c.profilo.sesso === "M" ? "selected" : ""}>Uomo</option><option value="F" ${c.profilo.sesso === "F" ? "selected" : ""}>Donna</option></select></label></div>
       <div class="field"><span>I tuoi sport</span><div class="acts" style="grid-template-columns:repeat(3,minmax(0,1fr))" id="sports">${[["palestra", "Palestra"], ["nuoto", "Nuoto"], ["bici", "Bici"], ["corsa", "Corsa"]].map(([k, l]) => `<button type="button" class="choice" data-sport="${k}" aria-pressed="${(c.profilo.sport || ["palestra", "nuoto", "bici", "corsa"]).includes(k)}">${l}</button>`).join("")}<button type="button" class="choice inj" id="injChip" aria-pressed="${!!c.profilo.infortunio?.attivo}" style="grid-column:span 2">🩹 Infortunio</button></div><span class="hint">L'allenamento consigliato ogni giorno sceglie solo tra questi. Con <b>Infortunio</b> attivo il coach ti propone solo riposo, riabilitazione o esercizi per il resto del corpo.</span></div>
-      <div class="col" id="injBox" style="gap:12px;${c.profilo.infortunio?.attivo ? "" : "display:none"}">
-        <label class="field">Che infortunio hai?<textarea class="input" id="injD" rows="3" maxlength="1000" style="padding:12px;min-height:84px" placeholder="Es. distorsione alla caviglia destra, un po' gonfia, il fisioterapista dice 2 settimane senza corsa">${esc(c.profilo.infortunio?.descrizione || "")}</textarea></label>
-        <label class="field">Da quando<input class="input" id="injDal" type="date" max="${todayStr()}" value="${esc(c.profilo.infortunio?.dal || todayStr())}"></label></div>
+      <div class="col" id="injBox" style="gap:8px;${c.profilo.infortunio?.attivo ? "" : "display:none"}"><div class="small" style="line-height:1.45;color:var(--text)">${esc(c.profilo.infortunio?.descrizione || "")}</div><button type="button" class="btn ghost" id="injEditS">Modifica infortunio e indicazioni del medico</button></div>
       <label class="field">I tuoi obiettivi<textarea class="input" id="obiettivi" rows="2" style="padding:12px;min-height:64px" placeholder="Es. scendere al 12% di grasso, nuotare 2 km senza fermarmi">${esc(c.profilo.obiettivi || "")}</textarea></label>
       <label class="field">Chi sei e come ti alleni<textarea class="input" id="note" rows="3" style="padding:12px;min-height:84px" placeholder="Es. palestra 3 volte a settimana, nuoto 1-2 volte, bici nel weekend">${esc(c.profilo.note)}</textarea></label>
       <div class="grid2"><label class="field">Sveglia abituale<input class="input" id="sveglia" type="time" value="${esc(c.profilo.sveglia || "")}"><span class="hint">Per l'orario consigliato per andare a letto.</span></label>
@@ -1075,10 +1094,8 @@ views.impostazioni = async (el) => {
   $("#saveProfilo").onclick = async () => {
     const body = { nome: $("#nome").value.trim(), eta: $("#eta").value.trim(), sesso: $("#sesso").value, note: $("#note").value.trim(), obiettivi: $("#obiettivi").value.trim(),
       sveglia: $("#sveglia").value, sonno_min: Number($("#sonnomin").value), fc_max: $("#fcmax").value.trim(), tz: tz(),
-      sport: [...el.querySelectorAll("[data-sport]")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.dataset.sport),
-      infortunio: { attivo: $("#injChip").getAttribute("aria-pressed") === "true", descrizione: $("#injD").value.trim(), dal: $("#injDal").value } };
+      sport: [...el.querySelectorAll("[data-sport]")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.dataset.sport) };
     if (!body.sport.length) { toast("Scegli almeno uno sport"); return; }
-    if (body.infortunio.attivo && body.infortunio.descrizione.length < 3) { toast("Descrivi in breve l'infortunio"); $("#injD").focus(); return; }
     try { const saved = await api("/api/profilo", { method: "POST", body }); store.set("profilo", saved); toast("Profilo salvato"); }
     catch (e) { toast(e.message); }
   };
@@ -1097,7 +1114,12 @@ views.impostazioni = async (el) => {
     const t = $("#memNew").value.trim(); if (!t) return;
     try { const r = await api("/api/memoria", { method: "POST", body: { testo: t } }); if (r.errore) return toast(r.errore); $("#memNew").value = ""; memLoad(); } catch (e) { toast(e.message); }
   };
-  $("#injChip").onclick = () => { const on = $("#injChip").getAttribute("aria-pressed") !== "true"; $("#injChip").setAttribute("aria-pressed", on); $("#injBox").style.display = on ? "" : "none"; if (on) $("#injD").focus(); };
+  // injury on → describe it in the sheet; off → healed
+  $("#injChip").onclick = async () => {
+    if ($("#injChip").getAttribute("aria-pressed") !== "true") return injurySheet();
+    try { const saved = await api("/api/infortunio", { method: "POST", body: { attivo: false } }); store.set("profilo", saved); toast("Modalità infortunio disattivata"); router(); } catch (e) { toast(e.message); }
+  };
+  const ies = $("#injEditS"); if (ies) ies.onclick = () => injurySheet();
   el.querySelectorAll("[data-sport]").forEach((b) => (b.onclick = () => b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") !== "true")));
   // ---- notifications (web push; on iPhone only for the app added to the Home Screen) ----
   const pushOk = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;

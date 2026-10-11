@@ -34,7 +34,8 @@
 - Nel profilo: `infortunio = {attivo, descrizione, dal}`; il dolore di ogni giorno (0–10) in `settings.infortunio_dolore` (ultimi 60 giorni). `POST /api/infortunio` lo attiva/modifica/disattiva senza toccare il resto del profilo.
 - `POST /api/allenamento/oggi` con l'infortunio attivo restituisce `{infortunio:true, modalita, titolo, struttura, perche, attenzione, dolore, giorni, area}` invece della seduta; `{"dolore":N}` registra il dolore di oggi e rigenera il piano.
 - Limite di sicurezza (`allowedMode`): riposo se dolore ≥ 7/10 o nei primi 3 giorni (PEACE & LOVE, Dubois & Esculier 2020); resto del corpo con dolore 4–6 o non indicato; riabilitazione con dolore ≤ 3 (pain-monitoring model, Silbernagel 2007). L'IA sceglie entro il limite (riposo < resto del corpo < riabilitazione), altrimenti valgono le sedute di regola per zona (gambe, braccia/spalle, schiena), ricavata dalla descrizione.
-- Il testo dell'infortunio e l'andamento del dolore entrano in ogni prompt del coach.
+- **Prescrizioni = vincoli assoluti** (`infortunio.prescrizioni = {no_carico, fino, stampelle, gradi, altre}`; `null` = non indicato → ricavato dalla descrizione con espressioni regolari). Il piano dell'IA viene controllato sul testo (`violation`): con il divieto di carico niente parole che implicano appoggio sull'arto della zona (in piedi, camminare, squat, piegamenti…, ignorando le frasi negate), nessun angolo oltre il limite, niente braccia con le stampelle. Se viola, il piano è scartato (`scartato`) e si usa la seduta di regola, che i test verificano per ogni zona e modalità. `GET /api/infortunio` restituisce i vincoli riconosciuti.
+- Il testo dell'infortunio, i vincoli e l'andamento del dolore entrano in ogni prompt del coach.
 
 ## Memoria del coach
 - Tabella `memoria` (testo unico, fonte `coach` o `utente`, data). Al massimo 60 ricordi: quando è piena escono prima i più vecchi scritti dal coach, mai quelli aggiunti a mano.

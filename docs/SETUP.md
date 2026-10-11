@@ -63,7 +63,7 @@ Apri Kairo **dall'icona sulla schermata Home** (su iPhone le notifiche funzionan
 
 ## Modalità infortunio
 
-Ti sei fatto male? Nella pagina Oggi tocca **Ti sei fatto male? Attiva la modalità infortunio** (oppure *Impostazioni → I tuoi sport → 🩹 Infortunio*), scrivi cosa è successo (dove, come, cosa fa male, cosa ti ha detto il medico) e da quando. Ogni mattina segna **quanto ti fa male da 0 a 10**: il coach ti dice se oggi riposare, quali esercizi riabilitativi fare o come allenare il resto del corpo. Quando stai bene tocca **Sono guarito**. I consigli non sostituiscono medico e fisioterapista.
+Ti sei fatto male? Nella pagina Oggi tocca **Ti sei fatto male? Attiva la modalità infortunio** (oppure *Impostazioni → I tuoi sport → 🩹 Infortunio*), scrivi cosa è successo (dove, come, cosa fa male, cosa ti ha detto il medico) e da quando. Ogni mattina segna **quanto ti fa male da 0 a 10**: il coach ti dice se oggi riposare, quali esercizi riabilitativi fare o come allenare il resto del corpo. Nella sezione **Indicazioni del medico** segna cosa ti è stato prescritto (niente carico e fino a quando, stampelle, movimento massimo in gradi, altro): sono **vincoli assoluti**, il coach non propone mai niente che li superi. Se le hai già scritte nella descrizione Kairo le riconosce da solo: controlla che siano giuste. Quando stai bene tocca **Sono guarito**. I consigli non sostituiscono medico e fisioterapista.
 
 ## Il coach che ricorda
 

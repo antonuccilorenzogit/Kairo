@@ -2,6 +2,14 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.6.1] — 2026-10-11
+
+### Migliorato
+- **Le indicazioni del medico sono vincoli assoluti**, per tutti: nel foglio dell'infortunio c'è la sezione *Indicazioni del medico* (niente carico e fino a quando, stampelle, movimento massimo in gradi, altre indicazioni). Se sono scritte solo nella descrizione («divieto di carico per 30 giorni», «stampelle», «flessione limitata a 90°») Kairo le riconosce da solo.
+- Il server **controlla il piano dell'IA**: se propone qualcosa che viola un vincolo (esercizi in piedi, camminate o in appoggio senza carico, angoli oltre il limite, braccia con le stampelle) lo scarta e usa una seduta sicura che li rispetta. Le sedute di riserva sono verificate dai test per ogni zona del corpo.
+- La scheda del giorno mostra le *Indicazioni del medico rispettate*; il coach (anche in chat) le riceve come vincoli.
+- Esercizi spiegati in italiano semplice, fattibili nella situazione reale, senza blocchi di riempimento; parte alta da seduto per gli infortuni alle gambe.
+
 ## [1.6.0] — 2026-10-11
 
 ### Aggiunto
