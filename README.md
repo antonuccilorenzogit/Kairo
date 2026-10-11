@@ -29,7 +29,7 @@ Open source, gratuito, i dati restano nel <i>tuo</i> account.</p>
 - **Check-in in 10 secondi**: energia, indolenzimento, umore, cosa hai fatto ieri
 - **Importa da Salute**: carica l'esportazione dell'app Salute, letta sul dispositivo
 - **Aggiornamenti automatici**: la tua copia si aggiorna da sola ogni settimana
-- **Diagnostica completa**: sincronizzazione, dati ricevuti, quota IA, versioni
+- **Stato di Kairo**: un controllo in parole semplici di server, versione, sincronizzazione, dati del Watch, coach e backup, con cosa fare se qualcosa non va
 - **App installabile** su iPhone e PC (PWA), funziona anche offline
 - **Costo zero**: tutto sui piani gratuiti di Cloudflare e Groq
 
@@ -91,9 +91,9 @@ Se superi il limite di Groq (per esempio molti messaggi di fila in un minuto), K
 
 Leggi [docs/PRIVACY.md](docs/PRIVACY.md).
 
-## Diagnostica
+## Stato di Kairo
 
-La pagina *Impostazioni → Diagnostica* controlla: raggiungibilità e latenza del server, versione dell'app e del server rispetto all'ultima release su GitHub, ultimo invio da iPhone per ogni comando, freschezza di ogni metrica, dimensione del database, chiave e modello IA, **richieste Groq rimaste oggi** e quando si azzerano, modello di riserva, installazione come app e funzionamento offline. Il pulsante *Copia report diagnostico* produce un riepilogo senza chiavi, da allegare alle segnalazioni.
+La pagina *Impostazioni → Stato di Kairo* ti dice in alto se **tutto funziona** o quante cose sono da sistemare, poi controlla in parole semplici server, versione, invii dall'iPhone, dati del Watch (HRV, FC a riposo, sonno), coach IA, backup e installazione come app: per ogni problema c'è scritto **cosa fare**. I dati tecnici (metriche, quota Groq, database) sono in *Dettagli tecnici*; *Copia report* produce un riepilogo senza chiavi, da allegare alle segnalazioni.
 
 ## Domande frequenti
 

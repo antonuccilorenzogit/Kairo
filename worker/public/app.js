@@ -130,7 +130,7 @@ function header(title, { back = null, gear = true, sub = "" } = {}) {
     ${gear ? `<a class="iconbtn" href="#/impostazioni" aria-label="Impostazioni" style="color:var(--ink)">${ico.gear}</a>` : ""}</div>`;
 }
 const loading = (n = 3) => Array.from({ length: n }, () => '<div class="card"><div class="skeleton" style="height:80px"></div></div>').join("");
-const errorCard = (e) => `<div class="card"><div class="h2">Qualcosa non va</div><p class="muted">${esc(e.message || e)}</p><a class="btn ghost" href="#/diagnostica">Apri la diagnostica</a></div>`;
+const errorCard = (e) => `<div class="card"><div class="h2">Qualcosa non va</div><p class="muted">${esc(e.message || e)}</p><a class="btn ghost" href="#/diagnostica">Controlla lo stato di Kairo</a></div>`;
 
 /* ---------- sheet (bottom panel) ---------- */
 function openSheet(html, label = "Dettagli") {
@@ -523,7 +523,7 @@ views.coach = async (el) => {
   const suggest = ["Fammi una valutazione della mia forma", "Su cosa devo lavorare questo mese?", "Posso allenarmi duro oggi?", "Come sta andando il mio sonno?"];
   const render = (busy = false) => {
     el.innerHTML = `${header("Coach", { sub: "Il tuo allenatore personale" })}
-      ${msgs.length ? "" : `<div class="card soft col"><div style="line-height:1.45">Chiedimi qualsiasi cosa su recupero, sonno e allenamento: leggo i tuoi dati e ti dico cosa significano e su cosa lavorare.${cfg().profilo.obiettivi ? "" : ` <a href="#/impostazioni">Scrivi i tuoi obiettivi</a> per consigli su misura.`}</div></div>`}
+      ${msgs.length ? "" : `<div class="card soft col"><div style="line-height:1.45">Chiedimi qualsiasi cosa su recupero, sonno e allenamento: leggo i tuoi dati e ti dico cosa significano e su cosa lavorare.${cfg().profilo.obiettivi ? "" : ` <a href="#/profilo">Scrivi i tuoi obiettivi</a> per consigli su misura.`}</div></div>`}
       <div class="chips">${suggest.map((s) => `<button class="chip" data-q="${esc(s)}">${esc(s)}</button>`).join("")}</div>
       <div class="chat" id="chat">${msgs.map((m) => `<div class="msg ${m.role === "user" ? "user" : "bot md"}">${m.role === "user" ? esc(m.content) : md(m.content)}${m.meta ? `<span class="meta">${esc(m.meta).replace(/\n/g, "<br>")}</span>` : ""}</div>`).join("")}${busy ? '<div class="msg bot"><div class="skeleton" style="width:180px"></div></div>' : ""}</div>
       ${msgs.length ? '<button class="btn ghost" id="clear" style="align-self:center;min-height:40px;font-size:14px">Nuova conversazione</button>' : ""}
@@ -740,7 +740,7 @@ views.corpo = async (el) => {
       <div class="row between"><div class="label" style="color:#AEB4C6">Motore</div><span class="small" style="color:#AEB4C6">VO₂max e cuore</span></div>
       ${fa ? `<div class="row" style="gap:14px;padding:6px 0 10px"><div style="font-size:64px;font-weight:900;letter-spacing:-2px;line-height:1;color:#FFB547">${fa}</div>
         <div class="col" style="gap:2px"><div style="font-weight:900;font-size:18px">anni: l'età del tuo cuore</div><div class="small" style="color:#AEB4C6">${fa === 20 && vNow[1] >= vo2Median(20, sex) ? "Il valore minimo della scala: il tuo VO₂max è sopra la media dei ventenni" : "L'età in cui il tuo VO₂max sarebbe nella media"}${age ? `. Hai ${age} anni` : ""}. Metodo Garmin, tabelle Cooper Institute.</div></div></div>`
-      : vNow ? `<div class="small" style="color:#AEB4C6;padding:4px 0 8px">Inserisci età e sesso in <a href="#/impostazioni" style="color:#FFB547">Impostazioni</a> per vedere l'età del tuo cuore.</div>` : ""}
+      : vNow ? `<div class="small" style="color:#AEB4C6;padding:4px 0 8px">Inserisci età e sesso nel <a href="#/profilo" style="color:#FFB547">Profilo</a> per vedere l'età del tuo cuore.</div>` : ""}
       ${vNow ? row("VO₂max", lvl ? lvl[0] : `misurato ${ago(vNow[0] + "T12:00:00")}`, fmtNum(vNow[1], 1), "", dl(dV, false, "in 6 mesi", 1), false, "vo2Info") : ""}
       ${vNow && age ? (() => { const r = cooperRow(age, sex), lo = r.p40 - 8, hi = r.p95 + 4, at = (v) => Math.max(0, Math.min(100, ((v - lo) / (hi - lo)) * 100));
           const segs = [[lo, r.p40, "#3A2E3F"], [r.p40, r.p60, "#3C4A7A"], [r.p60, r.p80, "#3D6A5C"], [r.p80, r.p95, "#2E8B5A"], [r.p95, hi, "#5DC796"]];
@@ -1044,84 +1044,109 @@ function checkinSheet(existing, askSleep = false) {
 }
 
 /* ---------- settings ---------- */
+/* ---------- settings: a simple menu, every row opens its own page ---------- */
+const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const subHeader = (t, sub = "") => header(t, { back: "impostazioni", gear: false, sub });
+const row = (href, icon, title, value = "", id = "") => `<a class="item" href="#/${href}"${id ? ` id="${id}"` : ""}><span class="row" style="gap:12px"><span style="width:26px;text-align:center;font-size:18px">${icon}</span><span>${title}</span></span><span class="row" style="gap:6px"><span class="small muted" style="font-weight:600;text-align:right" data-val>${value}</span>${ico.chevron}</span></a>`;
+const group = (title, rows) => `<div class="col" style="gap:6px"><div class="label" style="padding:0 6px">${title}</div><div class="card list" style="padding:4px 16px">${rows}</div></div>`;
+
 views.impostazioni = async (el) => {
-  el.innerHTML = header("Impostazioni", { back: "oggi", gear: false }) + loading(2);
   await loadProfile();
-  const c = cfg();
-  const sleepOpts = [[420, "7 h"], [450, "7 h 30"], [480, "8 h"], [510, "8 h 30"], [540, "9 h"]];
+  const c = cfg(), p = c.profilo, inj = p.infortunio?.attivo;
+  const sports = (p.sport || []).map((s) => SPORT[s]).join(", ");
   el.innerHTML = `${header("Impostazioni", { back: "oggi", gear: false })}
-    <div class="card col" style="gap:12px"><div class="h2">Profilo</div>
-      <label class="field">Nome<input class="input" id="nome" value="${esc(c.profilo.nome)}" autocomplete="given-name"></label>
-      <div class="grid2"><label class="field">Età<input class="input" id="eta" type="number" inputmode="numeric" min="12" max="99" value="${esc(c.profilo.eta || "")}"></label>
-        <label class="field">Sesso<select class="input" id="sesso"><option value="">–</option><option value="M" ${c.profilo.sesso === "M" ? "selected" : ""}>Uomo</option><option value="F" ${c.profilo.sesso === "F" ? "selected" : ""}>Donna</option></select></label></div>
-      <div class="field"><span>I tuoi sport</span><div class="acts" style="grid-template-columns:repeat(3,minmax(0,1fr))" id="sports">${[["palestra", "Palestra"], ["nuoto", "Nuoto"], ["bici", "Bici"], ["corsa", "Corsa"]].map(([k, l]) => `<button type="button" class="choice" data-sport="${k}" aria-pressed="${(c.profilo.sport || ["palestra", "nuoto", "bici", "corsa"]).includes(k)}">${l}</button>`).join("")}<button type="button" class="choice inj" id="injChip" aria-pressed="${!!c.profilo.infortunio?.attivo}" style="grid-column:span 2">🩹 Infortunio</button></div><span class="hint">L'allenamento consigliato ogni giorno sceglie solo tra questi. Con <b>Infortunio</b> attivo il coach ti propone solo riposo, riabilitazione o esercizi per il resto del corpo.</span></div>
-      <div class="col" id="injBox" style="gap:8px;${c.profilo.infortunio?.attivo ? "" : "display:none"}"><div class="small" style="line-height:1.45;color:var(--text)">${esc(c.profilo.infortunio?.descrizione || "")}</div><button type="button" class="btn ghost" id="injEditS">Modifica infortunio e indicazioni del medico</button></div>
-      <label class="field">I tuoi obiettivi<textarea class="input" id="obiettivi" rows="2" style="padding:12px;min-height:64px" placeholder="Es. scendere al 12% di grasso, nuotare 2 km senza fermarmi">${esc(c.profilo.obiettivi || "")}</textarea></label>
-      <label class="field">Chi sei e come ti alleni<textarea class="input" id="note" rows="3" style="padding:12px;min-height:84px" placeholder="Es. palestra 3 volte a settimana, nuoto 1-2 volte, bici nel weekend">${esc(c.profilo.note)}</textarea></label>
-      <div class="grid2"><label class="field">Sveglia abituale<input class="input" id="sveglia" type="time" value="${esc(c.profilo.sveglia || "")}"><span class="hint">Per l'orario consigliato per andare a letto.</span></label>
-        <label class="field">Sonno che ti serve<select class="input" id="sonnomin">${sleepOpts.map(([v, l]) => `<option value="${v}" ${(c.profilo.sonno_min || 480) === v ? "selected" : ""}>${l}</option>`).join("")}</select></label></div>
-      <label class="field">FC massima (se la conosci)<input class="input" id="fcmax" type="number" inputmode="numeric" min="120" max="230" placeholder="${c.profilo.eta ? `stimata ${Math.round(208 - 0.7 * c.profilo.eta)} bpm` : "es. 195"}" value="${esc(c.profilo.fc_max || "")}"><span class="hint">Serve a calcolare il carico. Se la lasci vuota uso la stima dall'età (Tanaka: 208 − 0,7 × età).</span></label>
-      <div class="hint">Il profilo è salvato sul tuo server: vale su iPhone e PC e il coach lo usa per i consigli.</div>
-      <button class="btn ghost" id="saveProfilo">Salva profilo</button></div>
+    ${group("Tu", row("profilo", "👤", "Profilo", esc([p.nome, p.eta ? `${p.eta} anni` : ""].filter(Boolean).join(" · ") || "da completare"))
+      + row("sport", inj ? "🩹" : "🏅", "Sport e infortunio", inj ? `<span class="bad">infortunio attivo</span>` : esc(sports || "nessuno"))
+      + row("memoria", "🧠", "Cosa ricorda il coach", "", "rowMem"))}
+    ${group("App", row("notifiche", "🔔", "Notifiche", "", "rowPush")
+      + row("ia", "✨", "Coach IA", c.groqKey ? "Groq" : "modello di riserva")
+      + row("collegamento", "📱", "Collegamento iPhone", "", "rowSync"))}
+    ${group("Dati", row("importa", "⬇️", "Importa dati", "Salute, Hevy, Strong")
+      + row("backup", "💾", "Backup ed esportazione", "", "rowBk")
+      + row("diagnostica", "🩺", "Stato di Kairo", "", "rowDiag"))}
+    ${group("Altro", row("account", "🔑", "Codice di accesso e account")
+      + row("guida", "📖", "Guida")
+      + row("info", "ℹ️", "Informazioni e open source"))}
+    <div class="small muted center" style="display:flex;justify-content:center">Kairo ${APP_VERSION}</div>`;
+  const set = (id, html) => { const v = $(`#${id} [data-val]`); if (v) v.innerHTML = html; };
+  api("/api/memoria").then((r) => set("rowMem", r.memoria.length ? `${r.memoria.length} ricordi` : "niente")).catch(() => {});
+  if (pushSupported()) navigator.serviceWorker.ready.then((reg) => reg.pushManager.getSubscription()).then((s) => set("rowPush", s ? "attive" : "spente")).catch(() => {});
+  else set("rowPush", "non disponibili");
+  try {
+    const d = await api("/api/diagnostica");
+    const last = d.importazioni[0];
+    set("rowSync", last ? `ultimo invio ${ago(last.received)}` : `<span class="bad">mai</span>`);
+    set("rowBk", d.backup?.ultimo ? ago(d.backup.ultimo.creato) : d.backup?.attivo ? "nessuno" : "non attivi");
+    const checks = healthChecks(d, null, 0, null);
+    const bad = checks.filter((x) => x.s === "err").length, warn = checks.filter((x) => x.s === "warn").length;
+    set("rowDiag", bad ? `<span class="bad">${bad + warn} da sistemare</span>` : warn ? `<span class="mid">${warn} da controllare</span>` : `<span class="good">tutto ok</span>`);
+  } catch (_) { set("rowDiag", `<span class="bad">server non raggiungibile</span>`); }
+};
 
-    <div class="card col" style="gap:10px"><div class="h2">Cosa ricorda il coach</div>
-      <div class="small muted" style="line-height:1.5">Quando in chat gli racconti qualcosa di importante (una gara, un dolore, un obiettivo) il coach se lo segna e lo usa nei consigli. Qui puoi correggere o aggiungere.</div>
-      <div id="memList" class="list"></div>
-      <div class="row"><input class="input" id="memNew" maxlength="240" placeholder="Es. gara di nuoto 1500 m il 15 novembre" style="flex:1"><button class="btn ghost" id="memAdd">Aggiungi</button></div></div>
-
-    <div class="card col" style="gap:10px"><div class="h2">Notifiche</div>
-      <div id="pushInfo" class="small" style="line-height:1.5;color:var(--text)">Due notifiche al giorno, niente di più: <b>la mattina</b> recupero e allenamento consigliato, <b>la sera</b> l'orario per andare a letto.</div>
-      <div class="row"><button class="btn primary" id="pushOn" style="flex:2">Attiva</button><button class="btn ghost" id="pushTest" style="flex:1" disabled>Prova</button></div>
-      <div id="pushOut" class="small"></div></div>
-
-    <div class="card col" style="gap:12px"><div class="h2">Intelligenza artificiale</div>
-      <label class="field">Chiave API Groq<input class="input" id="gk" type="password" value="${esc(c.groqKey)}" placeholder="gsk_…" autocomplete="off"><span class="hint">Gratuita su <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com</a>. Resta solo su questo dispositivo. Senza chiave Kairo usa il modello di riserva di Cloudflare.</span></label>
-      <label class="field">Modello<select class="input" id="gm"><option value="">Predefinito</option>${c.groqModel ? `<option selected>${esc(c.groqModel)}</option>` : ""}</select></label>
-      <div class="row"><button class="btn ghost" id="loadModels">Carica modelli</button><button class="btn ghost" id="testAi">Prova connessione</button></div>
-      <div id="aiOut" class="small muted"></div>
-      <button class="btn primary" id="saveAi">Salva</button></div>
-
-    <div class="card col" style="gap:12px"><div class="h2">Collegamento con l'iPhone</div>
-      <div class="small" style="line-height:1.5;color:var(--text)">Il comando HealthSync usa questo link per inviare i dati. Funziona solo per inviare dati: non apre l'app.</div>
-      <div class="card soft code" id="linkBox">…</div>
-      <div class="row"><button class="btn primary" id="copyLink" style="flex:2">Copia link</button><button class="btn ghost" id="newLink" style="flex:1">Rigenera</button></div>
-      <a class="btn ghost" href="#/guida">Guida passo passo</a></div>
-
-    <div class="card col" style="gap:10px"><div class="h2">Codice di accesso</div>
-      <div class="small muted">Serve per aprire Kairo su un nuovo dispositivo. Indirizzo: <span class="code">${esc(c.server)}</span></div>
-      <button class="btn ghost" id="chgCode">Cambia codice</button></div>
-
-    <div class="card col" style="gap:10px"><div class="h2">Backup</div>
-      <div id="bkInfo" class="small muted" style="line-height:1.5">…</div>
-      <div class="row"><button class="btn ghost" id="bkNow" style="flex:1">Backup ora</button><label class="btn ghost" style="flex:1;cursor:pointer">Ripristina<input type="file" id="bkFile" accept=".json,.gz,application/json,application/gzip" hidden></label></div>
-      <div id="bkList" class="list"></div><div id="bkOut" class="small"></div></div>
-
-    <div class="card list">
-      <a class="item" href="#/diagnostica">Diagnostica ${ico.chevron}</a>
-      <a class="item" href="#/guida">Guida e tutorial ${ico.chevron}</a>
-      <a class="item" href="#/importa">Importa dati (Salute, Hevy, Strong) ${ico.chevron}</a>
-      <a class="item" href="#/info">Informazioni, licenze e open source ${ico.chevron}</a>
-      <a class="item" href="/api/export" id="export">Esporta tutti i dati (JSON) ${ico.chevron}</a>
-      <button class="item" id="logout">Esci da questo dispositivo ${ico.chevron}</button>
-      <button class="item bad" id="wipe">Cancella tutti i dati dal server ${ico.chevron}</button>
-    </div>
-    <div class="small muted center" style="display:flex;justify-content:center">Kairo ${APP_VERSION} · <a href="${GITHUB_URL}" target="_blank" rel="noopener" style="margin-left:4px">open source</a></div>`;
-
+// ---- Profilo ----
+views.profilo = async (el) => {
+  await loadProfile();
+  const p = cfg().profilo;
+  const sleepOpts = [[420, "7 h"], [450, "7 h 30"], [480, "8 h"], [510, "8 h 30"], [540, "9 h"]];
+  el.innerHTML = `${subHeader("Profilo", "Il coach lo usa per i consigli")}
+    <div class="card col" style="gap:12px">
+      <label class="field">Nome<input class="input" id="nome" value="${esc(p.nome)}" autocomplete="given-name"></label>
+      <div class="grid2"><label class="field">Età<input class="input" id="eta" type="number" inputmode="numeric" min="12" max="99" value="${esc(p.eta || "")}"></label>
+        <label class="field">Sesso<select class="input" id="sesso"><option value="">–</option><option value="M" ${p.sesso === "M" ? "selected" : ""}>Uomo</option><option value="F" ${p.sesso === "F" ? "selected" : ""}>Donna</option></select></label></div>
+      <label class="field">I tuoi obiettivi<textarea class="input" id="obiettivi" rows="2" style="padding:12px;min-height:64px" placeholder="Es. scendere al 12% di grasso, nuotare 2 km senza fermarmi">${esc(p.obiettivi || "")}</textarea></label>
+      <label class="field">Chi sei e come ti alleni<textarea class="input" id="note" rows="3" style="padding:12px;min-height:84px" placeholder="Es. palestra 3 volte a settimana, nuoto 1-2 volte, bici nel weekend">${esc(p.note)}</textarea></label>
+      <div class="grid2"><label class="field">Sveglia abituale<input class="input" id="sveglia" type="time" value="${esc(p.sveglia || "")}"></label>
+        <label class="field">Sonno che ti serve<select class="input" id="sonnomin">${sleepOpts.map(([v, l]) => `<option value="${v}" ${(p.sonno_min || 480) === v ? "selected" : ""}>${l}</option>`).join("")}</select></label></div>
+      <span class="hint" style="margin-top:-6px">La sveglia serve per dirti a che ora andare a letto.</span>
+      <label class="field">FC massima (se la conosci)<input class="input" id="fcmax" type="number" inputmode="numeric" min="120" max="230" placeholder="${p.eta ? `stimata ${Math.round(208 - 0.7 * p.eta)} bpm` : "es. 195"}" value="${esc(p.fc_max || "")}"><span class="hint">Serve a calcolare il carico. Vuota = stima dall'età.</span></label>
+      <button class="btn primary" id="saveProfilo">Salva</button></div>`;
   $("#saveProfilo").onclick = async () => {
-    const body = { nome: $("#nome").value.trim(), eta: $("#eta").value.trim(), sesso: $("#sesso").value, note: $("#note").value.trim(), obiettivi: $("#obiettivi").value.trim(),
-      sveglia: $("#sveglia").value, sonno_min: Number($("#sonnomin").value), fc_max: $("#fcmax").value.trim(), tz: tz(),
-      sport: [...el.querySelectorAll("[data-sport]")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.dataset.sport) };
-    if (!body.sport.length) { toast("Scegli almeno uno sport"); return; }
-    try { const saved = await api("/api/profilo", { method: "POST", body }); store.set("profilo", saved); toast("Profilo salvato"); }
+    const body = { ...p, nome: $("#nome").value.trim(), eta: $("#eta").value.trim(), sesso: $("#sesso").value, note: $("#note").value.trim(), obiettivi: $("#obiettivi").value.trim(),
+      sveglia: $("#sveglia").value, sonno_min: Number($("#sonnomin").value), fc_max: $("#fcmax").value.trim(), tz: tz() };
+    delete body.infortunio;
+    try { const saved = await api("/api/profilo", { method: "POST", body }); store.set("profilo", saved); toast("Profilo salvato"); route("impostazioni"); }
     catch (e) { toast(e.message); }
   };
-  // ---- coach memory ----
+};
+
+// ---- Sport e infortunio ----
+views.sport = async (el) => {
+  await loadProfile();
+  const p = cfg().profilo, inj = p.infortunio || {};
+  el.innerHTML = `${subHeader("Sport e infortunio")}
+    <div class="card col" style="gap:10px"><div class="h2">I tuoi sport</div>
+      <div class="small muted">L'allenamento del giorno sceglie solo tra questi.</div>
+      <div class="acts" style="grid-template-columns:repeat(2,minmax(0,1fr))">${Object.entries(SPORT).map(([k, l]) => `<button type="button" class="choice" data-sport="${k}" aria-pressed="${(p.sport || []).includes(k)}">${l}</button>`).join("")}</div>
+      <button class="btn primary" id="saveSport">Salva</button></div>
+    <div class="card col" style="gap:10px"><div class="row between"><div class="h2">Infortunio</div>${inj.attivo ? `<span class="pill bad">attivo</span>` : ""}</div>
+      <div class="small muted" style="line-height:1.45">${inj.attivo ? esc(inj.descrizione) : "Se ti fai male, il coach smette di proporti allenamenti normali e ti dice ogni giorno se riposare, quali esercizi riabilitativi fare o come allenare il resto del corpo, rispettando le indicazioni del medico."}</div>
+      ${inj.attivo ? `<button class="btn ghost" id="injEditS">Modifica infortunio e indicazioni del medico</button><button class="btn primary" id="injOffS">Sono guarito</button>` : `<button class="btn ghost" id="injOnS">🩹 Attiva la modalità infortunio</button>`}</div>`;
+  el.querySelectorAll("[data-sport]").forEach((b) => (b.onclick = () => b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") !== "true")));
+  $("#saveSport").onclick = async () => {
+    const sport = [...el.querySelectorAll("[data-sport]")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.dataset.sport);
+    if (!sport.length) { toast("Scegli almeno uno sport"); return; }
+    const body = { ...p, sport, tz: tz() }; delete body.infortunio;
+    try { const saved = await api("/api/profilo", { method: "POST", body }); store.set("profilo", saved); toast("Sport salvati"); } catch (e) { toast(e.message); }
+  };
+  const on = $("#injOnS"), ed = $("#injEditS"), off = $("#injOffS");
+  if (on) on.onclick = () => injurySheet();
+  if (ed) ed.onclick = () => injurySheet();
+  if (off) off.onclick = async () => { try { const saved = await api("/api/infortunio", { method: "POST", body: { attivo: false } }); store.set("profilo", saved); toast("Bentornato! Si riparte con calma"); router(); } catch (e) { toast(e.message); } };
+};
+
+// ---- Cosa ricorda il coach ----
+views.memoria = async (el) => {
+  el.innerHTML = `${subHeader("Cosa ricorda il coach")}
+    <div class="small muted" style="line-height:1.5;padding:0 4px">Quando in chat gli racconti qualcosa di importante (una gara, un dolore, un obiettivo) il coach se lo segna e lo usa nei consigli.</div>
+    <div class="card list" id="memList" style="padding:4px 16px"><div class="skeleton" style="height:40px;margin:10px 0"></div></div>
+    <div class="row"><input class="input" id="memNew" maxlength="240" placeholder="Aggiungi, es. gara 10 km il 15 novembre" style="flex:1"><button class="btn primary" id="memAdd">Aggiungi</button></div>`;
   const memLoad = async () => {
-    const box = $("#memList");
+    const box = $("#memList"); if (!box) return;
     try {
       const { memoria } = await api("/api/memoria");
-      box.innerHTML = memoria.length ? memoria.map((m) => `<div class="item" style="gap:10px;align-items:flex-start"><div style="flex:1;line-height:1.4">${esc(m.testo)}<div class="small muted">${m.fonte === "utente" ? "aggiunto da te" : "dal coach"} · ${esc(m.creato)}</div></div><button class="iconbtn" data-mem="${m.id}" aria-label="Elimina" style="color:var(--muted)">✕</button></div>`).join("")
-        : `<div class="small muted" style="padding:6px 0">Ancora niente: parla con il coach o aggiungi qui sotto.</div>`;
+      box.innerHTML = memoria.length ? memoria.map((m) => `<div class="item" style="gap:10px;align-items:flex-start"><div style="flex:1;line-height:1.4;font-weight:600">${esc(m.testo)}<div class="small muted" style="font-weight:500">${m.fonte === "utente" ? "aggiunto da te" : "dal coach"} · ${esc(m.creato)}</div></div><button class="iconbtn" data-mem="${m.id}" aria-label="Elimina" style="color:var(--muted)">✕</button></div>`).join("")
+        : `<div class="small muted" style="padding:14px 0">Ancora niente: parla con il coach o aggiungi qui sotto.</div>`;
       box.querySelectorAll("[data-mem]").forEach((b) => (b.onclick = async () => { try { await api("/api/memoria?id=" + b.dataset.mem, { method: "DELETE" }); memLoad(); } catch (e) { toast(e.message); } }));
     } catch (e) { box.textContent = e.message; }
   };
@@ -1130,18 +1155,17 @@ views.impostazioni = async (el) => {
     const t = $("#memNew").value.trim(); if (!t) return;
     try { const r = await api("/api/memoria", { method: "POST", body: { testo: t } }); if (r.errore) return toast(r.errore); $("#memNew").value = ""; memLoad(); } catch (e) { toast(e.message); }
   };
-  // injury on → describe it in the sheet; off → healed
-  $("#injChip").onclick = async () => {
-    if ($("#injChip").getAttribute("aria-pressed") !== "true") return injurySheet();
-    try { const saved = await api("/api/infortunio", { method: "POST", body: { attivo: false } }); store.set("profilo", saved); toast("Modalità infortunio disattivata"); router(); } catch (e) { toast(e.message); }
-  };
-  const ies = $("#injEditS"); if (ies) ies.onclick = () => injurySheet();
-  el.querySelectorAll("[data-sport]").forEach((b) => (b.onclick = () => b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") !== "true")));
-  // ---- notifications (web push; on iPhone only for the app added to the Home Screen) ----
-  const pushOk = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
-  const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+};
+
+// ---- Notifiche ----
+views.notifiche = async (el) => {
+  el.innerHTML = `${subHeader("Notifiche")}
+    <div class="card col" style="gap:12px">
+      <div class="small" style="line-height:1.5;color:var(--text)">Solo due al giorno: <b>la mattina</b> recupero e allenamento di oggi, <b>la sera</b> l'orario per andare a letto.</div>
+      <div class="row"><button class="btn primary" id="pushOn" style="flex:2">Attiva</button><button class="btn ghost" id="pushTest" style="flex:1" disabled>Prova</button></div>
+      <div id="pushOut" class="small"></div></div>`;
   const pushState = async () => {
-    if (!pushOk) { $("#pushOn").disabled = true; $("#pushOut").innerHTML = /iPhone|iPad/.test(navigator.userAgent) && !standalone ? "Su iPhone le notifiche funzionano solo con Kairo aggiunto alla schermata Home: aprilo dall'icona e torna qui." : "Questo browser non supporta le notifiche."; return null; }
+    if (!pushSupported()) { $("#pushOn").disabled = true; $("#pushOut").innerHTML = /iPhone|iPad/.test(navigator.userAgent) && !isStandalone() ? "Su iPhone le notifiche funzionano solo con Kairo aggiunto alla schermata Home: aprilo dall'icona e torna qui." : "Questo browser non supporta le notifiche."; return null; }
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.getSubscription();
     $("#pushOn").textContent = sub ? "Disattiva" : "Attiva"; $("#pushTest").disabled = !sub;
@@ -1166,7 +1190,20 @@ views.impostazioni = async (el) => {
     try { const r = await api("/api/push/prova", { method: "POST" }); $("#pushOut").textContent = r.inviate ? "Inviata: arriva tra qualche secondo." : "Nessun dispositivo ha ricevuto la notifica."; }
     catch (e) { $("#pushOut").textContent = e.message; }
   };
-  $("#saveAi").onclick = () => { if (!validKey($("#gk").value)) return; store.set("groqKey", $("#gk").value.trim()); store.set("groqModel", $("#gm").value); toast("Impostazioni IA salvate"); };
+};
+
+// ---- Coach IA ----
+views.ia = async (el) => {
+  const c = cfg();
+  el.innerHTML = `${subHeader("Coach IA")}
+    <div class="card col" style="gap:12px">
+      <div class="small" style="line-height:1.5;color:var(--text)">Il coach funziona sempre. Con una <b>chiave Groq</b> (gratuita) risponde meglio; senza usa il modello di riserva di Cloudflare.</div>
+      <label class="field">Chiave Groq<input class="input" id="gk" type="password" value="${esc(c.groqKey)}" placeholder="gsk_…" autocomplete="off"><span class="hint">Si crea su <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com</a>. Resta solo su questo dispositivo.</span></label>
+      <details><summary class="small" style="cursor:pointer;font-weight:700">Avanzate: scegli il modello</summary>
+        <div class="col" style="gap:8px;padding-top:10px"><select class="input" id="gm"><option value="">Predefinito</option>${c.groqModel ? `<option selected>${esc(c.groqModel)}</option>` : ""}</select><button class="btn ghost" id="loadModels">Carica modelli</button></div></details>
+      <div class="row"><button class="btn primary" id="saveAi" style="flex:1">Salva</button><button class="btn ghost" id="testAi" style="flex:1">Prova</button></div>
+      <div id="aiOut" class="small muted"></div></div>`;
+  $("#saveAi").onclick = () => { if (!validKey($("#gk").value)) return; store.set("groqKey", $("#gk").value.trim()); store.set("groqModel", $("#gm").value); toast("Salvato"); };
   $("#loadModels").onclick = async () => {
     store.set("groqKey", $("#gk").value.trim());
     const out = $("#aiOut"); out.textContent = "Carico i modelli…";
@@ -1183,9 +1220,19 @@ views.impostazioni = async (el) => {
     const out = $("#aiOut"); out.textContent = "Provo…";
     try {
       const r = await api("/api/ai/test", { method: "POST" });
-      out.innerHTML = r.errore ? `<span class="bad">${esc(r.errore)}</span>` : `<span class="good">Funziona</span> · ${r.provider === "groq" ? "Groq" : "Modello di riserva"} · ${esc(r.model)} · ${r.latenza_ms} ms${r.quota?.richieste_rimaste ? ` · ${esc(r.quota.richieste_rimaste)} richieste rimaste oggi` : ""}${r.avviso ? `<br>${esc(r.avviso)}` : ""}`;
+      out.innerHTML = r.errore ? `<span class="bad">${esc(r.errore)}</span>` : `<span class="good">Funziona</span> · ${r.provider === "groq" ? "Groq" : "modello di riserva"} · ${r.latenza_ms} ms${r.quota?.richieste_rimaste ? ` · ${esc(r.quota.richieste_rimaste)} richieste rimaste oggi` : ""}${r.avviso ? `<br>${esc(r.avviso)}` : ""}`;
     } catch (e) { out.textContent = e.message; }
   };
+};
+
+// ---- Collegamento iPhone ----
+views.collegamento = async (el) => {
+  el.innerHTML = `${subHeader("Collegamento iPhone")}
+    <div class="card col" style="gap:12px">
+      <div class="small" style="line-height:1.5;color:var(--text)">Il comando <b>HealthSync</b> usa questo link per mandare i dati del Watch. Serve solo a inviare dati: non apre l'app.</div>
+      <div class="card soft code" id="linkBox" style="word-break:break-all">…</div>
+      <div class="row"><button class="btn primary" id="copyLink" style="flex:2">Copia link</button><button class="btn ghost" id="newLink" style="flex:1">Rigenera</button></div>
+      <a class="btn ghost" href="#/guida">Guida passo passo</a></div>`;
   let link = "";
   api("/api/collegamento").then((r) => { link = r.link; $("#linkBox").textContent = link; }).catch((e) => { $("#linkBox").textContent = e.message; });
   $("#copyLink").onclick = () => link && copyText(link, "Link copiato");
@@ -1193,31 +1240,27 @@ views.impostazioni = async (el) => {
     if (!confirm("Creare un nuovo link? Quello vecchio smette di funzionare e dovrai aggiornarlo nel comando HealthSync.")) return;
     try { const r = await api("/api/collegamento", { method: "POST" }); link = r.link; $("#linkBox").textContent = link; toast("Nuovo link creato"); } catch (e) { toast(e.message); }
   };
-  $("#chgCode").onclick = async () => {
-    const nuovo = prompt("Nuovo codice di accesso (almeno 10 caratteri).");
-    if (!nuovo) return;
-    try { await api("/api/codice", { method: "POST", body: { nuovo } }); store.set("code", nuovo); toast("Codice cambiato"); views.impostazioni(el); }
-    catch (e) { toast(e.message); }
-  };
-  $("#export").onclick = async (e) => {
-    e.preventDefault();
-    try {
-      const res = await api("/api/export", { raw: true });
-      if (!res.ok) throw new Error("Esportazione non riuscita");
-      const blob = await res.blob(); const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob); a.download = `kairo-export-${todayStr()}.json`; a.click();
-    } catch (err) { toast(err.message); }
-  };
-  // ---- backup ----
+};
+
+// ---- Backup ed esportazione ----
+views.backup = async (el) => {
+  el.innerHTML = `${subHeader("Backup ed esportazione")}
+    <div class="card col" style="gap:10px">
+      <div id="bkInfo" class="small" style="line-height:1.5;color:var(--text)">…</div>
+      <div class="row"><button class="btn primary" id="bkNow" style="flex:1">Backup ora</button><label class="btn ghost" style="flex:1;cursor:pointer">Ripristina<input type="file" id="bkFile" accept=".json,.gz,application/json,application/gzip" hidden></label></div>
+      <div id="bkOut" class="small"></div></div>
+    <div class="label" style="padding:0 6px">Ultimi backup · tocca per scaricare</div>
+    <div class="card list" id="bkList" style="padding:4px 16px"></div>
+    <a class="btn ghost" href="/api/export" id="export">Esporta tutti i dati (JSON)</a>`;
   const fmtBytes = (b) => (b > 1048576 ? `${fmtNum(b / 1048576, 1)} MB` : `${fmtNum(b / 1024, 0)} KB`);
   const loadBackups = async () => {
     try {
       const r = await api("/api/backup");
       $("#bkInfo").innerHTML = r.attivo
-        ? `Kairo salva da solo una copia dei tuoi dati <b>ogni lunedì</b> e prima di ogni cancellazione; tiene le ultime 8. ${r.ultimo ? `Ultimo: ${ago(r.ultimo.creato)}.` : "Nessun backup ancora."}`
-        : `I backup automatici non sono attivi su questo server. Puoi comunque scaricare tutti i dati da «Esporta tutti i dati» e ripristinarli da qui.`;
+        ? `Kairo salva da solo una copia dei tuoi dati <b>ogni lunedì</b> e prima di ogni cancellazione, e tiene le ultime 8. ${r.ultimo ? `Ultimo: <b>${ago(r.ultimo.creato)}</b>.` : "Nessun backup ancora."}`
+        : `I backup automatici non sono attivi su questo server: si attivano con il prossimo aggiornamento automatico. Intanto puoi esportare i dati qui sotto.`;
       $("#bkNow").disabled = !r.attivo;
-      $("#bkList").innerHTML = r.backup.slice(0, 8).map((b) => `<a class="item" href="#" data-bk="${esc(b.chiave)}"><span>${fmtDate(b.creato.slice(0, 10), { day: "numeric", month: "short", year: "numeric" })} <span class="small muted">· ${esc(b.motivo || "")}</span></span><span class="small muted">${fmtNum(b.righe)} righe · ${fmtBytes(b.byte)} ↓</span></a>`).join("");
+      $("#bkList").innerHTML = r.backup.length ? r.backup.slice(0, 8).map((b) => `<a class="item" href="#" data-bk="${esc(b.chiave)}"><span>${fmtDate(b.creato.slice(0, 10), { day: "numeric", month: "short", year: "numeric" })} <span class="small muted">· ${esc(b.motivo || "")}</span></span><span class="small muted">${fmtBytes(b.byte)} ↓</span></a>`).join("") : `<div class="small muted" style="padding:14px 0">Nessun backup.</div>`;
       el.querySelectorAll("[data-bk]").forEach((a) => (a.onclick = async (e) => {
         e.preventDefault();
         try {
@@ -1232,7 +1275,7 @@ views.impostazioni = async (el) => {
   loadBackups();
   $("#bkNow").onclick = async () => {
     $("#bkOut").textContent = "Creo il backup…";
-    try { const r = await api("/api/backup", { method: "POST" }); $("#bkOut").innerHTML = r.errore ? `<span class="bad">${esc(r.errore)}</span>` : `<span class="good">Backup creato: ${fmtNum(r.righe)} righe.</span>`; loadBackups(); }
+    try { const r = await api("/api/backup", { method: "POST" }); $("#bkOut").innerHTML = r.errore ? `<span class="bad">${esc(r.errore)}</span>` : `<span class="good">Backup creato.</span>`; loadBackups(); }
     catch (e) { $("#bkOut").textContent = e.message; }
   };
   $("#bkFile").onchange = async (e) => {
@@ -1240,12 +1283,10 @@ views.impostazioni = async (el) => {
     const out = $("#bkOut");
     try {
       out.textContent = "Leggo il file…";
-      let text;
-      if (/\.gz$/i.test(f.name)) text = await new Response(f.stream().pipeThrough(new DecompressionStream("gzip"))).text();
-      else text = await f.text();
+      const text = /\.gz$/i.test(f.name) ? await new Response(f.stream().pipeThrough(new DecompressionStream("gzip"))).text() : await f.text();
       const data = JSON.parse(text);
       if (data.app !== "kairo") throw new Error("Questo file non è un backup o un'esportazione di Kairo.");
-      const tables = ["samples", "daily", "hourly", "sleep", "checkin"];
+      const tables = ["samples", "daily", "hourly", "sleep", "checkin", "memoria"];
       const total = tables.reduce((a, t) => a + (data[t]?.length || 0), 0);
       if (!confirm(`Ripristinare ${fmtNum(total)} righe dal ${String(data.esportato || "").slice(0, 10)}? I dati attuali restano: vengono solo aggiunti quelli mancanti.`)) { out.textContent = ""; return; }
       let done = 0, saved = 0;
@@ -1259,16 +1300,43 @@ views.impostazioni = async (el) => {
     } catch (err) { out.innerHTML = `<span class="bad">${esc(err.message)}</span>`; }
     e.target.value = "";
   };
+  $("#export").onclick = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await api("/api/export", { raw: true });
+      if (!res.ok) throw new Error("Esportazione non riuscita");
+      const blob = await res.blob(); const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = `kairo-export-${todayStr()}.json`; a.click();
+    } catch (err) { toast(err.message); }
+  };
+};
+
+// ---- Account ----
+views.account = async (el) => {
+  const c = cfg();
+  el.innerHTML = `${subHeader("Codice di accesso e account")}
+    <div class="card col" style="gap:10px">
+      <div class="small" style="line-height:1.5;color:var(--text)">Il codice serve per aprire Kairo su un nuovo dispositivo, insieme all'indirizzo:</div>
+      <div class="card soft code" style="word-break:break-all">${esc(c.server)}</div>
+      <button class="btn ghost" id="chgCode">Cambia codice</button></div>
+    <div class="card list" style="padding:4px 16px">
+      <button class="item" id="logout">Esci da questo dispositivo ${ico.chevron}</button>
+      <button class="item bad" id="wipe">Cancella tutti i dati dal server ${ico.chevron}</button></div>
+    <div class="small muted" style="padding:0 6px;line-height:1.45">Uscendo, codice e chiavi vengono tolti solo da questo dispositivo: i dati restano sul server. Prima di cancellare i dati Kairo ne salva un backup.</div>`;
+  $("#chgCode").onclick = async () => {
+    const nuovo = prompt("Nuovo codice di accesso (almeno 10 caratteri).");
+    if (!nuovo) return;
+    try { await api("/api/codice", { method: "POST", body: { nuovo } }); store.set("code", nuovo); toast("Codice cambiato"); } catch (e) { toast(e.message); }
+  };
   $("#logout").onclick = () => { if (confirm("Rimuovere codice e chiavi da questo dispositivo? I dati sul server restano.")) { ["code", "groqKey", "groqModel", "chat"].forEach(store.del); route("accesso"); } };
   $("#wipe").onclick = async () => {
     const v = prompt("Questa azione cancella tutti i tuoi dati dal server (prima Kairo ne salva un backup, se i backup sono attivi). Scrivi CANCELLA per confermare.");
     if (v !== "CANCELLA") return;
-    try { await api("/api/dati", { method: "DELETE", body: { conferma: "CANCELLA" } }); toast("Dati cancellati"); }
-    catch (e) { toast(e.message); }
+    try { await api("/api/dati", { method: "DELETE", body: { conferma: "CANCELLA" } }); toast("Dati cancellati"); } catch (e) { toast(e.message); }
   };
 };
 
-/* ---------- diagnostics ---------- */
+/* ---------- Stato di Kairo (diagnostics) ---------- */
 async function latestRelease() {
   try {
     const r = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, { headers: { accept: "application/vnd.github+json" } });
@@ -1278,90 +1346,100 @@ async function latestRelease() {
 }
 const newer = (a, b) => { const pa = a.split(".").map(Number), pb = b.split(".").map(Number); for (let i = 0; i < 3; i++) { if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0); } return false; };
 
+// The checks in plain words: s = ok | warn | err | off, text = what it means, fix = what to do.
+function healthChecks(d, err, lat, rel) {
+  const out = [];
+  if (err || !d) {
+    out.push({ s: "err", t: "Server", text: "Il tuo server non risponde.", fix: "Controlla la connessione. Se continua, apri Cloudflare → Workers e verifica che Kairo sia pubblicato." });
+    return out;
+  }
+  out.push({ s: lat > 2500 ? "warn" : "ok", t: "Server", text: lat ? `Risponde in ${lat} ms.` : "Risponde.", fix: lat > 2500 ? "È lento: riprova tra poco, di solito è la rete." : "" });
+  // versions
+  const srv = d.server.versione;
+  if (srv && srv !== APP_VERSION) out.push({ s: "warn", t: "Versione", text: `App ${APP_VERSION}, server ${srv}.`, fix: "Chiudi e riapri Kairo per caricare la versione nuova." });
+  else if (rel && newer(rel.tag, srv || APP_VERSION)) out.push({ s: "warn", t: "Versione", text: `Hai la ${srv}, è uscita la ${rel.tag}.`, fix: "Si aggiorna da sola il lunedì. Per farlo subito: il tuo repository GitHub → Actions → Aggiorna Kairo → Run workflow." });
+  else out.push({ s: "ok", t: "Versione", text: `Kairo ${srv || APP_VERSION}${rel ? ", aggiornato" : ""}.`, fix: "" });
+  // sync
+  const last = d.importazioni[0], ageH = last ? (Date.now() - Date.parse(last.received)) / 36e5 : Infinity;
+  out.push(!last ? { s: "err", t: "iPhone", text: "Non è mai arrivato nessun dato.", fix: "Installa il comando HealthSync seguendo la Guida (Impostazioni → Guida)." }
+    : ageH < 14 ? { s: "ok", t: "iPhone", text: `Ultimi dati arrivati ${ago(last.received)}.`, fix: "" }
+    : { s: ageH < 36 ? "warn" : "err", t: "iPhone", text: `Ultimi dati arrivati ${ago(last.received)}.`, fix: "Apri Comandi → Automazione e controlla che le automazioni di HealthSync siano attive e su «Esegui immediatamente». Puoi anche lanciare HealthSync a mano." });
+  // Watch data that recovery needs
+  const lastOf = (m) => d.metriche.find((x) => x.metric === m)?.a;
+  const days = (iso) => (iso ? (Date.now() - Date.parse(iso)) / 864e5 : Infinity);
+  const missing = [["HRV", lastOf("hrv")], ["FC a riposo", lastOf("fcr")], ["sonno", d.sonno.n ? d.sonno.a : null]].filter(([, a]) => days(a) > 3).map(([n]) => n);
+  out.push(!missing.length ? { s: "ok", t: "Dati del Watch", text: "HRV, FC a riposo e sonno arrivano regolarmente.", fix: "" }
+    : { s: missing.length === 3 ? "err" : "warn", t: "Dati del Watch", text: `Mancano da più di 3 giorni: ${missing.join(", ")}.`, fix: missing.includes("sonno") ? "Per il sonno tieni il Watch di notte con la modalità Sonno attiva. Se mancano anche gli altri, controlla in Salute → Condivisione → App → Comandi che sia tutto consentito." : "Controlla in Salute → Condivisione → App → Comandi che sia tutto consentito." });
+  // AI
+  const q = d.ia.groq_quota, key = cfg().groqKey || d.ia.chiave_groq_sul_server;
+  out.push(key ? { s: q && Number(q.richieste_rimaste) < 50 ? "warn" : "ok", t: "Coach IA", text: `Groq attivo${q?.richieste_rimaste ? `, ${q.richieste_rimaste} richieste rimaste oggi` : ""}.`, fix: q && Number(q.richieste_rimaste) < 50 ? "Quasi finite per oggi: nel frattempo risponde il modello di riserva." : "" }
+    : d.ia.riserva_disponibile ? { s: "ok", t: "Coach IA", text: "Funziona con il modello di riserva gratuito.", fix: "Per risposte migliori aggiungi una chiave Groq gratuita in Impostazioni → Coach IA." }
+    : { s: "err", t: "Coach IA", text: "Nessun modello IA disponibile.", fix: "Aggiungi una chiave Groq in Impostazioni → Coach IA." });
+  // backup
+  const bk = d.backup;
+  out.push(!bk?.attivo ? { s: "warn", t: "Backup", text: "I backup automatici non sono attivi.", fix: "Si attivano con il prossimo aggiornamento automatico (lunedì). Intanto esporta i dati da Backup ed esportazione." }
+    : bk.ultimo && days(bk.ultimo.creato) < 9 ? { s: "ok", t: "Backup", text: `Ultima copia ${ago(bk.ultimo.creato)}.`, fix: "" }
+    : { s: "warn", t: "Backup", text: bk.ultimo ? `Ultima copia ${ago(bk.ultimo.creato)}.` : "Nessuna copia ancora.", fix: "Tocca «Backup ora» in Backup ed esportazione." });
+  // this device
+  out.push(isStandalone() ? { s: "ok", t: "Questo telefono", text: "Kairo è installata come app.", fix: "" }
+    : { s: "warn", t: "Questo telefono", text: "Kairo è aperta nel browser.", fix: "In Safari: Condividi → Aggiungi alla schermata Home. Serve anche per le notifiche." });
+  return out;
+}
+
 views.diagnostica = async (el) => {
-  el.innerHTML = header("Diagnostica", { back: "impostazioni", gear: false }) + loading(4);
+  el.innerHTML = subHeader("Stato di Kairo") + loading(2);
   const t0 = performance.now();
   let d, err;
   try { d = await api("/api/diagnostica"); } catch (e) { err = e; }
   const lat = Math.round(performance.now() - t0);
   const rel = await latestRelease();
+  const checks = healthChecks(d, err, lat, rel);
+  const todo = checks.filter((x) => x.s === "err" || x.s === "warn");
+  const worst = checks.some((x) => x.s === "err") ? "err" : todo.length ? "warn" : "ok";
+  const COL = { ok: ["#DDF3E8", "var(--green-ink)", "✓"], warn: ["#FDF1D6", "var(--yellow-ink)", "!"], err: ["#FDE2DF", "var(--red-ink)", "✕"] };
+  const c = cfg();
   const dot = (s) => `<span class="status-dot ${s}"></span>`;
   const item = (s, label, value) => `<div class="item"><div class="row" style="gap:10px">${dot(s)}<span>${label}</span></div><div class="small muted" style="text-align:right">${value}</div></div>`;
-  const c = cfg();
-  const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
-  const sw = "serviceWorker" in navigator && !!navigator.serviceWorker.controller;
-  let html = header("Diagnostica", { back: "impostazioni", gear: false });
+  let html = subHeader("Stato di Kairo");
+  html += `<div class="card row" style="gap:14px;background:${COL[worst][0]}"><span style="width:44px;height:44px;border-radius:50%;background:${COL[worst][1]};color:#fff;display:grid;place-items:center;font-size:22px;font-weight:900;flex:none">${COL[worst][2]}</span>
+    <div class="col" style="gap:2px"><div class="h2" style="color:${COL[worst][1]}">${worst === "ok" ? "Tutto funziona" : `${todo.length} ${todo.length === 1 ? "cosa" : "cose"} da sistemare`}</div><div class="small" style="color:var(--text)">${worst === "ok" ? "Dati, coach e backup sono a posto." : "Qui sotto trovi cosa fare."}</div></div></div>`;
+  html += `<div class="card list" style="padding:4px 16px">${checks.map((x) => `<div class="item" style="align-items:flex-start;gap:12px"><span style="padding-top:6px">${dot(x.s)}</span><div class="col" style="gap:3px;flex:1"><div style="font-weight:800">${x.t}</div><div class="small" style="color:var(--text);font-weight:500;line-height:1.45">${esc(x.text)}</div>${x.fix ? `<div class="small" style="font-weight:600;line-height:1.45;color:${x.s === "ok" ? "var(--muted)" : "var(--ink)"}">→ ${esc(x.fix)}</div>` : ""}</div></div>`).join("")}</div>`;
+  html += `<div class="row" style="gap:8px"><button class="btn ghost" id="testAi" style="flex:1">Prova il coach</button><button class="btn ghost" id="copy" style="flex:1">Copia report</button></div><div id="aiOut" class="small muted"></div>`;
 
-  // Server & versions
-  const srvV = d?.server.versione;
-  const updApp = rel && newer(rel.tag, APP_VERSION), updSrv = rel && srvV && newer(rel.tag, srvV);
-  html += `<div class="card list"><div class="label" style="margin-bottom:4px">Server e versioni</div>
-    ${item(err ? "err" : lat > 1500 ? "warn" : "ok", "Server raggiungibile", err ? esc(err.message) : `${lat} ms`)}
-    ${item("ok", "Versione app", APP_VERSION)}
-    ${item(!srvV ? "off" : srvV !== APP_VERSION ? "warn" : "ok", "Versione server", srvV ? `${esc(srvV)}${srvV !== APP_VERSION ? " · diversa dall'app" : ""}` : "–")}
-    ${item(!rel ? "off" : updApp || updSrv ? "warn" : "ok", "Ultima versione su GitHub", rel ? `${esc(rel.tag)}${updApp || updSrv ? ` · <a href="${esc(rel.url)}" target="_blank" rel="noopener">aggiornamento disponibile</a>` : " · aggiornato"}` : "nessuna release pubblicata")}
-    ${item(d ? "ok" : "off", "Schema database", d ? `v${d.server.schema}` : "–")}
-  </div>`;
-
+  // technical details, closed by default
   if (d) {
-    // Sync freshness
-    const last = d.importazioni[0];
-    const ageH = last ? (Date.now() - Date.parse(last.received)) / 36e5 : Infinity;
-    const lastByMod = {};
-    d.importazioni.forEach((i) => { if (!lastByMod[i.modulo]) lastByMod[i.modulo] = i; });
-    html += `<div class="card list"><div class="label" style="margin-bottom:4px">Sincronizzazione da iPhone</div>
-      ${item(ageH < 14 ? "ok" : ageH < 36 ? "warn" : "err", "Ultimo invio", last ? `${ago(last.received)} · ${esc(last.modulo || "?")} · ${last.righe} righe` : "mai: installa il comando HealthSync")}
-      ${Object.values(lastByMod).slice(0, 6).map((i) => item("off", esc(i.modulo || "?"), `${ago(i.received)}${i.versione ? " · comando v" + esc(i.versione) : ""}`)).join("")}
-      ${ageH >= 36 && last ? `<div class="small" style="padding:10px 0;line-height:1.45">L'ultimo invio è vecchio: controlla in Comandi → Automazioni che le automazioni di HealthSync siano attive e impostate su "Esegui immediatamente".</div>` : ""}
-    </div>`;
-
-    // Data per metric
-    const metricName = { hrv: "HRV", fcr: "FC a riposo", fc: "Frequenza cardiaca", fc_camminata: "FC camminata", resp: "Respirazione", spo2: "Ossigeno (SpO₂)", vo2max: "VO₂max", peso: "Peso", grasso_pct: "% grasso", massa_magra: "Massa magra", bmi: "BMI", passi: "Passi", kcal_attive: "Calorie attive", kcal_riposo: "Calorie a riposo", dist_piedi: "Distanza a piedi", piani: "Piani", dist_bici: "Distanza bici", dist_nuoto: "Distanza nuoto", bracciate: "Bracciate", kcal_cibo: "Calorie cibo", proteine: "Proteine", carboidrati: "Carboidrati", grassi: "Grassi", acqua: "Acqua" };
+    const metricName = { hrv: "HRV", fcr: "FC a riposo", fc: "Frequenza cardiaca", fc_camminata: "FC camminata", resp: "Respirazione", spo2: "Ossigeno (SpO₂)", vo2max: "VO₂max", peso: "Peso", grasso_pct: "% grasso", massa_magra: "Massa magra", bmi: "BMI", passi: "Passi", kcal_attive: "Calorie attive", kcal_riposo: "Calorie a riposo", dist_piedi: "Distanza a piedi", piani: "Piani", dist_bici: "Distanza bici", dist_nuoto: "Distanza nuoto", bracciate: "Bracciate", trimp: "Carico (TRIMP)" };
     const rows = [...d.metriche.map((m) => ({ ...m, last: m.a })), ...d.giornaliere.map((m) => ({ ...m, last: m.a + "T12:00:00" }))];
     const fresh = (iso) => { const h = (Date.now() - Date.parse(iso)) / 36e5; return h < 48 ? "ok" : h < 24 * 14 ? "warn" : "off"; };
-    html += `<div class="card list"><div class="label" style="margin-bottom:4px">Dati ricevuti</div>
-      ${item(d.sonno.n ? fresh(d.sonno.a) : "off", "Sonno (fasi)", d.sonno.n ? `${d.sonno.n} fasi · ultima ${ago(d.sonno.a)}` : "nessun dato")}
-      ${rows.map((m) => item(fresh(m.last), metricName[m.metric] || esc(m.metric), `${fmtNum(m.n)} valori · ultimo ${ago(m.last)}`)).join("")}
-      ${item(!d.backup?.attivo ? "warn" : d.backup.ultimo && (Date.now() - Date.parse(d.backup.ultimo.creato)) / 864e5 < 9 ? "ok" : "warn", "Backup", !d.backup?.attivo ? "non attivi" : d.backup.ultimo ? `ultimo ${ago(d.backup.ultimo.creato)}` : "nessuno ancora")}
-      ${item("off", "Righe nel database", Object.entries(d.database.righe).map(([k, v]) => `${k} ${fmtNum(v)}`).join(" · "))}
-      ${d.database.dimensione_byte ? item("off", "Dimensione database", `${fmtNum(d.database.dimensione_byte / 1048576, 1)} MB su 5.000 MB gratuiti`) : ""}
-    </div>`;
-
-    // AI
+    const lastByMod = {}; d.importazioni.forEach((i) => { if (!lastByMod[i.modulo]) lastByMod[i.modulo] = i; });
     const q = d.ia.groq_quota;
-    html += `<div class="card list"><div class="label" style="margin-bottom:4px">Intelligenza artificiale</div>
-      ${item(c.groqKey ? "ok" : d.ia.chiave_groq_sul_server ? "ok" : "warn", "Chiave Groq", c.groqKey ? "salvata su questo dispositivo" : d.ia.chiave_groq_sul_server ? "configurata sul server" : "assente: uso il modello di riserva")}
+    html += `<details class="card"><summary style="cursor:pointer;font-weight:800">Dettagli tecnici</summary><div class="list" style="padding-top:8px">
+      <div class="label" style="padding-top:8px">Versioni</div>
+      ${item("off", "App", APP_VERSION)}${item("off", "Server", esc(d.server.versione))}${item("off", "Schema database", `v${d.server.schema}`)}${item("off", "Ultima su GitHub", rel ? esc(rel.tag) : "–")}
+      <div class="label" style="padding-top:12px">Invii da iPhone</div>
+      ${Object.values(lastByMod).slice(0, 6).map((i) => item("off", esc(i.modulo || "?"), `${ago(i.received)} · ${i.righe} righe`)).join("") || item("off", "Nessun invio", "")}
+      <div class="label" style="padding-top:12px">Dati ricevuti</div>
+      ${item(d.sonno.n ? fresh(d.sonno.a) : "off", "Sonno (fasi)", d.sonno.n ? `${fmtNum(d.sonno.n)} · ultima ${ago(d.sonno.a)}` : "nessun dato")}
+      ${rows.map((m) => item(fresh(m.last), metricName[m.metric] || esc(m.metric), `${fmtNum(m.n)} · ultimo ${ago(m.last)}`)).join("")}
+      <div class="label" style="padding-top:12px">Coach IA</div>
       ${item("off", "Modello", esc(c.groqModel || d.ia.modello_predefinito))}
-      ${q ? item(Number(q.richieste_rimaste) < 50 ? "warn" : "ok", "Richieste Groq rimaste oggi", `${esc(q.richieste_rimaste ?? "?")} su ${esc(q.richieste_limite ?? "?")}${q.richieste_reset ? ` · si azzera tra ${esc(q.richieste_reset)}` : ""}`) : item("off", "Richieste Groq rimaste", "nessuna chiamata ancora")}
-      ${q ? item(Number(q.token_rimasti) < 2000 ? "warn" : "ok", "Token al minuto rimasti", `${esc(q.token_rimasti ?? "?")} su ${esc(q.token_limite ?? "?")}`) : ""}
-      ${q ? item("off", "Quota letta", ago(q.letto)) : ""}
+      ${q ? item("off", "Richieste Groq rimaste", `${esc(q.richieste_rimaste ?? "?")} su ${esc(q.richieste_limite ?? "?")}`) : ""}
       ${item("off", "Chiamate oggi", `Groq ${d.ia.chiamate_oggi_groq} · riserva ${d.ia.chiamate_oggi_riserva}`)}
-      ${item(d.ia.riserva_disponibile ? "ok" : "err", "Modello di riserva (Cloudflare)", d.ia.riserva_disponibile ? esc(d.ia.modello_riserva) + " · ~280 risposte/giorno gratis" : "non configurato")}
-      <div style="padding-top:10px"><button class="btn ghost block" id="testAi">Prova l'IA adesso</button><div id="aiOut" class="small muted" style="padding-top:8px"></div></div>
-    </div>`;
+      ${item("off", "Modello di riserva", d.ia.riserva_disponibile ? esc(d.ia.modello_riserva) : "non configurato")}
+      <div class="label" style="padding-top:12px">Database e dispositivo</div>
+      ${item("off", "Righe", Object.entries(d.database.righe).map(([k, v]) => `${k} ${fmtNum(v)}`).join(" · "))}
+      ${d.database.dimensione_byte ? item("off", "Dimensione", `${fmtNum(d.database.dimensione_byte / 1048576, 1)} MB su 5.000 MB`) : ""}
+      ${item("off", "Indirizzo server", `<span class="code">${esc(c.server)}</span>`)}${item("off", "Fuso orario", esc(tz()))}
+    </div></details>`;
   }
-
-  // Device
-  let quota = null; try { quota = await navigator.storage?.estimate?.(); } catch {}
-  html += `<div class="card list"><div class="label" style="margin-bottom:4px">Questo dispositivo</div>
-    ${item(standalone ? "ok" : "warn", "Installata come app", standalone ? "sì" : "no: aggiungila alla schermata Home")}
-    ${item(sw ? "ok" : "off", "Funzionamento offline", sw ? "attivo" : "non attivo")}
-    ${item(c.code ? "ok" : "err", "Codice di accesso", c.code ? "salvato" : "mancante")}
-    ${item("off", "Indirizzo server", `<span class="code">${esc(c.server)}</span>`)}
-    ${item("off", "Fuso orario", esc(tz()))}
-    ${quota ? item("off", "Spazio usato dall'app", `${fmtNum((quota.usage || 0) / 1024, 0)} KB`) : ""}
-  </div>
-  <button class="btn ghost" id="copy">Copia report diagnostico</button>`;
   el.innerHTML = html;
-
-  const t = $("#testAi");
-  if (t) t.onclick = async () => {
+  $("#testAi").onclick = async () => {
     const out = $("#aiOut"); out.textContent = "Provo…";
-    try { const r = await api("/api/ai/test", { method: "POST" }); out.innerHTML = r.errore ? `<span class="bad">${esc(r.errore)}</span>` : `<span class="good">Funziona</span> · ${r.provider === "groq" ? "Groq" : "riserva"} · ${esc(r.model)} · ${r.latenza_ms} ms`; }
+    try { const r = await api("/api/ai/test", { method: "POST" }); out.innerHTML = r.errore ? `<span class="bad">${esc(r.errore)}</span>` : `<span class="good">Il coach risponde</span> · ${r.provider === "groq" ? "Groq" : "modello di riserva"} · ${r.latenza_ms} ms`; }
     catch (e) { out.textContent = e.message; }
   };
   $("#copy").onclick = async () => {
-    const report = { app: APP_VERSION, server: d?.server, ultima_release: rel?.tag, latenza_ms: lat, errore: err?.message, importazioni: d?.importazioni?.slice(0, 5), dati: d?.database, ia: d ? { ...d.ia } : null, dispositivo: { standalone, sw, tz: tz(), ua: navigator.userAgent, chiave_groq: !!c.groqKey } };
+    const report = { app: APP_VERSION, server: d?.server, ultima_release: rel?.tag, latenza_ms: lat, errore: err?.message, controlli: checks.map((x) => `${x.s} ${x.t}: ${x.text}`), importazioni: d?.importazioni?.slice(0, 5), dati: d?.database, ia: d ? { ...d.ia } : null, dispositivo: { standalone: isStandalone(), tz: tz(), ua: navigator.userAgent, chiave_groq: !!c.groqKey } };
     try { await navigator.clipboard.writeText(JSON.stringify(report, null, 2)); toast("Report copiato (senza chiavi)"); } catch { toast("Copia non riuscita"); }
   };
 };

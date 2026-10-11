@@ -47,7 +47,7 @@ La tua copia di Kairo **si aggiorna da sola ogni lunedì**. Lo fa l'azione *Aggi
 
 Per aggiornare subito: GitHub → il tuo repository → **Actions** → **Aggiorna Kairo** → **Run workflow**. Se GitHub chiede di abilitare le Actions, clicca *I understand… enable them*.
 
-La pagina *Impostazioni → Diagnostica* ti dice se c'è una versione nuova.
+La pagina *Impostazioni → Stato di Kairo* ti dice se c'è una versione nuova.
 
 ---
 
@@ -84,16 +84,16 @@ Kairo salva da solo una copia dei tuoi dati **ogni lunedì** e **prima di ogni c
 
 | Cosa vedi | Cosa fare |
 |---|---|
-| Il pulsante *Scarica HealthSync* scarica una pagina e non il comando | Chiudi e riapri Safari, poi riprova. In *Diagnostica* la versione dell'app deve essere almeno 1.1.1 |
+| Il pulsante *Scarica HealthSync* scarica una pagina e non il comando | Chiudi e riapri Safari, poi riprova. In *Stato di Kairo* la versione deve essere almeno 1.1.1 |
 | Il comando dà **errore 401** | Il link non è giusto. In Kairo: *Guida → passo 2 → Copia link*. Poi in Comandi tieni premuto *HealthSync* → *Modifica* → sostituisci il testo nel primo blocco |
 | *"Condividere N elementi di Salute non è consentito"* | Attiva *Consenti condivisione di grandi quantità di dati* (Guida, passo 1) |
 | *"Nessun campione di dati trovato"* | App Salute → foto → *App* → *Comandi* → attiva tutto |
 | La chiave Groq dà errore | Ricopiala per intero da console.groq.com: inizia con `gsk_` e non ha spazi. Oppure salta il passo, il coach funziona lo stesso |
-| *"Il server ha risposto in modo inatteso"* | Ricarica la pagina; se continua apri *Impostazioni → Diagnostica* e copia il report |
+| *"Il server ha risposto in modo inatteso"* | Ricarica la pagina; se continua apri *Impostazioni → Stato di Kairo* e tocca *Copia report* |
 | *"Troppi tentativi sbagliati"* | hai sbagliato il codice 5 volte: aspetta il tempo indicato (dalla stessa rete) e riprova con il codice giusto |
 | *"Backup automatici non attivi"* | la tua copia è stata installata prima della 1.4: l'aggiornamento automatico del lunedì li attiva da solo |
 | Lo score resta "in calibrazione" | Servono almeno 5 notti con il Watch, oppure importa lo storico da Salute |
-| "Ultimo invio" vecchio in Diagnostica | In *Comandi → Automazione* controlla che le due automazioni siano attive e su *Esegui immediatamente* |
+| *Stato di Kairo* segnala l'iPhone in giallo o rosso | In *Comandi → Automazione* controlla che le due automazioni siano attive e su *Esegui immediatamente* |
 
 ---
 
