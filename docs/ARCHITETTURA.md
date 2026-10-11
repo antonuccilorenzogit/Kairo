@@ -30,6 +30,11 @@
 - Da *Impostazioni → Backup* si crea un backup, si scarica (`.json.gz`) o si ripristina da un file (backup o esportazione JSON).
 - In più D1 conserva da sé la cronologia del database (Time Travel) per gli ultimi giorni: `npx wrangler d1 time-travel restore kairo --timestamp=…`.
 
+## Memoria del coach
+- Tabella `memoria` (testo unico, fonte `coach` o `utente`, data). Al massimo 60 ricordi: quando è piena escono prima i più vecchi scritti dal coach, mai quelli aggiunti a mano.
+- In chat il modello può chiudere la risposta con `[[RICORDA: …]]` o `[[DIMENTICA: parole chiave]]` (massimo 2-3 per risposta). Il server applica i tag e li toglie dal testo; `DIMENTICA` cancella al massimo 3 ricordi che contengono tutte le parole chiave.
+- L'elenco dei ricordi entra nel prompt di ogni funzione del coach (chat, messaggio del mattino, resoconto settimanale, allenamento del giorno) dopo il profilo. È incluso in backup ed esportazione.
+
 ## API
 | Metodo | Percorso | Descrizione |
 |---|---|---|
@@ -56,6 +61,7 @@
 | GET | `/api/corpo` | misure corporee, VO₂max e FC per la pagina Corpo |
 | GET/POST | `/api/profilo` | profilo (età, sesso, obiettivi, FC max, sveglia, sonno necessario, fuso) |
 | GET/DELETE | `/api/chat` | conversazione con il coach (salvata sul server) |
+| GET/POST/DELETE | `/api/memoria` | ricordi del coach · POST `{"testo":"…"}` aggiunge · DELETE `?id=N` (o `?id=tutto`) elimina |
 | GET | `/api/settimana?a=` | report dei 7 giorni fino ad `a` · POST `/api/settimana/coach` resoconto del coach |
 | GET/POST | `/api/forza` | progressi di forza · salva serie (`{"serie":[…]}`: import da Hevy/Strong o allenamento fatto in Kairo) |
 | POST | `/api/allenamento/oggi` | allenamento del giorno (`{"forza":true}` rigenera, `{"altro":true,"escludi":"nuoto"}` propone un altro sport) |

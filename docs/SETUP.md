@@ -26,7 +26,7 @@ Sono solo due parti: **1. crei il server** (dal PC) e **2. colleghi l'iPhone** (
 
 Apri l'indirizzo **sull'iPhone, in Safari**. L'app ti accompagna da sola:
 
-1. **Crea il codice di accesso** (almeno 8 caratteri) e salvalo nel portachiavi o in Note. Ti servirà per aprire Kairo su altri dispositivi.
+1. **Crea il codice di accesso** (almeno 10 caratteri) e salvalo nel portachiavi o in Note. Ti servirà per aprire Kairo su altri dispositivi.
 2. **Coach IA (facoltativo):** se vuoi un coach più preciso, crea una chiave gratuita su [console.groq.com/keys](https://console.groq.com/keys) e incollala. Puoi anche saltare questo passo: il coach funziona lo stesso con un modello gratuito di Cloudflare.
 3. **Segui la Guida** che compare, 7 passi:
    1. **Prima di iniziare:** iPhone → *Impostazioni → App → Comandi → Avanzate* → attiva **Consenti condivisione di grandi quantità di dati**.
@@ -60,6 +60,10 @@ Apri Kairo **dall'icona sulla schermata Home** (su iPhone le notifiche funzionan
 - In *Impostazioni → Profilo* scegli i tuoi sport (palestra, nuoto, bici, corsa): l'allenamento del giorno nella pagina Oggi sceglie solo tra questi.
 - In *Palestra* tocca **✨ Crea con il coach** e descrivi i tuoi allenamenti (es. «Scheda A petto: panca 4x8-10, croci 3x12…»): controlla l'anteprima e salva. Puoi anche crearle o modificarle a mano.
 - **Inizia allenamento**: segna kg e ripetizioni di ogni serie e tocca ✓. La seduta resta sul telefono anche senza rete; a fine allenamento indica quanto è stato duro (1–10).
+
+## Il coach che ricorda
+
+Nella chat racconta al coach quello che conta: una gara con la data, un dolore, un obiettivo, quando preferisci allenarti. Se lo segna da solo (sotto la risposta compare **📌 Me lo segno: …**) e lo usa nei consigli dei giorni dopo, anche nell'allenamento del giorno. Quando gli dici che una cosa non vale più (es. «la spalla è guarita») la dimentica. In *Impostazioni → Cosa ricorda il coach* puoi vedere tutto, aggiungere a mano ed eliminare.
 
 ## Allenamenti di forza da Hevy o Strong
 

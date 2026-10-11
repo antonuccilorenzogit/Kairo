@@ -24,7 +24,7 @@ Open source, gratuito, i dati restano nel <i>tuo</i> account.</p>
 - **Importa dati** da Salute, Hevy e Strong
 - **Report settimanale** e **notifiche** essenziali: la mattina e la sera
 - **Spiegazioni a richiesta**: tocca un dato per capire cos'è e come ti posizioni
-- **Coach IA**: consiglio del giorno e chat che risponde con i tuoi numeri
+- **Coach IA che ti conosce**: consiglio del giorno e chat che risponde con i tuoi numeri, e **si ricorda** quello che gli racconti (gare, dolori, obiettivi, preferenze) per usarlo nei consigli dei giorni dopo
 - **Check-in in 10 secondi**: energia, indolenzimento, umore, cosa hai fatto ieri
 - **Importa da Salute**: carica l'esportazione dell'app Salute, letta sul dispositivo
 - **Aggiornamenti automatici**: la tua copia si aggiorna da sola ogni settimana
@@ -49,7 +49,7 @@ Open source, gratuito, i dati restano nel <i>tuo</i> account.</p>
 
 - **Nessun server centrale**: ognuno pubblica la propria copia di Kairo sul proprio account Cloudflare, gratuito.
 - **Le chiavi restano sui tuoi dispositivi**: il codice di accesso e la chiave Groq sono salvati nel browser e inviati solo al tuo server.
-- **All'IA arrivano solo riassunti numerici**, mai i dati grezzi.
+- **All'IA arrivano solo riassunti numerici**, mai i dati grezzi, più le tue domande e i ricordi del coach (che vedi e cancelli dalle Impostazioni).
 
 Dettagli tecnici in [docs/ARCHITETTURA.md](docs/ARCHITETTURA.md).
 
@@ -71,10 +71,12 @@ Fine. La guida dettagliata, con le soluzioni ai problemi più comuni, è in [doc
 
 | Servizio | Piano | Uso tipico di Kairo |
 |---|---|---|
-| Cloudflare Workers | gratuito, 100.000 richieste/giorno | poche decine al giorno |
-| Cloudflare D1 | gratuito, 5 GB | ~1 MB per anno di dati |
+| Cloudflare Workers | gratuito, 100.000 richieste/giorno | 100–200 al giorno |
+| Cloudflare D1 | gratuito, 5 GB · 5 milioni di righe lette e 100.000 scritte al giorno | ~1 MB per anno di dati · meno del 10% delle letture |
 | Workers AI (riserva) | gratuito, ~280 risposte/giorno | solo se Groq non è disponibile |
-| Groq | gratuito, ~1.000 richieste/giorno | 10–30 al giorno |
+| Groq | gratuito, ~1.000 richieste e 200.000 token al giorno | 10–30 richieste al giorno |
+
+Se superi il limite di Groq (per esempio molti messaggi di fila in un minuto), Kairo passa da solo al modello di riserva.
 
 ## Privacy e sicurezza
 
