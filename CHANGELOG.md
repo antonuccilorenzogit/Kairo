@@ -2,7 +2,7 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
-## [Non pubblicato]
+## [1.4.0] — 2026-10-11
 
 ### Aggiunto
 - **Allenamento del giorno dall'IA**: sceglie tra i tuoi sport (palestra, nuoto, bici, corsa, attivabili in Impostazioni) cosa fare, con quale intensità (leggero, medio, intenso) e, per nuoto, bici e corsa, la seduta completa con riscaldamento, tecnica e andature, parte centrale e defaticamento; per la palestra quale scheda. Recupero, carico e allarmi limitano l'intensità; «Altra proposta» cambia sport; senza IA usa sedute tipo.
