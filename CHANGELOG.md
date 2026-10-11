@@ -2,10 +2,11 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
-## [Non pubblicato]
+## [1.7.0] — 2026-10-11
 
 ### Migliorato
-- **Pagina Oggi più essenziale**: l'allenamento del giorno (o il piano dell'infortunio) è una scheda di due righe, cioè cosa fare, sport, durata e intensità (o dolore e giorno). Toccandola si apre il dettaglio con la seduta completa, «Inizia scheda», «Altra proposta», il carico di allenamento e, in modalità infortunio, la scala del dolore, le indicazioni del medico e gli avvisi.
+- **Pagina Oggi minimal, tutta in una schermata**: schede più compatte per recupero, sonno (una riga, con l'orario per andare a letto solo la sera), coach (messaggio in 3 righe), check-in e settimana (una riga ciascuno).
+- **Allenamento del giorno compatto**: l'allenamento del giorno (o il piano dell'infortunio) è una scheda di due righe, cioè cosa fare, sport, durata e intensità (o dolore e giorno). Toccandola si apre il dettaglio con la seduta completa, «Inizia scheda», «Altra proposta», il carico di allenamento e, in modalità infortunio, la scala del dolore, le indicazioni del medico e gli avvisi.
 
 ## [1.6.1] — 2026-10-11
 

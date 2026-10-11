@@ -29,6 +29,11 @@ h1, h2, h3 { margin: 0; }
 .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .card { background: var(--card); border-radius: var(--radius); padding: 18px; }
 .card.soft { background: var(--soft); }
+/* Oggi: compact cards */
+.today { gap: 10px; }
+.today > .card { padding: 14px 16px; }
+.today > a.card { text-decoration: none; color: inherit; }
+.today #advice p, .today #advice ul { margin: 0; }
 .card.dark { background: var(--ink); color: #F3F4F8; }
 .title { font-size: 30px; font-weight: 900; letter-spacing: -0.5px; line-height: 1.05; }
 .h2 { font-size: 20px; font-weight: 900; }

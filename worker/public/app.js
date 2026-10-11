@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.6.1";
+const APP_VERSION = "1.7.0";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -162,27 +162,29 @@ views.oggi = async (el) => {
   const STATO = { calibrazione: ["In calibrazione", "muted"], scarico: ["Sotto il tuo solito", "mid"], mantenimento: ["Stai mantenendo", "good"], costruzione: ["Stai costruendo", "good"], attenzione: ["Carico alto", "mid"], eccesso: ["Troppo carico", "bad"] };
   const [stLabel, stCls] = STATO[c.stato] || STATO.calibrazione;
   const sleepNow = d.sonno ? `${fmtMin(d.sonno.durata_min)}${d.sonno.manuale ? " (dichiarate)" : ` · ${d.sonno.punteggio} punti`}` : null;
+  const monday = new Date().getDay() === 1;
+  const clamp = (n) => `display:-webkit-box;-webkit-line-clamp:${n};-webkit-box-orient:vertical;overflow:hidden`;
   el.innerHTML = `${header(`Ciao${p.nome ? ",<br>" + esc(p.nome) : ""}`, { sub: fmtDate(d.giorno) })}
-    ${d.allarme ? `<div class="card col" style="background:#FDE2DF;gap:4px"><div style="font-weight:900;color:var(--red-ink)">⚠︎ ${esc(d.allarme.titolo)}</div><div class="small" style="line-height:1.5">${esc(d.allarme.testo)}</div></div>` : ""}
-    <a class="card row" href="#/recupero" style="text-decoration:none;color:inherit;gap:14px;padding:14px 18px">
-      ${bean(r.score, 70)}
+    <div class="col today">
+    ${d.allarme ? `<div class="card col" style="background:#FDE2DF;gap:4px"><div style="font-weight:900;color:var(--red-ink)">⚠︎ ${esc(d.allarme.titolo)}</div><div class="small" style="line-height:1.45">${esc(d.allarme.testo)}</div></div>` : ""}
+    <a class="card row" href="#/recupero" style="gap:12px">
+      ${bean(r.score, 54)}
       <div class="col" style="gap:2px;flex:1">${r.score == null
-        ? `<div class="h2">In calibrazione</div><div class="muted small">Servono almeno 5 notti con HRV e FC a riposo (ne ho ${r.giorni_baseline}).</div>`
-        : `<div class="row" style="gap:8px;align-items:baseline"><span style="font-size:42px;font-weight:900;line-height:1">${r.score}</span><span class="h2 ${st.cls}">${st.label}</span></div>
+        ? `<div class="h2">In calibrazione</div><div class="muted small">Servono 5 notti con il Watch (ne ho ${r.giorni_baseline}).</div>`
+        : `<div class="row" style="gap:8px;align-items:baseline"><span style="font-size:34px;font-weight:900;line-height:1">${r.score}</span><span class="h2 ${st.cls}">${st.label}</span></div>
            <div class="muted small">Recupero${delta != null ? ` · ${delta >= 0 ? "▲" : "▼"} ${Math.abs(delta)} da ieri` : ""}${r.calibrazione ? " · stima provvisoria" : ""}</div>`}</div>${ico.chevron}</a>
     <button class="card col" id="workout" style="gap:6px;border:0;text-align:left;cursor:pointer;width:100%;font:inherit;color:inherit"><div class="label">${p.infortunio?.attivo ? "Infortunio · cosa fare oggi" : "Allenamento di oggi"}</div>
       <div class="skeleton" style="height:22px;width:60%"></div><div class="skeleton" style="height:16px;width:85%"></div></button>
-    <a class="card row between" href="#/sonno" style="text-decoration:none;color:inherit;gap:12px">
-      <div class="col" style="gap:2px"><div class="label">Sonno</div>
-        <div style="font-weight:800">${sleepNow ? `Stanotte ${sleepNow}` : "Nessun sonno registrato"}</div>
-        ${sn && sn.a_letto && hour >= 15 ? `<div class="small" style="color:var(--orange-ink);font-weight:700">Stasera: ${fmtMin(sn.fabbisogno_min)} di sonno, a letto entro le ${sn.a_letto}</div>` : !d.sonno ? `<div class="small muted">Senza Watch? Segna le ore nel check-in.</div>` : ""}</div>${ico.chevron}</a>
-    <a class="card soft row" href="#/coach" style="text-decoration:none;color:inherit;gap:12px">
-      ${ico.sun(30)}<div class="col" style="gap:2px;flex:1"><div style="font-weight:900">Il coach</div><div id="advice" class="small" style="color:var(--text);line-height:1.45"><div class="skeleton" style="width:90%"></div></div></div>${ico.chevron}
-    </a>
+    <a class="card row between" href="#/sonno" style="gap:12px">
+      <div class="col" style="gap:2px;min-width:0"><div style="font-weight:800">${sleepNow ? `Sonno · ${sleepNow}` : "Sonno non registrato"}</div>
+        ${sn && sn.a_letto && hour >= 15 ? `<div class="small" style="color:var(--orange-ink);font-weight:700">Stasera a letto entro le ${sn.a_letto} (${fmtMin(sn.fabbisogno_min)})</div>` : !d.sonno ? `<div class="small muted">Senza Watch? Segna le ore nel check-in</div>` : ""}</div>${ico.chevron}</a>
+    <a class="card soft row" href="#/coach" style="gap:12px">
+      <div class="col" style="gap:4px;flex:1;min-width:0"><div class="label">Il coach</div><div id="advice" class="small" style="color:var(--text);line-height:1.45;${clamp(3)}"><div class="skeleton" style="width:90%"></div></div></div>${ico.chevron}</a>
     ${d.checkin
-      ? `<button class="card row between" data-checkin style="border:0;text-align:left;cursor:pointer"><div class="col" style="gap:2px"><div style="font-weight:900">Check-in fatto ✓</div><div class="small muted">Energia ${d.checkin.energia ?? "–"}/5 · Indolenzimento ${d.checkin.dolori ?? "–"}/5 · ${esc(d.checkin.attivita || "riposo")}</div></div>${ico.chevron}</button>`
-      : `<button class="btn orange block" data-checkin style="justify-content:space-between;min-height:64px;border-radius:22px"><span class="col" style="gap:0;text-align:left"><span style="font-weight:900">Check-in del mattino</span><span class="small" style="font-weight:600">Com'è andata ieri? 10 secondi</span></span>${ico.arrow}</button>`}
-    <a class="card row between" href="#/settimana" style="text-decoration:none;color:inherit;${new Date().getDay() === 1 ? "background:var(--soft)" : ""}"><div class="col" style="gap:2px"><div style="font-weight:900">La tua settimana</div><div class="small muted">${new Date().getDay() === 1 ? "Il resoconto della settimana è pronto" : "Carico, recupero, sonno e forma degli ultimi 7 giorni"}</div></div>${ico.chevron}</a>`;
+      ? `<button class="card row between" data-checkin style="border:0;text-align:left;cursor:pointer;font:inherit;color:inherit;width:100%"><span style="font-weight:800">Check-in fatto <span class="good">✓</span></span><span class="small muted">modifica</span></button>`
+      : `<button class="btn orange block" data-checkin style="justify-content:space-between;min-height:52px;border-radius:18px"><span><b>Check-in del mattino</b> <span class="small" style="font-weight:600">· 10 secondi</span></span>${ico.arrow}</button>`}
+    <a class="card row between" href="#/settimana" style="${monday ? "background:var(--soft)" : ""}"><span style="font-weight:800">La tua settimana${monday ? ` <span class="small" style="color:var(--orange-ink)">· resoconto pronto</span>` : ""}</span>${ico.chevron}</a>
+    </div>`;
   el.querySelectorAll("[data-checkin]").forEach((b) => b.addEventListener("click", () => checkinSheet(d.checkin, !d.sonno || d.sonno.manuale)));
   todayLoad = [stLabel, stCls];
   loadWorkout(false);
