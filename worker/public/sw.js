@@ -1,7 +1,7 @@
 // Kairo service worker: caches the app shell so it opens instantly and offline.
 // API calls always go to the network (health data is never cached here).
-const CACHE = "kairo-shell-v1.0.1";
-const SHELL = ["./", "index.html", "app.css", "app.js", "manifest.webmanifest", "fonts/nunito-latin.woff2", "icons/icon-192.png", "icons/icon-180.png", "shortcuts/HealthSync.shortcut"];
+const CACHE = "kairo-shell-v1.1.0";
+const SHELL = ["./", "index.html", "app.css", "app.js", "import-worker.js", "manifest.webmanifest", "fonts/nunito-latin.woff2", "icons/icon-192.png", "icons/icon-180.png", "shortcuts/HealthSync.shortcut"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

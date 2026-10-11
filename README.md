@@ -9,7 +9,7 @@ Recupero, sonno e allenamento dai dati del tuo Apple Watch, con un coach IA.<br>
 Open source, gratuito, i dati restano nel <i>tuo</i> account.</p>
 
 <p align="center">
-  <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/OWNER/kairo/tree/main/worker"><img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare"></a>
+  <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/antonuccilorenzogit/kairo/tree/main/worker"><img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare"></a>
 </p>
 
 <p align="center">
@@ -32,6 +32,7 @@ Open source, gratuito, i dati restano nel <i>tuo</i> account.</p>
 - **Spiegazioni a richiesta**: tocca un dato per capire cos'è e come ti posizioni
 - **Coach IA**: consiglio del giorno e chat che risponde con i tuoi numeri
 - **Check-in in 10 secondi**: energia, indolenzimento, umore, cosa hai fatto ieri
+- **Importa da Salute**: carica l'esportazione dell'app Salute, letta sul dispositivo
 - **Diagnostica completa**: sincronizzazione, dati ricevuti, quota IA, versioni
 - **App installabile** su iPhone e PC (PWA), funziona anche offline
 - **Costo zero**: tutto sui piani gratuiti di Cloudflare e Groq
@@ -66,7 +67,9 @@ Serve: un **iPhone con Apple Watch**, un account **Cloudflare** e uno **GitHub**
 3. **Installa il comando HealthSync** dalla guida dentro l'app. Durante l'importazione ti chiede indirizzo e codice. Poi crea le due automazioni (sveglia e carica) come spiegato nella guida.
 4. **Aggiungi Kairo alla schermata Home**: in Safari tocca *Condividi → Aggiungi alla schermata Home*. Su PC: Chrome o Edge → *Installa app*.
 
-Facoltativo ma consigliato: lancia una volta i 4 comandi **Storico** per importare un anno di dati e avere subito le tue medie personali.
+Facoltativo ma consigliato: in *Impostazioni → Importa dati da Salute* carica l'esportazione dell'app Salute (`esportazione.zip`) per avere subito le tue medie personali. In alternativa puoi usare i 4 comandi **Storico**.
+
+Dentro l'app c'è una **guida passo passo dalla A alla Z** (*Impostazioni → Guida*), con i pulsanti per scaricare i comandi e copiare indirizzo e codice.
 
 ## Costi
 
@@ -103,7 +106,7 @@ La pagina *Impostazioni → Diagnostica* controlla: raggiungibilità e latenza d
 ## Sviluppo
 
 ```bash
-git clone https://github.com/OWNER/kairo && cd kairo/worker
+git clone https://github.com/antonuccilorenzogit/kairo && cd kairo/worker
 npm install
 npx wrangler dev          # server + app in locale su http://localhost:8787
 npx wrangler deploy       # pubblica sul tuo account
@@ -118,4 +121,4 @@ Vedi [CONTRIBUTING.md](CONTRIBUTING.md) per contribuire.
 
 ## Licenza
 
-[MIT](LICENSE) © Lorenzo Antonucci e contributori. Il font Nunito è distribuito con licenza SIL Open Font License 1.1. Apple, Apple Watch, Salute e Comandi sono marchi di Apple Inc.; Kairo non è affiliato ad Apple.
+[MIT](LICENSE) © [antonuccilorenzogit](https://github.com/antonuccilorenzogit) e contributori. Il font Nunito è distribuito con licenza SIL Open Font License 1.1. Apple, Apple Watch, Salute e Comandi sono marchi di Apple Inc.; Kairo non è affiliato ad Apple.

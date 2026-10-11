@@ -44,7 +44,7 @@ h1, h2, h3 { margin: 0; }
 .sep { height: 1px; background: var(--line); margin: 6px 0; }
 .mini { background: var(--card); border-radius: 20px; padding: 14px 12px; display: flex; flex-direction: column; gap: 2px; border: 0; text-align: left; cursor: pointer; }
 
-.btn { border: 0; border-radius: 18px; min-height: 50px; padding: 0 18px; font-size: 16px; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.btn { border: 0; border-radius: 18px; min-height: 50px; padding: 0 18px; font-size: 16px; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; text-align: center; }
 .btn.primary { background: var(--ink); color: #FFFFFF; }
 .btn.orange { background: var(--orange); color: var(--ink); }
 .btn.ghost { background: var(--card); color: var(--ink); border: 1.5px solid var(--line); }
@@ -105,7 +105,7 @@ input[type="range"] { width: 100%; accent-color: var(--orange); }
 @keyframes sk { to { background-position: -200% 0; } }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--tabbar) + 18px + var(--safe-bottom)); background: var(--ink); color: #FFFFFF; padding: 12px 18px; border-radius: 14px; font-weight: 700; z-index: 50; max-width: 90vw; }
 .steps { counter-reset: s; display: flex; flex-direction: column; gap: 10px; padding: 0; margin: 0; list-style: none; }
-.steps li { counter-increment: s; display: flex; gap: 12px; font-size: 15px; line-height: 1.45; }
-.steps li::before { content: counter(s); flex-shrink: 0; width: 26px; height: 26px; border-radius: 13px; background: var(--ink); color: #FFFFFF; font-weight: 900; font-size: 13px; display: flex; align-items: center; justify-content: center; }
+.steps li { counter-increment: s; position: relative; padding-left: 38px; min-height: 26px; font-size: 15px; line-height: 1.5; }
+.steps li::before { content: counter(s); position: absolute; left: 0; top: 0; width: 26px; height: 26px; border-radius: 13px; background: var(--ink); color: #FFFFFF; font-weight: 900; font-size: 13px; display: flex; align-items: center; justify-content: center; }
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
 .tabbar[hidden] { display: none; }

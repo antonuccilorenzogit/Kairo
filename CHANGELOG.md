@@ -2,6 +2,13 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.1.0] — 2026-10-11
+
+### Aggiunto
+- Guida passo passo dalla A alla Z dentro l'app (11 passi con avanzamento): comando, permessi, automazioni, storico, installazione, verifica dell'arrivo dei dati.
+- **Importa da Salute**: legge l'esportazione dell'app Salute (`esportazione.zip`/`export.zip` o il file `.xml`) direttamente sul dispositivo e invia solo i valori che Kairo usa.
+- I file `.shortcut` sono serviti come download per aprirsi correttamente in Comandi.
+
 ## [1.0.0] — 2026-10-11
 
 ### Aggiunto
