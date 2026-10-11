@@ -2,6 +2,12 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.8.2] — 2026-10-11
+
+### Corretto
+- Toccando il messaggio del coach nella pagina Oggi si apre il **messaggio completo** (prima portava alla chat, dove non c'era); da lì «Parla con il coach» apre la chat.
+- Se l'orario per andare a letto è già passato, la pagina Oggi dice «È ora di andare a letto» invece di un orario passato.
+
 ## [1.8.1] — 2026-10-11
 
 ### Migliorato

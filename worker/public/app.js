@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.8.1";
+const APP_VERSION = "1.8.2";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -177,9 +177,9 @@ views.oggi = async (el) => {
       <div class="skeleton" style="height:22px;width:60%"></div><div class="skeleton" style="height:16px;width:85%"></div></button>
     <a class="card row between" href="#/sonno" style="gap:12px">
       <div class="col" style="gap:2px;min-width:0"><div style="font-weight:800">${sleepNow ? `Sonno · ${sleepNow}` : "Sonno non registrato"}</div>
-        ${sn && sn.a_letto && hour >= 15 ? `<div class="small" style="color:var(--orange-ink);font-weight:700">Stasera a letto entro le ${sn.a_letto} (${fmtMin(sn.fabbisogno_min)})</div>` : !d.sonno ? `<div class="small muted">Senza Watch? Segna le ore nel check-in</div>` : ""}</div>${ico.chevron}</a>
-    <a class="card soft row" href="#/coach" style="gap:12px">
-      <div class="col" style="gap:4px;flex:1;min-width:0"><div class="label">Il coach</div><div id="advice" class="small" style="color:var(--text);line-height:1.45;${clamp(3)}"><div class="skeleton" style="width:90%"></div></div></div>${ico.chevron}</a>
+        ${sn && sn.a_letto && hour >= 15 ? `<div class="small" style="color:var(--orange-ink);font-weight:700">${bedPassed(sn.a_letto) ? `È ora di andare a letto: stanotte ti servono ${fmtMin(sn.fabbisogno_min)}` : `Stasera a letto entro le ${sn.a_letto} (${fmtMin(sn.fabbisogno_min)})`}</div>` : !d.sonno ? `<div class="small muted">Senza Watch? Segna le ore nel check-in</div>` : ""}</div>${ico.chevron}</a>
+    <button class="card soft row" id="coachCard" style="gap:12px;border:0;text-align:left;cursor:pointer;width:100%;font:inherit;color:inherit">
+      <div class="col" style="gap:4px;flex:1;min-width:0"><div class="label">Il coach</div><div id="advice" class="small" style="color:var(--text);line-height:1.45;${clamp(3)}"><div class="skeleton" style="width:90%"></div></div></div>${ico.chevron}</button>
     ${d.checkin
       ? `<button class="card row between" data-checkin style="border:0;text-align:left;cursor:pointer;font:inherit;color:inherit;width:100%"><span style="font-weight:800">Check-in fatto <span class="good">✓</span></span><span class="small muted">modifica</span></button>`
       : `<button class="btn orange block" data-checkin style="justify-content:space-between;min-height:52px;border-radius:18px"><span><b>Check-in del mattino</b> <span class="small" style="font-weight:600">· 10 secondi</span></span>${ico.arrow}</button>`}
@@ -188,11 +188,30 @@ views.oggi = async (el) => {
   el.querySelectorAll("[data-checkin]").forEach((b) => b.addEventListener("click", () => checkinSheet(d.checkin, !d.sonno || d.sonno.manuale)));
   todayLoad = [stLabel, stCls];
   loadWorkout(false);
-  // the advice arrives asynchronously so the page is usable immediately
-  api("/api/coach/oggi", { method: "POST", body: {} })
-    .then((a) => { const box = $("#advice"); if (box) box.innerHTML = md(a.errore ? a.errore : a.testo); })
-    .catch((e) => { const box = $("#advice"); if (box) box.textContent = e.message; });
+  // the advice arrives asynchronously so the page is usable immediately; tapping it shows the whole message
+  todayAdvice = "";
+  $("#coachCard").onclick = () => adviceSheet();
+  loadAdvice();
 };
+
+// Coach's message of the day: 3 lines on Oggi, the whole message in a sheet
+let todayAdvice = "";
+function loadAdvice() {
+  return api("/api/coach/oggi", { method: "POST", body: {} })
+    .then((a) => { todayAdvice = a.errore || a.testo || ""; const box = $("#advice"); if (box) box.innerHTML = md(todayAdvice); })
+    .catch((e) => { const box = $("#advice"); if (box) box.textContent = e.message; });
+}
+function adviceSheet() {
+  openSheet(`${sheetHead("Il coach di oggi")}
+    <div class="md" style="line-height:1.6">${todayAdvice ? md(todayAdvice) : '<div class="skeleton" style="height:60px"></div>'}</div>
+    <a class="btn primary" href="#/coach">Parla con il coach</a>`, "Il coach");
+  if (!todayAdvice) loadAdvice().then(() => { if ($("#sheet") && todayAdvice) adviceSheet(); });
+}
+// "22:09" already passed this evening? (after midnight counts as passed until the morning)
+function bedPassed(hhmm) {
+  const [h, m] = hhmm.split(":").map(Number), now = new Date(), cur = now.getHours() * 60 + now.getMinutes(), bed = h * 60 + m;
+  return bed >= 12 * 60 ? cur >= bed || cur < 6 * 60 : cur >= bed && cur < 6 * 60;
+}
 
 // Today's workout: a compact card on Oggi (what, how long, how hard), details in a sheet on tap
 const SPORT = { palestra: "Palestra", nuoto: "Nuoto", bici: "Bici", corsa: "Corsa" };
@@ -263,7 +282,7 @@ function injuryDetail(w) {
   $("#sheet").querySelectorAll("[data-pain]").forEach((b) => (b.onclick = async () => {
     sheetBusy();
     try { const n = await fetchWorkout({ dolore: Number(b.dataset.pain) }); renderWorkoutCard(n); injuryDetail(n); } catch (e) { toast(e.message); closeSheet(); return; }
-    api("/api/coach/oggi", { method: "POST", body: {} }).then((a) => { const box = $("#advice"); if (box) box.innerHTML = md(a.errore || a.testo); }).catch(() => {});
+    loadAdvice();
   }));
   $("#injEdit").onclick = () => injurySheet();
   $("#injOff").onclick = async () => {
