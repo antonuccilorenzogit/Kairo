@@ -20,4 +20,9 @@ test("notte completata dopo la sveglia: i testi del giorno si rifanno solo se ar
   assert.equal(await count(), 2, "i passi non toccano la notte");
   await call(env, "/api/ingest", { method: "POST", code: CODE, body: { hrv_valori: "70", hrv_date: `${yesterday}T15:00:00+02:00` } });
   assert.equal(await count(), 2, "l'HRV misurata di giorno non rifà i testi");
+  // the night lasted 03:00-04:00: an HRV at 06:00 (after waking up) changes nothing, one at 03:30 does
+  await call(env, "/api/ingest", { method: "POST", code: CODE, body: { hrv_valori: "66", hrv_date: `${today}T06:00:00+02:00` } });
+  assert.equal(await count(), 2, "HRV dopo il risveglio: niente da rifare");
+  await call(env, "/api/ingest", { method: "POST", code: CODE, body: { hrv_valori: "64", hrv_date: `${today}T03:30:00+02:00` } });
+  assert.equal(await count(), 0, "HRV durante il sonno: testi da rifare");
 });

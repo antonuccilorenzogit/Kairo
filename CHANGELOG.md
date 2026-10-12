@@ -2,6 +2,11 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.10.2] — 2026-10-12
+
+### Migliorato
+- La finestra della «notte passata» è quella vera del tuo sonno, la stessa del recupero: da 30 minuti prima di addormentarti al risveglio. HRV, FC e respirazione misurate dopo il risveglio non fanno più rigenerare consiglio e allenamento (se il sonno non è ancora arrivato vale la finestra 18:00–12:00).
+
 ## [1.10.1] — 2026-10-12
 
 ### Migliorato

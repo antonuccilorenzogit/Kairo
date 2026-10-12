@@ -23,7 +23,7 @@ const dropTodayAdvice = (db, day) => db.prepare("DELETE FROM advice WHERE day IN
 import { recomputeTrimp, recomputeNightHr } from "./load.js";
 import { getVapid, sendPush, validEndpoint } from "./push.js";
 
-const VERSION = "1.10.1";
+const VERSION = "1.10.2";
 
 // No CORS headers: only the Kairo app (same origin) and the Shortcuts app (not a browser) talk to the API.
 const json = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), {
@@ -125,23 +125,22 @@ async function ingest(payload, env, origin) {
   for (const [m, d, v] of rows.daily) stmts.push(db.prepare("INSERT INTO daily(metric,day,value) VALUES(?,?,?) ON CONFLICT(metric,day) DO UPDATE SET value=excluded.value WHERE excluded.value > daily.value").bind(m, d, v));
   for (const [m, h, v] of rows.hourly) stmts.push(db.prepare("INSERT INTO hourly(metric,hour,value) VALUES(?,?,?) ON CONFLICT(metric,hour) DO UPDATE SET value=excluded.value WHERE excluded.value > hourly.value").bind(m, h, v));
   for (const [s, e, st] of rows.sleep) stmts.push(db.prepare("INSERT OR IGNORE INTO sleep(start,end,stage) VALUES(?,?,?)").bind(s, e, st));
-  // statements that touch last night (sleep stages, HRV, resting HR, breathing): the Watch finishes
-  // processing the night a few minutes after waking up, so these can arrive in a later sync
-  // Only data of the night just passed counts (from 18:00 yesterday to 12:00 today, phone's local time):
-  // the Watch also measures HRV during the day, and that must not rewrite the texts at every sync.
+  // The Watch finishes processing the night a few minutes after waking up, so last night's data can
+  // arrive in a later sync. Only data of the night just passed counts: the same window used for the recovery score,
+  // from 30 minutes before falling asleep to waking up (the Watch also measures HRV during the day).
   const NIGHT = new Set(["hrv", "fcr", "resp", "spo2"]);
   const today = todayLocal((await getProfile(db)).tz);
   const yesterday = new Date(Date.parse(today + "T12:00:00Z") - 86400e3).toISOString().slice(0, 10);
-  const lastNight = (ts) => { const local = String(ts).slice(0, 16); return local >= `${yesterday}T18:00` && local <= `${today}T12:00`; };
-  const nightIdx = new Set();
-  rows.samples.forEach((x, i) => { if (NIGHT.has(x[0]) && lastNight(x[1])) nightIdx.add(i); });
+  const res = [];
+  for (let i = 0; i < stmts.length; i += 400) res.push(...(await db.batch(stmts.slice(i, i + 400))));
+  const night = await db.prepare("SELECT min(start) s, max(end) e FROM sleep WHERE stage IN ('core','deep','rem','asleep') AND end > ? AND end <= ?").bind(`${yesterday}T18:00`, `${today}T14:00`).first();
+  const from = night?.s ? Date.parse(night.s) - 30 * 60e3 : null, to = night?.e ? Date.parse(night.e) : null;
+  // no sleep yet: fall back to 18:00 yesterday → 12:00 today
+  const inNight = (ts) => (from != null ? Date.parse(ts) >= from && Date.parse(ts) <= to : String(ts).slice(0, 16) >= `${yesterday}T18:00` && String(ts).slice(0, 16) <= `${today}T12:00`);
   const sleepFrom = rows.samples.length + rows.daily.length + rows.hourly.length;
-  rows.sleep.forEach((x, i) => { if (lastNight(x[1])) nightIdx.add(sleepFrom + i); });
   let nightNew = 0;
-  for (let i = 0; i < stmts.length; i += 400) {
-    const res = await db.batch(stmts.slice(i, i + 400));
-    res.forEach((x, j) => { if (nightIdx.has(i + j) && x?.meta?.changes) nightNew++; });
-  }
+  rows.samples.forEach((x, i) => { if (NIGHT.has(x[0]) && res[i]?.meta?.changes && inNight(x[1])) nightNew++; });
+  rows.sleep.forEach((x, i) => { if (res[sleepFrom + i]?.meta?.changes && x[1].slice(0, 16) > `${yesterday}T18:00` && x[1].slice(0, 16) <= `${today}T14:00`) nightNew++; });
   // the night changed → today's coach texts were written on an incomplete night: write them again
   if (nightNew) await db.prepare("DELETE FROM advice WHERE day IN (?, ?)").bind(today, "A:" + today).run();
   // new heart-rate samples → recompute the training load of those days
