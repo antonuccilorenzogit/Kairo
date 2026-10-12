@@ -2,6 +2,11 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.15.1] — 2026-10-12
+
+### Migliorato
+- **Pagina Recupero minimal**: sotto lo score solo «precisione alta/media/bassa»; toccandola si apre perché è così (misure di HRV rispetto al tuo solito, FC a riposo, medie in costruzione) e tra quanti giorni sarà massima. Tolti incertezza, tendenza e riepilogo ripetuto. La stima di domani compare solo quando è personale (dopo 8 notti piene), cioè quando è precisa. In home: «Recupero · ▼ N da ieri · precisione bassa» solo quando serve.
+
 ## [1.15.0] — 2026-10-12
 
 ### Migliorato

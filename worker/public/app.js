@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.15.0";
+const APP_VERSION = "1.15.1";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -196,7 +196,7 @@ views.oggi = async (el) => {
       <div class="col" style="gap:2px;flex:1">${r.score == null
         ? `<div class="h2">In calibrazione</div><div class="muted small">Servono 5 notti con il Watch (ne ho ${r.giorni_baseline}): basta aspettare.</div>`
         : `<div class="row" style="gap:8px;align-items:baseline"><span style="font-size:34px;font-weight:900;line-height:1">${r.score}</span><span class="h2 ${st.cls}">${st.label}</span></div>
-           <div class="muted small">Recupero${r.incertezza ? ` ±${r.incertezza}` : ""}${r.trend_3g != null ? ` · tendenza ${r.trend_3g}` : ""}${delta != null ? ` · ${delta >= 0 ? "▲" : "▼"} ${Math.abs(delta)} da ieri` : ""}${r.calibrazione ? " · stima provvisoria" : r.affidabilita === "bassa" ? ` · <span class="mid">meno misure del solito</span>` : ""}</div>`}</div>${ico.chevron}</a>
+           <div class="muted small">Recupero${delta != null ? ` · ${delta >= 0 ? "▲" : "▼"} ${Math.abs(delta)} da ieri` : ""}${r.affidabilita === "bassa" ? ` · <span class="mid">precisione bassa</span>` : ""}</div>`}</div>${ico.chevron}</a>
     <button class="card col" id="workout" style="gap:6px;border:0;text-align:left;cursor:pointer;width:100%;font:inherit;color:inherit"><div class="label">${p.infortunio?.attivo ? "Infortunio · cosa fare oggi" : "Allenamento di oggi"}</div>
       <div class="skeleton" style="height:22px;width:60%"></div><div class="skeleton" style="height:16px;width:85%"></div></button>
     <a class="card row between" href="${nightPending ? "shortcuts://run-shortcut?name=HealthSync" : "#/sonno"}" style="gap:12px">
@@ -526,21 +526,8 @@ views.recupero = async (el) => {
     return `<div class="col" style="align-items:center;gap:4px;flex:1"><div style="height:90px;width:100%;display:flex;align-items:flex-end;justify-content:center"><div title="${h.giorno}: ${s ?? "n/d"}" style="width:70%;max-width:18px;border-radius:6px;height:${s == null ? 4 : Math.max(6, s * 0.9)}px;background:${s == null ? "#E2E5EC" : sc.fill}"></div></div><div class="small muted" style="font-size:11px">${fmtDate(h.giorno, { day: "numeric" })}</div></div>`;
   }).join("");
   el.innerHTML = `${header("Recupero", { sub: fmtDate(d.giorno, { weekday: "short", day: "numeric", month: "short" }) })}
-    <div class="card row" style="gap:14px">${bean(r.score, 46)}<div class="col" style="gap:2px"><div style="font-size:30px;font-weight:900;line-height:1">${r.score ?? "–"} <span class="${st.cls}" style="font-size:16px">${st.label}</span></div><div class="small muted">Rispetto ai tuoi ultimi 60 giorni${r.calibrazione ? ` · baseline ${r.giorni_baseline} gg` : ""}${r.affidabilita ? ` · affidabilità <b class="${r.affidabilita === "alta" ? "good" : r.affidabilita === "media" ? "mid" : "bad"}">${r.affidabilita}</b>` : ""}</div>${r.affidabilita === "bassa" ? `<div class="small" style="line-height:1.4;color:var(--text)">Stanotte il Watch ha fatto meno misure di HRV del solito${r.componenti.hrv.misure_tipiche ? ` (di solito ${r.componenti.hrv.misure_tipiche})` : ""}: oggi conta di più la media degli ultimi 7 giorni e il punteggio è una stima. Per una misura sicura, fai 1 minuto di Respira appena sveglio.</div>` : r.componenti.hrv.fonte === "mattino" ? `<div class="small good" style="line-height:1.4">HRV dalla misura del mattino (Respira) ✓</div>` : ""}<button class="small" id="howScore" style="background:none;border:0;padding:0;color:var(--orange-ink);text-align:left;cursor:pointer;font-weight:700">Come si calcola?</button></div></div>
-    ${(() => {
-      // how many days of consistent wear (also at night) until everything is as precise as it gets
-      const C = r.componenti, need = [Math.max(0, 14 - (r.giorni_baseline || 0)), r.domani_se_dormi?.mancano || 0];
-      for (const k of ["hrv", "fc_riposo", "bilancio_sonno", "stabilita_hrv", "respirazione"]) need.push(C[k]?.mancano || 0);
-      if (C.fc_riposo && C.fc_riposo.fonte !== "notte") need.push(Math.max(0, 5 - (C.fc_riposo.notti_fc_sonno || 0)));
-      const left = Math.max(...need), total = 14, done = Math.max(0, Math.min(total, total - left));
-      return left > 0 ? `<div class="card soft col" style="gap:8px"><div style="font-weight:800">⏳ Precisione massima tra ${left} ${left === 1 ? "giorno" : "giorni"}</div>
-        <div class="track" style="height:8px"><div class="bar" style="left:0;width:${Math.round((done / total) * 100)}%;height:8px;background:var(--orange)"></div></div>
-        <div class="small" style="line-height:1.5;color:var(--text)">Non devi fare niente: servono solo ${left} ${left === 1 ? "giorno" : "giorni"} di fila con il Watch, anche di notte. Più giorni consistenti raccoglie, più lo score e la stima di domani diventano precisi.</div></div>` : "";
-    })()}
-    ${r.score != null ? `<div class="card col" style="gap:6px">
-      <div class="row" style="gap:14px;flex-wrap:wrap"><span class="small">Incertezza <b>±${r.incertezza ?? "–"}</b></span>${r.trend_3g != null ? `<span class="small">Tendenza 3 giorni <b>${r.trend_3g}</b></span>` : ""}${r.etichette?.length ? `<span class="small">Etichette: <b>${r.etichette.map((t) => esc(TAG_LABEL[t] || t)).join(", ")}</b></span>` : ""}</div>
-      ${r.spiegazione?.length ? `<div class="small" style="line-height:1.5">${r.spiegazione.map((x) => `${x.punti < 0 ? "▼" : "▲"} <b>${esc(REC_NAMES[x.componente] || x.componente)}</b> ${x.punti > 0 ? "+" : ""}${x.punti}`).join(" · ")}${r.etichette?.some((t) => /alcol|malanno|viaggio/.test(t)) ? `<br><span class="muted">Giornata segnata come fuori dal solito: non entra nelle tue medie.</span>` : ""}</div>` : ""}
-      ${r.domani_se_dormi ? `<div class="small" style="line-height:1.45"><b style="color:var(--orange-ink)">Se stanotte dormi quello che ti serve, domani tra ${Math.max(0, r.domani_se_dormi.valore - r.domani_se_dormi.margine)} e ${Math.min(100, r.domani_se_dormi.valore + r.domani_se_dormi.margine)}</b><br><span class="muted">${r.domani_se_dormi.personale ? `Imparato da ${r.domani_se_dormi.notti} tue notti piene: come rispondi tu a una buona dormita.` : `Stima generica: diventa tua dopo ${r.domani_se_dormi.mancano} ${r.domani_se_dormi.mancano === 1 ? "notte piena" : "notti piene"} (ne ho ${r.domani_se_dormi.notti}).`}</span></div>` : ""}</div>` : ""}
+    <div class="card row" style="gap:14px">${bean(r.score, 46)}<div class="col" style="gap:2px"><div style="font-size:30px;font-weight:900;line-height:1">${r.score ?? "–"} <span class="${st.cls}" style="font-size:16px">${st.label}</span></div><div class="small muted">Rispetto ai tuoi ultimi 60 giorni</div>${r.affidabilita ? `<button class="small" id="precBtn" style="background:none;border:0;padding:0;text-align:left;cursor:pointer;font-weight:700">precisione <b class="${r.affidabilita === "alta" ? "good" : r.affidabilita === "media" ? "mid" : "bad"}" style="text-decoration:underline">${r.affidabilita}</b></button>` : ""}<button class="small" id="howScore" style="background:none;border:0;padding:0;color:var(--orange-ink);text-align:left;cursor:pointer;font-weight:700">Come si calcola?</button></div></div>
+    ${r.domani_se_dormi?.personale ? `<div class="card small" style="line-height:1.45"><b>Se stanotte dormi quello che ti serve, domani circa ${r.domani_se_dormi.valore}</b><br><span class="muted">Imparato da ${r.domani_se_dormi.notti} tue notti piene.</span></div>` : ""}
     <div class="card" style="padding:16px 16px 10px"><div class="row between" style="padding:0 2px 6px"><div class="label">Cosa ha pesato oggi</div><div class="small muted">tocca per capire</div></div>
       ${comps.map(compRow).join("")}
       <div class="row between small muted" style="padding:8px 2px 4px"><div>← peggiora</div><div>migliora →</div></div></div>
@@ -548,8 +535,7 @@ views.recupero = async (el) => {
     ${mesi.length > 1 ? `<button class="card col" data-info="hrv" style="border:0;text-align:left;cursor:pointer;gap:8px"><div class="row between" style="width:100%"><div class="label">HRV · media mensile</div><div class="small muted">${mesi.length} mesi</div></div>${lineChart(mesi.map((m) => m.media), mesi.map((m) => m.mese.slice(5)))}</button>` : ""}`;
   el.insertAdjacentHTML("beforeend", `<div class="card col" style="gap:8px"><div class="label">Lo score funziona per te?</div>
       <div class="small" style="line-height:1.5;color:var(--text)">Kairo confronta le tue sedute in palestra nei giorni verdi e negli altri: se nei giorni verdi rendi di più, lo score sta leggendo bene il tuo corpo.</div>
-      <button class="btn ghost" id="verify">Verifica</button><div id="verifyOut" class="small" style="line-height:1.5"></div></div>
-    <div class="card soft small" style="line-height:1.5">💡 <b>Misura più precisa:</b> appena sveglio, ancora a letto, fai 1 minuto di <b>Respira</b> (app Mindfulness sul Watch). Kairo la usa come misura del mattino: è sempre nelle stesse condizioni e rende l'HRV molto più affidabile.</div>`);
+      <button class="btn ghost" id="verify">Verifica</button><div id="verifyOut" class="small" style="line-height:1.5"></div></div>`);
   $("#verify").onclick = async () => {
     const out = $("#verifyOut"); out.textContent = "Calcolo…";
     try { const v = await api("/api/recupero/verifica"); out.innerHTML = `${esc(v.messaggio)}${v.pronto && v.correlazione != null ? `<br><span class="muted">${v.sedute} sedute · correlazione ${fmtNum(v.correlazione, 2)}${v.differenza_pct != null ? ` · giorni verdi ${v.giorni_verdi}, altri ${v.altri_giorni}` : ""}</span>` : ""}`; }
@@ -557,7 +543,30 @@ views.recupero = async (el) => {
   };
   el.querySelectorAll("[data-info]").forEach((b) => b.addEventListener("click", () => infoSheet(b.dataset.info, d)));
   $("#howScore").onclick = () => infoSheet("metodo", d);
+  const pb = $("#precBtn"); if (pb) pb.onclick = () => precisionSheet(r);
 };
+
+// Why today's precision is high/medium/low and how many days until it is as precise as it gets
+function precisionSheet(r) {
+  const C = r.componenti, why = [];
+  const h = C.hrv;
+  if (h.fonte === "mattino") why.push("L'HRV viene dalla misura del mattino (Respira): è la più affidabile.");
+  else if (h.fonte !== "notte") why.push("Stanotte il Watch non ha misurato l'HRV mentre dormivi: uso le misure del giorno, meno affidabili.");
+  else if (h.misure_tipiche && h.misure < h.misure_tipiche) why.push(`Stanotte il Watch ha fatto ${h.misure} ${h.misure === 1 ? "misura" : "misure"} di HRV, di solito ne fa ${h.misure_tipiche}: conta di più la media degli ultimi 7 giorni.`);
+  else why.push(`Stanotte ${h.misure} ${h.misure === 1 ? "misura" : "misure"} di HRV, come al solito per te.`);
+  if (C.fc_riposo.punteggio == null) why.push(C.fc_riposo.fonte === "apple" || C.fc_riposo.notti_fc_sonno < 5 ? "La FC a riposo di oggi non c'è ancora: quella di Apple arriva durante la giornata." : "Manca la FC a riposo di oggi.");
+  if (r.calibrazione) why.push(`Le tue medie personali sono ancora in costruzione (${r.giorni_baseline} giorni su 14).`);
+  const need = [Math.max(0, 14 - (r.giorni_baseline || 0)), r.domani_se_dormi?.mancano || 0];
+  for (const k of ["hrv", "fc_riposo", "bilancio_sonno", "stabilita_hrv", "respirazione"]) need.push(C[k]?.mancano || 0);
+  if (C.fc_riposo.fonte !== "notte") need.push(Math.max(0, 5 - (C.fc_riposo.notti_fc_sonno || 0)));
+  const left = Math.max(...need), done = Math.max(0, 14 - Math.min(14, left));
+  openSheet(`${sheetHead(`Precisione ${esc(r.affidabilita)}`)}
+    <div class="small" style="line-height:1.6;color:var(--text)">${why.map((x) => `• ${esc(x)}`).join("<br>")}</div>
+    ${left > 0 ? `<div class="col" style="gap:8px"><div style="font-weight:800">Precisione massima tra ${left} ${left === 1 ? "giorno" : "giorni"}</div>
+      <div class="track" style="height:8px"><div class="bar" style="left:0;width:${Math.round((done / 14) * 100)}%;height:8px;background:var(--orange)"></div></div>
+      <div class="small muted" style="line-height:1.5">Non devi fare niente: servono solo giorni di fila con il Watch, anche di notte.</div></div>` : `<div class="small good" style="font-weight:700">Hai abbastanza dati: la precisione dipende solo dalle misure di ogni notte.</div>`}
+    ${h.fonte !== "mattino" ? `<div class="card soft small" style="line-height:1.5">💡 Per una misura sicura ogni giorno: appena sveglio, ancora a letto, 1 minuto di <b>Respira</b> sul Watch.</div>` : ""}`, "Precisione");
+}
 
 function lineChart(vals, labels) {
   const W = 320, H = 120, n = vals.length;
