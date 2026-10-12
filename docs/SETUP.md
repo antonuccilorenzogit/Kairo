@@ -32,7 +32,7 @@ Apri l'indirizzo **sull'iPhone, in Safari**. L'app ti accompagna da sola:
    1. **Prima di iniziare:** iPhone → *Impostazioni → App → Comandi → Avanzate* → attiva **Consenti condivisione di grandi quantità di dati**.
    2. **Installa il comando:** tocca **① Copia il link di collegamento**, poi **② Scarica HealthSync** → *Scarica* → apri il file dai download → **Configura comando** → incolla il link → **Aggiungi comando**.
    3. **Prova:** in Comandi tocca *HealthSync* e rispondi **Consenti** alle richieste. Poi nella guida tocca **Controlla se i dati sono arrivati**.
-   4. **Automatico:** in *Comandi → Automazione → +* crea **Sveglia → Viene fermata** e **Caricatore → È collegato**, entrambe con **Esegui immediatamente** → *HealthSync*.
+   4. **Automatico:** in *Comandi → Automazione → +* crea **Sveglia → Viene fermata** e **Caricatore → È collegato**, entrambe con **Esegui immediatamente** → *HealthSync*. Consigliata anche una terza: **Ora del giorno**, circa 30 minuti dopo la sveglia, perché il Watch finisce di elaborare le fasi del sonno qualche minuto dopo il risveglio.
    5. **Storico (consigliato):** *Salute → foto → Esporta tutti i dati sanitari → Salva su File*, poi in Kairo **Importa da Salute**.
    6. **Schermata Home:** in Safari *Condividi → Aggiungi alla schermata Home*. Apri l'icona e reinserisci il codice.
    7. **Fatto.**

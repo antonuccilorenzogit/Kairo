@@ -80,6 +80,9 @@ async function morningPush(env, origin) {
   if (hour < 4 || hour > 13) return;
   const d = await computeDay(env.DB, day);
   if (d.recupero.score == null) return;
+  // wait for the complete night: right after the alarm the Watch has not processed the sleep stages yet
+  // (no night at all, or no deep/REM minutes). After 10:00 send anyway (some people have no stages).
+  if (hour < 10 && !nightComplete(d)) return;
   // claim today's slot atomically, so two syncs at the same time do not send two notifications
   const r = await env.DB.prepare("INSERT INTO settings(key,value) VALUES('push_mattina',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE settings.value != excluded.value").bind(day).run();
   if (!r.meta?.changes) return;
@@ -88,6 +91,9 @@ async function morningPush(env, origin) {
   const body = d.allarme ? `${d.allarme.titolo}: oggi vai leggero.` : d.carico?.consiglio ? `Oggi: ${d.carico.consiglio.titolo.toLowerCase()} — ${d.carico.consiglio.testo}.` : "Apri Kairo per il consiglio di oggi.";
   await sendPush(env, { title: `${label} · ${d.recupero.score}`, body, url: "/#/oggi" }, origin);
 }
+
+// The night is complete when it has the Watch's sleep stages (or was declared by hand in the check-in).
+const nightComplete = (d) => !!d.sonno && (d.sonno.manuale || (d.sonno.fasi_min && (d.sonno.fasi_min.profondo || 0) + (d.sonno.fasi_min.rem || 0) > 0));
 
 // Evening notification: about 30 minutes before the suggested bedtime.
 async function eveningPush(env, origin) {
@@ -119,7 +125,23 @@ async function ingest(payload, env, origin) {
   for (const [m, d, v] of rows.daily) stmts.push(db.prepare("INSERT INTO daily(metric,day,value) VALUES(?,?,?) ON CONFLICT(metric,day) DO UPDATE SET value=excluded.value WHERE excluded.value > daily.value").bind(m, d, v));
   for (const [m, h, v] of rows.hourly) stmts.push(db.prepare("INSERT INTO hourly(metric,hour,value) VALUES(?,?,?) ON CONFLICT(metric,hour) DO UPDATE SET value=excluded.value WHERE excluded.value > hourly.value").bind(m, h, v));
   for (const [s, e, st] of rows.sleep) stmts.push(db.prepare("INSERT OR IGNORE INTO sleep(start,end,stage) VALUES(?,?,?)").bind(s, e, st));
-  for (let i = 0; i < stmts.length; i += 400) await db.batch(stmts.slice(i, i + 400));
+  // statements that touch last night (sleep stages, HRV, resting HR, breathing): the Watch finishes
+  // processing the night a few minutes after waking up, so these can arrive in a later sync
+  const NIGHT = new Set(["hrv", "fcr", "resp", "spo2"]);
+  const nightIdx = new Set();
+  rows.samples.forEach((x, i) => { if (NIGHT.has(x[0])) nightIdx.add(i); });
+  const sleepFrom = rows.samples.length + rows.daily.length + rows.hourly.length;
+  rows.sleep.forEach((_, i) => nightIdx.add(sleepFrom + i));
+  let nightNew = 0;
+  for (let i = 0; i < stmts.length; i += 400) {
+    const res = await db.batch(stmts.slice(i, i + 400));
+    res.forEach((x, j) => { if (nightIdx.has(i + j) && x?.meta?.changes) nightNew++; });
+  }
+  // the night changed → today's coach texts were written on an incomplete night: write them again
+  if (nightNew) {
+    const day = todayLocal((await getProfile(db)).tz);
+    await db.prepare("DELETE FROM advice WHERE day IN (?, ?)").bind(day, "A:" + day).run();
+  }
   // new heart-rate samples → recompute the training load of those days
   const fcDays = rows.samples.filter((r) => r[0] === "fc").map((r) => r[1].slice(0, 10));
   if (fcDays.length) await recomputeTrimp(db, fcDays, hrMax(await getProfile(db)));

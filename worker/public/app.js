@@ -163,6 +163,12 @@ views.oggi = async (el) => {
   const [stLabel, stCls] = STATO[c.stato] || STATO.calibrazione;
   const sleepNow = d.sonno ? `${fmtMin(d.sonno.durata_min)}${d.sonno.manuale ? " (dichiarate)" : ` · ${d.sonno.punteggio} punti`}` : null;
   const monday = new Date().getDay() === 1;
+  // right after waking up the Watch has not processed the sleep stages yet: offer a new sync (runs HealthSync)
+  const nightPending = hour < 12 && (!d.sonno || (!d.sonno.manuale && d.sonno.fasi_min && (d.sonno.fasi_min.profondo || 0) + (d.sonno.fasi_min.rem || 0) === 0));
+  if (nightPending) {
+    const back = () => { if (document.visibilityState === "visible") { document.removeEventListener("visibilitychange", back); if (location.hash.replace(/^#\/?/, "").startsWith("oggi") || !location.hash) router(); } };
+    document.addEventListener("visibilitychange", back);
+  }
   const clamp = (n) => `display:-webkit-box;-webkit-line-clamp:${n};-webkit-box-orient:vertical;overflow:hidden`;
   el.innerHTML = `${header(`Ciao${p.nome ? ",<br>" + esc(p.nome) : ""}`, { sub: fmtDate(d.giorno) })}
     <div class="col today">
@@ -175,9 +181,10 @@ views.oggi = async (el) => {
            <div class="muted small">Recupero${delta != null ? ` · ${delta >= 0 ? "▲" : "▼"} ${Math.abs(delta)} da ieri` : ""}${r.calibrazione ? " · stima provvisoria" : ""}</div>`}</div>${ico.chevron}</a>
     <button class="card col" id="workout" style="gap:6px;border:0;text-align:left;cursor:pointer;width:100%;font:inherit;color:inherit"><div class="label">${p.infortunio?.attivo ? "Infortunio · cosa fare oggi" : "Allenamento di oggi"}</div>
       <div class="skeleton" style="height:22px;width:60%"></div><div class="skeleton" style="height:16px;width:85%"></div></button>
-    <a class="card row between" href="#/sonno" style="gap:12px">
-      <div class="col" style="gap:2px;min-width:0"><div style="font-weight:800">${sleepNow ? `Sonno · ${sleepNow}` : "Sonno non registrato"}</div>
-        ${sn && sn.a_letto && hour >= 15 ? `<div class="small" style="color:var(--orange-ink);font-weight:700">${bedPassed(sn.a_letto) ? `È ora di andare a letto: stanotte ti servono ${fmtMin(sn.fabbisogno_min)}` : `Stasera a letto entro le ${sn.a_letto} (${fmtMin(sn.fabbisogno_min)})`}</div>` : !d.sonno ? `<div class="small muted">Senza Watch? Segna le ore nel check-in</div>` : ""}</div>${ico.chevron}</a>
+    <a class="card row between" href="${nightPending ? "shortcuts://run-shortcut?name=HealthSync" : "#/sonno"}" style="gap:12px">
+      <div class="col" style="gap:2px;min-width:0"><div style="font-weight:800">${nightPending ? "Il Watch sta elaborando la notte" : sleepNow ? `Sonno · ${sleepNow}` : "Sonno non registrato"}</div>
+        ${nightPending ? `<div class="small" style="color:var(--orange-ink);font-weight:700">Tocca per aggiornare i dati${sleepNow ? ` (ora: ${sleepNow})` : ""}</div>`
+          : sn && sn.a_letto && hour >= 15 ? `<div class="small" style="color:var(--orange-ink);font-weight:700">${bedPassed(sn.a_letto) ? `È ora di andare a letto: stanotte ti servono ${fmtMin(sn.fabbisogno_min)}` : `Stasera a letto entro le ${sn.a_letto} (${fmtMin(sn.fabbisogno_min)})`}</div>` : !d.sonno ? `<div class="small muted">Senza Watch? Segna le ore nel check-in</div>` : ""}</div>${ico.chevron}</a>
     <button class="card soft row" id="coachCard" style="gap:12px;border:0;text-align:left;cursor:pointer;width:100%;font:inherit;color:inherit">
       <div class="col" style="gap:4px;flex:1;min-width:0"><div class="label">Il coach</div><div id="advice" class="small" style="color:var(--text);line-height:1.45;${clamp(3)}"><div class="skeleton" style="width:90%"></div></div></div>${ico.chevron}</button>
     ${d.checkin
@@ -1558,6 +1565,11 @@ const GUIDE = [
     <div class="card soft col" style="gap:8px"><div style="font-weight:900">B · Quando metti in carica</div>
       <ol class="steps"><li>Tocca <b>+</b> → <b>Caricatore</b>.</li>
         <li>Scegli <b>È collegato</b> e <b>Esegui immediatamente</b>.</li>
+        <li><b>Avanti</b> → <b>HealthSync</b> → <b>Fine</b>.</li></ol></div>
+    <div class="card soft col" style="gap:8px"><div style="font-weight:900">C · Mezz'ora dopo la sveglia <span class="small muted" style="font-weight:600">(consigliata)</span></div>
+      <div class="small" style="line-height:1.5">Il Watch finisce di elaborare le fasi del sonno qualche minuto dopo il risveglio: questo invio porta la notte completa.</div>
+      <ol class="steps"><li>Tocca <b>+</b> → <b>Ora del giorno</b>.</li>
+        <li>Scegli un orario circa 30 minuti dopo la tua sveglia, <b>Ogni giorno</b>, e <b>Esegui immediatamente</b>.</li>
         <li><b>Avanti</b> → <b>HealthSync</b> → <b>Fine</b>.</li></ol></div>
     <div class="small muted" style="line-height:1.5">Non usi la sveglia? In A scegli <b>Ora del giorno</b> (es. 9:00, ogni giorno). Le automazioni non si possono scaricare come file: Apple permette di condividere solo i comandi.</div>` },
   { t: "Carica il tuo storico", body: () => `

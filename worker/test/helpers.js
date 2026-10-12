@@ -9,7 +9,8 @@ class Stmt {
   async first(col) { const r = this.db.prepare(this.sql).get(...this.args); const row = r ? { ...r } : null; return col && row ? row[col] : row; }
   async all() { return { results: this.db.prepare(this.sql).all(...this.args).map((r) => ({ ...r })), success: true, meta: {} }; }
   async run() { const r = this.db.prepare(this.sql).run(...this.args); return { success: true, results: [], meta: { changes: Number(r.changes) } }; }
-  exec() { return this.reader ? { results: this.db.prepare(this.sql).all(...this.args).map((r) => ({ ...r })) } : (this.db.prepare(this.sql).run(...this.args), { results: [] }); }
+  // like D1's batch: every result carries meta.changes
+  exec() { if (this.reader) return { results: this.db.prepare(this.sql).all(...this.args).map((r) => ({ ...r })), meta: {} }; const r = this.db.prepare(this.sql).run(...this.args); return { results: [], meta: { changes: Number(r.changes) } }; }
 }
 export class D1 {
   constructor() { this.db = new DatabaseSync(":memory:"); }
