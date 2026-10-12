@@ -21,9 +21,10 @@ const coachProfile = async (db, profile) => {
 // Today's coach texts depend on the injury: drop them when it changes.
 const dropTodayAdvice = (db, day) => db.prepare("DELETE FROM advice WHERE day IN (?, ?)").bind(day, "A:" + day).run();
 import { recomputeTrimp, recomputeNightHr } from "./load.js";
+import { getPlan, savePlan, restartPlan, planToday, planOverview, saveOutcome } from "./plan.js";
 import { getVapid, sendPush, validEndpoint } from "./push.js";
 
-const VERSION = "1.17.0";
+const VERSION = "1.18.0";
 
 // No CORS headers: only the Kairo app (same origin) and the Shortcuts app (not a browser) talk to the API.
 const json = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), {
@@ -297,6 +298,8 @@ async function api(req, env, url) {
     const saved = await saveProfile(env.DB, { ...before, infortunio: inj });
     if (saved.errore) return json(saved, 400);
     if (saved.infortunio.attivo && !before.infortunio?.attivo) await clearPain(env.DB);
+    // healed: the training plan starts again from block 1 (levels already drop by themselves after the long break)
+    if (!saved.infortunio.attivo && before.infortunio?.attivo && (await getPlan(env.DB)).attivo) await restartPlan(env.DB, todayLocal(tz));
     await dropTodayAdvice(env.DB, todayLocal(tz));
     return json(saved);
   }
@@ -348,7 +351,7 @@ async function api(req, env, url) {
     const sync = last?.r ? (Date.now() - Date.parse(last.r)) / 36e5 < 36 : false;
     return json({ ...d.settaggio, controlli: {
       profilo: !!(profile.eta || profile.fc_max), sport: (profile.sport || []).length > 0,
-      schede: !(profile.sport || []).includes("palestra") || schede.length > 0, sveglia: !!profile.sveglia, sync, ultimo_invio: last?.r || null } });
+      schede: !(profile.sport || []).includes("palestra") || schede.length > 0, sveglia: !!profile.sveglia, sync, ultimo_invio: last?.r || null, piano: (await getPlan(env.DB)).attivo } });
   }
   if (p === "/api/day") return json(await computeDay(env.DB, validDay(url.searchParams.get("d")) || todayLocal(tz)));
   if (p === "/api/history") {
@@ -387,9 +390,32 @@ async function api(req, env, url) {
       return json(await injuryPlan(env, req, { day, today: hist[hist.length - 1], profile, profileText: await coachProfile(env.DB, profile), force: !!b.forza }));
     }
     if (waitNight()) return json({ notte_in_attesa: true });
+    // with an active plan, today's sessions come from the plan (rules, no AI)
+    const pt = await planToday(env, { day: todayLocal(tz), tz, profile, today: hist[hist.length - 1] });
+    if (pt) return json(pt);
+    // set-up period without a plan: no daily recommendation (it would rest on a score that is not reliable yet)
+    const su = hist[hist.length - 1].settaggio;
+    if (su && !su.pronto) return json({ settaggio: true });
     const esito = await env.DB.prepare("SELECT stato, sport FROM esiti WHERE day = ?").bind(todayLocal(tz)).first();
     return json({ ...(await recommendWorkout(env, req, { hist, profile, profileText: await coachProfile(env.DB, profile), schede: await getSchede(env.DB),
       force: !!b.forza || !!b.altro, exclude: b.altro && ["palestra", "nuoto", "bici", "corsa"].includes(b.escludi) ? b.escludi : null })), esito: esito || null });
+  }
+  // training plan: settings, overview of the week, outcome of a planned session (with test results)
+  if (p === "/api/piano") {
+    if (req.method === "POST") {
+      const r = await savePlan(env.DB, (await readJson(req)) || {}, todayLocal(tz));
+      if (r.errore) return json(r, 400);
+      await env.DB.prepare("DELETE FROM advice WHERE day IN (?, ?)").bind("A:" + todayLocal(tz), "CTX:" + todayLocal(tz)).run();
+    }
+    return json(await planOverview(env, { day: todayLocal(tz), tz, profile: await getProfile(env.DB) }));
+  }
+  if (p === "/api/piano/ricomincia" && req.method === "POST") {
+    await restartPlan(env.DB, todayLocal(tz));
+    return json(await planOverview(env, { day: todayLocal(tz), tz, profile: await getProfile(env.DB) }));
+  }
+  if (p === "/api/piano/esito" && req.method === "POST") {
+    const r = await saveOutcome(env.DB, todayLocal(tz), (await readJson(req)) || {});
+    return json(r, r.errore ? 400 : 200);
   }
   // the person links an exercise Kairo does not know to a muscle
   if (p === "/api/muscoli" && req.method === "POST") {

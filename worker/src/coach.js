@@ -4,6 +4,8 @@
 import { computeHistory } from "./metrics.js";
 import { strengthSummary, muscleFatigue } from "./strength.js";
 import { MEMORY_RULES, applyTags } from "./memory.js";
+import { planOverview, planText } from "./plan.js";
+import { getProfile } from "./profile.js";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 export const DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b";
@@ -75,11 +77,20 @@ async function buildSummary(db, today, hist) {
     if (mf.length) forza += ` Fatica per muscolo: ${st.length ? st.map((f) => `${f.muscolo} ${f.stato}`).join(", ") : "tutti freschi"}. Serie negli ultimi 7 giorni (consigliato 10-20 per muscolo): ${mf.map((f) => `${f.muscolo} ${f.serie_7g}`).join(", ")}${lo.length ? `; volume basso per ${lo.map((f) => f.muscolo).join(", ")}` : ""}${hi.length ? `; volume alto per ${hi.map((f) => f.muscolo).join(", ")}` : ""}.`;
   } catch (_) {}
   const setup = oggi.settaggio;
+  // the training plan (rules, not AI): the coach explains it and motivates, never changes it
+  let piano = "";
+  try {
+    const prof = await getProfile(db);
+    const o = await planOverview({ DB: db }, { day: today, tz: prof.tz || "Europe/Rome", profile: prof });
+    if (o.config.attivo && o.settimana) piano = planText(o, { sedute: o.settimana.sedute.filter((s) => s.giorno === today) });
+    else if (o.config.attivo) piano = planText(o, null);
+  } catch (_) {}
   const lines = [
+    piano,
     setup && !setup.pronto ? `KAIRO È IN SETTAGGIO (giorno ${setup.giorno}; notti con HRV ${setup.notti_hrv}/${setup.obiettivo.notti_hrv}, notti con il Watch ${setup.notti_sonno}/${setup.obiettivo.notti_sonno}, giorni con FC a riposo ${setup.giorni_fc}/${setup.obiettivo.giorni_fc}${setup.profilo ? "" : ", manca l'età nel profilo"}). Recupero, carico e allenamento consigliato NON sono ancora affidabili e la persona non li vede: NON citarli mai e non dedurre niente da HRV o FC. Parla di sonno (orari regolari, durata), di palestra e di come completare il settaggio: Watch al polso anche di notte, 1 minuto di Respira appena sveglio, check-in ogni mattina.` : "",
     forza,
     `Carico di allenamento (TRIMP): media ultimi 7 giorni ${r1(c.acuto)}, media 28 giorni ${r1(c.cronico)}, rapporto ${c.rapporto ?? "n/d"} → ${STATO[c.stato] || "n/d"}. Carico di oggi finora ${c.oggi ?? 0}.`,
-    setup && !setup.pronto ? "" : c.consiglio ? `ALLENAMENTO CONSIGLIATO OGGI (calcolato da recupero e carico): ${c.consiglio.titolo} — ${c.consiglio.testo} (carico tra ${c.consiglio.min} e ${c.consiglio.max}).` : "Allenamento consigliato: non ancora disponibile (servono 2 settimane di carico).",
+    piano || (setup && !setup.pronto) ? "" : c.consiglio ? `ALLENAMENTO CONSIGLIATO OGGI (calcolato da recupero e carico): ${c.consiglio.titolo} — ${c.consiglio.testo} (carico tra ${c.consiglio.min} e ${c.consiglio.max}).` : "Allenamento consigliato: non ancora disponibile (servono 2 settimane di carico).",
     oggi.allarme ? `ATTENZIONE: ${oggi.allarme.titolo}. ${oggi.allarme.testo}` : "Nessun allarme di sovraccarico o malanno.",
     oggi.sonno_stanotte ? `Fabbisogno di sonno stanotte ${fmtMin(oggi.sonno_stanotte.fabbisogno_min)}${oggi.sonno_stanotte.a_letto ? `, a letto entro le ${oggi.sonno_stanotte.a_letto}` : ""} (debito ultimi 7 giorni ${fmtMin(oggi.sonno_stanotte.debito_7g_min)}).` : "",
     setup && !setup.pronto ? "" : `Recupero medio: ultimi 7 giorni ${r1(avg(last7.map((d) => d.recupero.score)))}, 7 giorni prima ${r1(avg(prev7.map((d) => d.recupero.score)))}.`,
@@ -99,7 +110,7 @@ const SYSTEM = (profile) => `Sei il coach di Kairo: un allenatore personale espe
 
 COME RAGIONI
 - Prima capisci, poi parli: guarda i trend (media 7 giorni contro la media personale), non il singolo giorno. Un giorno storto non è un problema, una settimana sì.
-- Quando si parla di allenamento parti dall'ALLENAMENTO CONSIGLIATO calcolato da Kairo e adattalo ai suoi sport; se c'è un'ATTENZIONE mettila al primo posto.
+- Quando si parla di allenamento: se c'è un PIANO DI ALLENAMENTO segui quello (sedute, ritmi e progressione sono calcolati da Kairo: non inventarne altri, spiega il perché e motiva); altrimenti parti dall'ALLENAMENTO CONSIGLIATO e adattalo ai suoi sport. Se c'è un'ATTENZIONE mettila al primo posto.
 - Collega i dati agli obiettivi della persona. Se non li conosci, proponi tu un obiettivo sensato e chiedi se è quello giusto.
 - Usa SOLO i numeri forniti, non inventarne. Se un dato manca (es. sonno non registrato perché non dorme con il Watch), dillo in una frase e spiega perché servirebbe.
 - Non sei un medico: niente diagnosi; se qualcosa è preoccupante suggerisci di parlarne con un medico.

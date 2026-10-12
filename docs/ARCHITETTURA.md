@@ -50,6 +50,15 @@
 - `POST /api/allenamento/esito` (`{"stato":"fatto|altro|saltato","sport":"…"}`) salva nella tabella `esiti`; gli esiti entrano nella rotazione degli sport.
 - `POST /api/muscoli` (`{"esercizio":"…","muscolo":"petto|…|nessuno"}`) collega un esercizio non riconosciuto; `GET /api/forza` restituisce `non_riconosciuti`.
 
+## Piano di allenamento (dalla 1.18)
+- `src/plan.js`, solo regole (niente IA): impostazioni in `settings.piano`, settimane salvate in `piano_settimane` (una volta calcolate cambiano solo per le regole di spostamento), esiti in `esiti_piano`, test in `test_sport`.
+- Blocchi di 4 settimane dalla data di inizio: 3 di carico + 1 di scarico (volume ×0,6–0,7) con i test. Senza riferimento per uno sport il primo test sostituisce la prima seduta dura.
+- Tipi per sport di resistenza: con 1 seduta lungo/qualità alternati, poi qualità, lungo, facili, seconda qualità (circa 80/20). Calendario: lunghi nel weekend, sedute dure il più lontano possibile tra loro, mai lo stesso sport due volte nello stesso giorno, seconde sedute solo se permesse.
+- Livello per sport e tipo: +1 per seduta fatta (esito o seduta riconosciuta dal Watch), +2 se «facile», fermo se «dura», −1 dopo due dure di fila, cala dopo pause oltre 14 giorni; il punto di partenza dipende dal livello scelto (0/4/8). Il livello determina ripetute, durata e distanze, sempre entro il tempo del giorno.
+- Ritmi: nuoto CSS = (t400 − t200)/2 per 100 m; corsa soglia = 30 minuti / km percorsi; bici e corsa con FC media del test come FC di soglia per le zone (Friel). Senza test: zone dalla FC massima e descrizione a sensazione.
+- Ogni giorno: sedute dure non fatte → primo giorno libero senza sedute dure; recupero < 34 o allarme (fuori dal settaggio) → la seduta dura di oggi si scambia con una facile successiva o diventa facile.
+- Sedute riconosciute (`src/sessions.js`): sedute dal battito + distanze orarie (`dist_nuoto_ora`, `dist_bici_ora`, `dist_piedi_ora`, HealthSync 1.3.0) → sport, distanza, passo; palestra dalle serie registrate; sport dichiarato nell'esito per le altre.
+
 ## Memoria del coach
 - Tabella `memoria` (testo unico, fonte `coach` o `utente`, data). Al massimo 60 ricordi: quando è piena escono prima i più vecchi scritti dal coach, mai quelli aggiunti a mano.
 - In chat il modello può chiudere la risposta con `[[RICORDA: …]]` o `[[DIMENTICA: parole chiave]]` (massimo 2-3 per risposta). Il server applica i tag e li toglie dal testo; `DIMENTICA` cancella al massimo 3 ricordi che contengono tutte le parole chiave.

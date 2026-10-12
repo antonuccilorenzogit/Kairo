@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { makeEnv, call, setup, CODE, checkinToday } from "./helpers.js";
+import { makeEnv, call, setup, CODE, checkinToday, setupDone } from "./helpers.js";
 import { detectSessions } from "../src/load.js";
 import { muscleFatigue } from "../src/strength.js";
 import { hrZones } from "../src/workout.js";
@@ -20,7 +20,7 @@ test("zone di frequenza cardiaca dalla FC massima", () => {
 });
 
 test("esito dell'allenamento salvato e restituito con la proposta", async () => {
-  const env = makeEnv(); await setup(env); await checkinToday(env);
+  const env = makeEnv(); await setup(env); await checkinToday(env); await setupDone(env);
   assert.equal((await call(env, "/api/allenamento/esito", { method: "POST", code: CODE, body: { stato: "boh" } })).status, 400);
   await call(env, "/api/allenamento/esito", { method: "POST", code: CODE, body: { stato: "altro", sport: "nuoto" } });
   const w = (await call(env, "/api/allenamento/oggi", { method: "POST", code: CODE, body: {} })).data;

@@ -1,15 +1,21 @@
 // Backups: a full copy of the data, compressed, kept in Cloudflare KV (free plan).
 // Created automatically every week (cron) and before destructive actions; restorable from the app.
 import { METRICS, parseTs, stageCode } from "./validate.js";
+import { saveSets, cleanSets } from "./strength.js";
+import { cleanSchede } from "./workout.js";
+import { cleanPlan, cleanTest } from "./plan.js";
+import { cleanProfile } from "./profile.js";
 
 export const KEEP_BACKUPS = 8;
 const PREFIX = "backup/";
-const TABLES = ["samples", "daily", "hourly", "sleep", "checkin", "imports", "memoria"];
+const TABLES = ["samples", "daily", "hourly", "sleep", "checkin", "imports", "memoria", "sets", "schede", "esiti_piano", "test_sport"];
 
 export async function exportData(db, version) {
-  const r = await db.batch(TABLES.map((t) => db.prepare(`SELECT * FROM ${t}`)));
-  const out = { app: "kairo", formato: 2, versione: version, esportato: new Date().toISOString() };
+  const r = await db.batch([...TABLES.map((t) => db.prepare(`SELECT * FROM ${t}`)), db.prepare("SELECT key, value FROM settings WHERE key IN ('profilo','piano')")]);
+  const out = { app: "kairo", formato: 3, versione: version, esportato: new Date().toISOString() };
   TABLES.forEach((t, i) => (out[t] = r[i].results));
+  // profile and training plan settings (never the access code, keys or tokens)
+  out.impostazioni = Object.fromEntries(r[TABLES.length].results.map((x) => { try { return [x.key, JSON.parse(x.value)]; } catch { return [x.key, null]; } }));
   return out;
 }
 
@@ -93,6 +99,28 @@ export async function restoreData(db, data) {
     stmts.push(db.prepare("INSERT OR IGNORE INTO memoria(testo,fonte,creato) VALUES(?,?,?)")
       .bind(t, m.fonte === "utente" ? "utente" : "coach", /^\d{4}-\d{2}-\d{2}$/.test(String(m.creato)) ? m.creato : new Date().toISOString().slice(0, 10)));
   }
+  // gym sets, routines (only if there are none yet), plan outcomes and tests, profile and plan (only if not set yet)
+  const sets = Array.isArray(data.sets) ? data.sets : [];
+  const cs = cleanSets(sets); skipped += cs.discarded;
+  const exist = await db.prepare("SELECT count(*) n FROM schede").first();
+  if (!exist.n && Array.isArray(data.schede) && data.schede.length) {
+    const c = cleanSchede(data.schede.map((s) => { try { return { id: s.id, nome: s.nome, esercizi: JSON.parse(s.esercizi) }; } catch { return null; } }).filter(Boolean));
+    if (!c.errore) c.schede.forEach((s, i) => stmts.push(db.prepare("INSERT OR IGNORE INTO schede(id,nome,ordine,esercizi,updated) VALUES(?,?,?,?,?)").bind(s.id, s.nome, i, JSON.stringify(s.esercizi), new Date().toISOString())));
+  }
+  for (const e of Array.isArray(data.esiti_piano) ? data.esiti_piano : []) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(e?.day)) || !e.seduta || !["fatto", "saltato"].includes(e.stato)) { skipped++; continue; }
+    stmts.push(db.prepare("INSERT OR IGNORE INTO esiti_piano(day,seduta,sport,tipo,stato,sensazione,risultato,created) VALUES(?,?,?,?,?,?,?,?)")
+      .bind(e.day, String(e.seduta).slice(0, 60), String(e.sport).slice(0, 20), String(e.tipo).slice(0, 20), e.stato, ["facile", "giusta", "dura"].includes(e.sensazione) ? e.sensazione : null, null, e.created || new Date().toISOString()));
+  }
+  for (const t of Array.isArray(data.test_sport) ? data.test_sport : []) {
+    let v; try { v = cleanTest(t.sport, JSON.parse(t.dati)); } catch { v = { errore: 1 }; }
+    if (v.errore || !/^\d{4}-\d{2}-\d{2}$/.test(String(t.day))) { skipped++; continue; }
+    stmts.push(db.prepare("INSERT OR IGNORE INTO test_sport(day,sport,dati,created) VALUES(?,?,?,?)").bind(t.day, t.sport, JSON.stringify(v), t.created || new Date().toISOString()));
+  }
+  const imp = data.impostazioni || {};
+  if (imp.profilo) { const pr = cleanProfile(imp.profilo); if (!pr.errore) stmts.push(db.prepare("INSERT OR IGNORE INTO settings(key,value) VALUES('profilo',?)").bind(JSON.stringify(pr))); }
+  if (imp.piano) stmts.push(db.prepare("INSERT OR IGNORE INTO settings(key,value) VALUES('piano',?)").bind(JSON.stringify(cleanPlan(imp.piano))));
   for (let i = 0; i < stmts.length; i += 400) await db.batch(stmts.slice(i, i + 400));
-  return { ok: true, righe: stmts.length, scartate: skipped };
+  const sv = cs.rows.length ? await saveSets(db, sets) : { righe: 0 };
+  return { ok: true, righe: stmts.length + sv.righe, scartate: skipped };
 }

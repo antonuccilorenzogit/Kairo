@@ -14,7 +14,7 @@ Health type names are the *internal* English identifiers used by the Shortcuts a
 """
 import json, os, plistlib, sys, urllib.request, uuid
 
-SHORTCUT_VERSION = "1.2.0"
+SHORTCUT_VERSION = "1.3.0"
 OBJ = "￼"  # placeholder character that Shortcuts replaces with a variable
 
 
@@ -178,6 +178,10 @@ DAILY = [
     # heart rate samples and hourly active calories (to recognise training sessions)
     dict(key="fc", hk_type="Heart Rate", days=2),
     dict(key="kcal_ora", hk_type="Active Calories", days=2, group="Hour"),
+    # distances hour by hour: the server matches them with the sessions (sport, distance, pace)
+    dict(key="dist_nuoto_ora", hk_type="Swimming Distance", days=2, group="Hour"),
+    dict(key="dist_bici_ora", hk_type="Cycling Distance", days=2, group="Hour"),
+    dict(key="dist_piedi_ora", hk_type="Walking + Running Distance", days=2, group="Hour"),
     # sleep stages
     dict(key="sonno", hk_type="Sleep", days=2, with_end=True),
     # nutrition (filled only if an app writes it to Apple Health)

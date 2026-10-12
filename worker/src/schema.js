@@ -1,6 +1,6 @@
 // Database schema. Applied automatically on the first request (idempotent),
 // so a fresh deployment needs no manual migration step.
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 export const SCHEMA = [
   // Point samples (HRV, resting HR, SpO2, respiration, weight, heart rate…).
@@ -61,6 +61,13 @@ export const SCHEMA = [
   // Coach memory: durable facts about the person (goals, races, injuries, preferences)
   `CREATE TABLE IF NOT EXISTS memoria (
      id INTEGER PRIMARY KEY AUTOINCREMENT, testo TEXT NOT NULL UNIQUE, fonte TEXT NOT NULL, creato TEXT NOT NULL)`,
+  // Training plan: the week's sessions (fixed once computed, moved only by the rules)
+  `CREATE TABLE IF NOT EXISTS piano_settimane (settimana TEXT PRIMARY KEY, dati TEXT NOT NULL, created TEXT NOT NULL)`,
+  // Outcome of each planned session: done/skipped, how it felt, test results
+  `CREATE TABLE IF NOT EXISTS esiti_piano (day TEXT NOT NULL, seduta TEXT NOT NULL, sport TEXT NOT NULL, tipo TEXT NOT NULL,
+     stato TEXT NOT NULL, sensazione TEXT, risultato TEXT, created TEXT NOT NULL, PRIMARY KEY (day, seduta))`,
+  // Test results that set the training paces (swim CSS, running threshold, cycling threshold heart rate)
+  `CREATE TABLE IF NOT EXISTS test_sport (day TEXT NOT NULL, sport TEXT NOT NULL, dati TEXT NOT NULL, created TEXT NOT NULL, PRIMARY KEY (day, sport))`,
   // Web-push subscriptions (one per device that enabled notifications)
   `CREATE TABLE IF NOT EXISTS push_subs (
      endpoint TEXT PRIMARY KEY, p256dh TEXT NOT NULL, auth TEXT NOT NULL, created TEXT NOT NULL)`,
@@ -88,6 +95,8 @@ const MIGRATIONS = {
   3: ["ALTER TABLE checkin ADD COLUMN sonno_min INTEGER"],
   // v4 -> v5: tags of the check-in (alcohol, illness, travel…), they explain the score and leave the baseline
   5: ["ALTER TABLE checkin ADD COLUMN tag TEXT"],
+  // v5 -> v6: training plan tables (created by SCHEMA)
+  6: [],
 };
 
 const ready = new WeakSet();

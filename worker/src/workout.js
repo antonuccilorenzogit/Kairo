@@ -154,6 +154,16 @@ function ruleBased(ctx) {
     scheda: sport === "palestra" ? ctx.prossimaScheda?.nome || null : null, perche: ctx.perche, fonte: "regole" };
 }
 
+// Next routine: rotation order (the one after the last one done), skipping routines whose muscles are still tired
+export async function nextScheda(db, schede) {
+  const last = await db.prepare("SELECT workout FROM sets WHERE workout IS NOT NULL AND workout != '' ORDER BY start DESC LIMIT 1").first();
+  const idx = last ? schede.findIndex((s) => s.nome === last.workout) : -1;
+  const fat = await muscleFatigue(db);
+  const order = schede.map((_, i) => schede[(idx + 1 + i) % schede.length]);
+  const prossimaScheda = order.length ? order.reduce((best, s) => (routineFatigue(s, fat) < routineFatigue(best, fat) - 0.5 ? s : best), order[0]) : null;
+  return { prossimaScheda, fat };
+}
+
 // Picks sport and intensity from the data; the AI then designs the session within these limits.
 function choose(today, recent, sports, exclude) {
   // during the set-up period the score is not reliable yet: medium intensity, by feel
@@ -187,13 +197,7 @@ export async function recommendWorkout(env, req, { hist, profile, profileText, s
   const sports = profile.sport && profile.sport.length ? profile.sport : ["palestra", "nuoto", "bici", "corsa"];
   const recent = await recentSports(env.DB, hist);
   const scelta = choose(today, recent, sports, exclude);
-  // next routine in rotation: the one after the last one done
-  const last = await env.DB.prepare("SELECT workout FROM sets WHERE workout IS NOT NULL AND workout != '' ORDER BY start DESC LIMIT 1").first();
-  const idx = last ? schede.findIndex((s) => s.nome === last.workout) : -1;
-  // next routine: rotation order, but skip routines whose muscles are still tired (fatigue per muscle group)
-  const fat = await muscleFatigue(env.DB);
-  const order = schede.map((_, i) => schede[(idx + 1 + i) % schede.length]);
-  const prossimaScheda = order.length ? order.reduce((best, s) => (routineFatigue(s, fat) < routineFatigue(best, fat) - 0.5 ? s : best), order[0]) : null;
+  const { prossimaScheda, fat } = await nextScheda(env.DB, schede);
   const stanchi = fat.filter((f) => f.stato !== "fresco").map((f) => `${f.muscolo} ${f.stato}`).join(", ");
   const zone = hrZones(hrMax(profile));
   const ctx = { scelta, perche: scelta.perche, prossimaScheda, zone };

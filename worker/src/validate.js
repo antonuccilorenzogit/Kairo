@@ -15,6 +15,8 @@ export const METRICS = {
   trimp: ["daily", 0, 3000], // training load already computed (history imported from Health)
   fc_notte: ["daily", 25, 150], // lowest heart rate while asleep (computed by the server)
   kcal_ora: ["hourly", 0, 5000],
+  // distances hour by hour: matched with the sessions detected from heart rate (sport, distance, pace)
+  dist_nuoto_ora: ["hourly", 0, 10000], dist_bici_ora: ["hourly", 0, 80], dist_piedi_ora: ["hourly", 0, 30],
   sonno: ["sleep"],
 };
 export const MAX_ROWS_PER_REQUEST = 60000;
@@ -72,7 +74,7 @@ export function parsePayload(payload) {
       if (!Number.isFinite(v)) { out.discarded++; continue; }
       if (spec[0] === "pct" && v > 0 && v <= 1) v *= 100; // Health sometimes reports percentages as fractions
       const [kind, lo, hi] = spec;
-      if (kind === "daily" && v === 0) { out.discarded++; continue; } // Shortcuts fills days without data with 0
+      if ((kind === "daily" || kind === "hourly") && v === 0) { out.discarded++; continue; } // Shortcuts fills days/hours without data with 0
       if (v < lo || v > hi) { out.discarded++; continue; }
       if (kind === "daily") out.daily.push([key, ts.slice(0, 10), v]);
       else if (kind === "hourly") out.hourly.push([key, ts.slice(0, 13), v]);

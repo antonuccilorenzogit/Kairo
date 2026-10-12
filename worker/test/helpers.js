@@ -63,3 +63,7 @@ export async function nightToday(env) {
   await env.DB.batch([st.bind(`${prev}T23:00:00+02:00`, `${day}T02:00:00+02:00`, "core"), st.bind(`${day}T02:00:00+02:00`, `${day}T03:30:00+02:00`, "deep"), st.bind(`${day}T03:30:00+02:00`, `${day}T05:30:00+02:00`, "rem")]);
 }
 export const count = async (env, table, where = "1=1") => (await env.DB.prepare(`SELECT count(*) n FROM ${table} WHERE ${where}`).first()).n;
+// skip the set-up period (tests of the daily recommendation with few days of data)
+export async function setupDone(env) {
+  await env.DB.prepare("INSERT OR REPLACE INTO settings(key,value) VALUES('settaggio_finito','2026-01-01')").run();
+}

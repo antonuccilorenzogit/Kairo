@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { makeEnv, call, setup, CODE, checkinToday } from "./helpers.js";
+import { makeEnv, call, setup, CODE, checkinToday, setupDone } from "./helpers.js";
 import { allowedMode, injuryArea, constraints, violation, ruleBased, MODALITA } from "../src/injury.js";
 
 const fakeAI = (replies) => {
@@ -26,7 +26,7 @@ test("zona del corpo dalla descrizione", () => {
 });
 
 test("modalità infortunio: niente sport, piano del giorno che segue il dolore", async () => {
-  const env = makeEnv(); await setup(env); await checkinToday(env);
+  const env = makeEnv(); await setup(env); await checkinToday(env); await setupDone(env);
   await call(env, "/api/profilo", { method: "POST", code: CODE, body: { sport: ["palestra", "corsa"] } });
   // on: started today → rest
   const on = await call(env, "/api/infortunio", { method: "POST", code: CODE, body: { attivo: true, descrizione: "distorsione caviglia destra" } });
@@ -55,7 +55,7 @@ test("l'IA non può andare oltre il limite di sicurezza e il coach conosce l'inf
   const tooMuch = JSON.stringify({ modalita: "riabilitazione", titolo: "Si spinge", durata_min: 40, struttura: [{ fase: "Corsa", dettaglio: "5 km" }], perche: "x", attenzione: "y" });
   const ok = JSON.stringify({ modalita: "riposo", titolo: "Riposo e mobilità", durata_min: 15, struttura: [{ fase: "Mobilità", dettaglio: "camminata 10'" }], perche: "Dolore alto", attenzione: "Se peggiora senti il medico" });
   const AI = fakeAI([tooMuch, ok, "Oggi riposa la spalla."]);
-  const env = makeEnv({ AI }); await setup(env); await checkinToday(env);
+  const env = makeEnv({ AI }); await setup(env); await checkinToday(env); await setupDone(env);
   await call(env, "/api/infortunio", { method: "POST", code: CODE, body: { attivo: true, descrizione: "spalla destra dolorante", dal: daysAgo(7) } });
   let r = (await plan(env, { dolore: 8 })).data;
   assert.equal(r.fonte, "regole"); assert.equal(r.modalita, "riposo");
@@ -98,7 +98,7 @@ test("le sedute di riserva rispettano sempre le prescrizioni", () => {
 test("l'IA che propone di camminare senza carico viene scartata", async () => {
   const bad = JSON.stringify({ modalita: "riabilitazione", titolo: "Esercizi dolci", durata_min: 25, struttura: [{ fase: "Riscaldamento", dettaglio: "Camminata leggera sul posto con stampelle per 3 minuti, braccia in movimento circolare" }], perche: "x", attenzione: "y" });
   const AI = fakeAI([bad]);
-  const env = makeEnv({ AI }); await setup(env); await checkinToday(env);
+  const env = makeEnv({ AI }); await setup(env); await checkinToday(env); await setupDone(env);
   await call(env, "/api/infortunio", { method: "POST", code: CODE, body: { attivo: true, descrizione: MENISCO, dal: daysAgo(24) } });
   const r = (await plan(env, { dolore: 0 })).data;
   assert.equal(r.fonte, "regole"); assert.match(r.scartato, /carico/);

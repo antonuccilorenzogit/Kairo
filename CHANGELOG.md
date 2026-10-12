@@ -2,6 +2,24 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.18.0] — 2026-10-12
+
+### Aggiunto
+- **Piano di allenamento** (Impostazioni → Piano di allenamento): scegli quante sedute a settimana di palestra, nuoto, corsa e bici, i giorni in cui puoi allenarti, il tempo nei feriali e nel weekend e, per ogni sport di resistenza, l'obiettivo (forma generale, resistenza su una distanza, velocità) e il livello di partenza. Tutto è calcolato con regole fisse, senza IA: stessi dati, stesso piano.
+- **Blocchi da 4 settimane**: tre che salgono e una di scarico con i test. Circa 80% di sedute facili e 20% dure; le sedute dure sono distanziate, i lunghi vanno nel weekend, mai due sedute dello stesso sport nello stesso giorno. Se le sedute non stanno nei giorni scelti, Kairo dice quali restano fuori.
+- **Sedute vere per nuoto, corsa e bici**: facile/tecnica, soglia, velocità, lungo e test, con riscaldamento, parte centrale e defaticamento, nel tempo che hai quel giorno. **Progressione**: ogni seduta fatta alza il livello di quel tipo di seduta (+2 se era facile, fermo se era dura, giù dopo due dure di fila o dopo una pausa lunga) e la prossima volta la seduta è più lunga o più intensa.
+- **Ritmi solo dai test**: nuoto 400 + 200 m (CSS), corsa e bici 30 minuti (ritmo e FC di soglia). Senza test le sedute sono a sensazione e con le zone di battito, mai con ritmi inventati. I test aggiornano ritmi e zone e mostrano i progressi.
+- **Seduta di oggi in home**: titolo, perché, struttura, cosa ha registrato il Watch (tempo, distanza, passo, FC) ed esito con «facile / giusta / dura / saltata» e i risultati del test.
+- **Adattamenti automatici**: una seduta dura saltata si sposta al primo giorno libero della settimana; con recupero rosso o un allarme la seduta dura di oggi si scambia con una facile (non durante il settaggio). Con l'infortunio il piano va in pausa e, quando sei guarito, riparte dal blocco 1.
+- **Pagina Piano**: blocco e settimana, calendario con esiti, riferimenti dai test con il confronto con il test precedente, volume registrato dal Watch nelle ultime 8 settimane.
+- **Sedute riconosciute**: HealthSync 1.3.0 manda le distanze di nuoto, bici e corsa ora per ora; Kairo le abbina alle sedute rilevate dal battito e ne ricava sport, distanza e passo. **Va scaricato di nuovo HealthSync** (Impostazioni → Collegamento iPhone); Stato di Kairo avvisa se hai quello vecchio.
+
+### Migliorato
+- **Palestra: progressione dei carichi più precisa.** Incrementi diversi per tipo di esercizio (+5 kg sui grandi multiarticolari delle gambe sopra i 60 kg, +1 kg sui piccoli di isolamento), +2 incrementi se il range è chiuso con margine (RPE ≤ 7), −1 incremento se sei sotto il range, e nella settimana di scarico −10% e una serie in meno. Le schede restano le tue.
+- Il coach conosce il piano (blocco, settimana, sedute, riferimenti, progressi dei test): lo spiega e motiva, non lo cambia.
+- Durante il settaggio, senza piano, nessun allenamento consigliato basato sullo score (e nessuna chiamata all'IA); con il piano le sedute ci sono, perché non dipendono dallo score.
+- Il backup comprende anche serie di palestra, schede, piano, esiti del piano, test e profilo.
+
 ## [1.17.0] — 2026-10-12
 
 ### Aggiunto

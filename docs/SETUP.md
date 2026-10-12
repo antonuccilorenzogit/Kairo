@@ -85,6 +85,7 @@ Kairo salva da solo una copia dei tuoi dati **ogni lunedì** e **prima di ogni c
 | Cosa vedi | Cosa fare |
 |---|---|
 | Il pulsante *Scarica HealthSync* scarica una pagina e non il comando | Chiudi e riapri Safari, poi riprova. In *Stato di Kairo* la versione deve essere almeno 1.1.1 |
+| Kairo non riconosce nuoto, corsa e bici delle tue sedute | Serve HealthSync 1.3.0 o successivo: *Impostazioni → Collegamento iPhone* → scarica di nuovo il comando e sostituisci quello vecchio |
 | Il comando dà **errore 401** | Il link non è giusto. In Kairo: *Guida → passo 2 → Copia link*. Poi in Comandi tieni premuto *HealthSync* → *Modifica* → sostituisci il testo nel primo blocco |
 | *"Condividere N elementi di Salute non è consentito"* | Attiva *Consenti condivisione di grandi quantità di dati* (Guida, passo 1) |
 | *"Nessun campione di dati trovato"* | App Salute → foto → *App* → *Comandi* → attiva tutto |

@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.17.0";
+const APP_VERSION = "1.18.0";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -202,14 +202,15 @@ views.oggi = async (el) => {
     el.innerHTML = `${header(`Ciao${p.nome ? ",<br>" + esc(p.nome) : ""}`, { sub: fmtDate(d.giorno), sync: true })}
       <div class="col today">
       ${setupCard(su)}
-      ${p.infortunio?.attivo ? `<button class="card col" id="workout" style="gap:6px;border:0;text-align:left;cursor:pointer;width:100%;font:inherit;color:inherit"><div class="label">Infortunio · cosa fare oggi</div><div class="skeleton" style="height:22px;width:60%"></div><div class="skeleton" style="height:16px;width:85%"></div></button>` : ""}
+      <button class="card col" id="workout" style="gap:6px;border:0;text-align:left;cursor:pointer;width:100%;font:inherit;color:inherit;display:none"><div class="label">Cosa fare oggi</div><div class="skeleton" style="height:22px;width:60%"></div><div class="skeleton" style="height:16px;width:85%"></div></button>
       ${sleepCard}
       <a class="card row between" href="#/palestra" style="gap:12px"><div class="col" style="gap:2px"><div style="font-weight:800">Palestra</div><div class="small muted">Allenati con le tue schede: carichi e serie si salvano</div></div>${ico.chevron}</a>
       ${checkinBtn}
       </div>`;
     $("#syncNow").onclick = () => { const back = () => { if (document.visibilityState !== "visible") return; document.removeEventListener("visibilitychange", back); setTimeout(() => router(), 1500); }; document.addEventListener("visibilitychange", back); };
     el.querySelectorAll("[data-checkin]").forEach((b) => b.addEventListener("click", () => checkinSheet(d.checkin, !d.sonno || d.sonno.manuale, y.attivita.sessioni || [])));
-    if (p.infortunio?.attivo) loadWorkout(false);
+    // during the set-up only what does not depend on the score: the plan (rules) or the injury plan (prescriptions)
+    fetchWorkout({}).then((w) => { if (w.piano || w.infortunio || (w.notte_in_attesa && w.infortunio)) { $("#workout").style.display = ""; renderWorkoutCard(w); } }).catch(() => {});
     return;
   }
   el.innerHTML = `${header(`Ciao${p.nome ? ",<br>" + esc(p.nome) : ""}`, { sub: fmtDate(d.giorno), sync: true })}
@@ -273,6 +274,7 @@ views.settaggio = async (el) => {
       ${item(k.sport, "I tuoi sport", "Quelli che Kairo pianifica e quelli che fai a parte (calcio, padel…).", "#/sport")}
       ${item(k.schede, "Schede di palestra", "Per proporti la scheda giusta e misurare la fatica di ogni muscolo.", "#/palestra")}
       ${item(k.sveglia, "Sveglia abituale", "Per dirti a che ora andare a letto.", "#/profilo")}
+      ${item(k.piano, "Piano di allenamento", "Facoltativo: sedute che progrediscono a blocchi. Funziona anche durante il settaggio.", "#/piano")}
     </div>
     <div class="card col" style="gap:6px"><div class="label">Consigliati, non obbligatori</div>
       <div class="small" style="line-height:1.5;color:var(--text)">⌚ <b>1 minuto di Respira</b> appena sveglio: ${s.mattine ? `${s.mattine} ${s.mattine === 1 ? "mattina" : "mattine"} finora` : "nessuna mattina ancora"}. Dopo 5 diventa la tua misura principale di HRV.<br>📝 <b>Check-in ogni mattina</b>: ${s.checkin ?? 0} finora. Servirà per verificare che lo score ci azzecchi.</div></div>
@@ -339,6 +341,18 @@ function renderWorkoutCard(w) {
   // title on up to two lines, then one line with sport · duration · intensity
   const line = (label, title, meta) => `<div class="label">${label}</div><div class="row between" style="gap:10px"><div class="col" style="gap:4px;min-width:0;flex:1">
       <div class="h2" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${title}</div><div class="small muted">${meta}</div></div>${ico.chevron}</div>`;
+  if (w.piano) {
+    const lab = `Piano · blocco ${w.blocco} · settimana ${w.n_settimana}/4${w.scarico ? " · scarico" : ""}`;
+    if (!w.sedute.length) {
+      box.innerHTML = line(lab, "Riposo", w.prossima ? `Prossima: ${esc(PLAN_SPORT[w.prossima.sport])} ${esc(TIPO[w.prossima.tipo][0].toLowerCase())} · ${fmtDate(w.prossima.giorno, { weekday: "long" })}` : "Settimana completata");
+      box.onclick = () => route("piano");
+      return;
+    }
+    const s0 = w.sedute[0];
+    box.innerHTML = line(lab, esc(s0.titolo), `${planMeta(s0)}${w.sedute.length > 1 ? ` · +${w.sedute.length - 1} ${esc(PLAN_SPORT[w.sedute[1].sport].toLowerCase())}` : ""}`);
+    box.onclick = () => planDetail(w, 0);
+    return;
+  }
   if (w.infortunio) {
     const [ml, mc] = MOD_LABEL[w.modalita] || ["", "muted"];
     box.innerHTML = line("Infortunio · cosa fare oggi", esc(w.titolo),
@@ -367,6 +381,7 @@ function workoutDetail(w) {
       <div class="acts" id="altroBox" style="grid-template-columns:repeat(3,minmax(0,1fr));display:none">${["palestra", "nuoto", "bici", "corsa", ...(cfg().profilo.altri_sport || []), "camminata"].map((k) => `<button class="choice" data-altro="${esc(k)}">${esc(cap(k))}</button>`).join("")}</div></div>
     ${todayLoad[0] ? `<button id="wLoad" class="row between" style="background:none;border:0;border-top:1px solid var(--line);padding:12px 0 0;cursor:pointer;font:inherit;color:inherit;width:100%"><span class="small">Carico di allenamento: <b class="${todayLoad[1]}">${todayLoad[0]}</b></span>${ico.chevron}</button>` : ""}
     <div class="row" style="gap:8px">${w.sport === "palestra" && w.scheda ? `<button class="btn primary" id="wStart" style="flex:2;min-height:48px">Inizia ${esc(w.scheda)}</button>` : ""}<button class="btn ghost" id="wOther" style="flex:1;min-height:48px">Altra proposta</button></div>
+    <a class="card soft small" href="#/piano" style="line-height:1.45">📅 <b>Vuoi un piano vero?</b> Blocchi da 4 settimane, sedute di nuoto, corsa e bici che si complicano man mano e carichi che salgono in palestra.</a>
     <button class="small muted" id="wHurt" style="background:none;border:0;cursor:pointer;padding:0;text-decoration:underline">Ti sei fatto male? Attiva la modalità infortunio</button>`, "Allenamento di oggi");
   const wl = $("#wLoad"); if (wl) wl.onclick = () => loadSheet();
   const saveEsito = async (stato, sport) => {
@@ -381,6 +396,67 @@ function workoutDetail(w) {
   };
   $("#wHurt").onclick = () => injurySheet();
   const st = $("#wStart"); if (st) st.onclick = async () => { const { schede } = await api("/api/schede"); const sc = schede.find((x) => x.nome === w.scheda); if (sc) { closeSheet(); startSession(sc); } };
+}
+
+/* ---------- training plan: today's session ---------- */
+const PLAN_SPORT = { palestra: "Palestra", nuoto: "Nuoto", corsa: "Corsa", bici: "Bici" };
+const TIPO = { facile: ["Facile", "good"], lungo: ["Lungo", "mid"], soglia: ["Soglia", "bad"], velocita: ["Velocità", "bad"], test: ["Test", "bad"], palestra: ["Palestra", "mid"] };
+const SENS = { facile: "facile", giusta: "giusta", dura: "dura" };
+const mmss = (sec) => (sec == null ? "" : `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, "0")}`);
+const parseMmss = (t) => { const m = String(t || "").trim().match(/^(\d{1,2})[:'.,](\d{1,2})"?$/); return m ? Number(m[1]) * 60 + Number(m[2]) : t && /^\d+$/.test(String(t).trim()) ? Number(t) * 60 : null; };
+const planEsito = (s) => (s.esito ? (s.esito.stato === "saltato" ? ` · <b class="muted">saltata</b>` : ` · <b class="good">✓${s.esito.sensazione ? " " + SENS[s.esito.sensazione] : ""}</b>`) : s.registrato ? ` · <b class="good">registrata dal Watch</b>` : "");
+const planMeta = (s) => `${s.sport === "palestra" ? `Pesi${s.esercizi ? ` · ${s.esercizi} esercizi` : ""}${s.scarico ? ` · <b class="mid">scarico</b>` : ""}` : `${esc(PLAN_SPORT[s.sport])} · <b class="${TIPO[s.tipo][1]}">${TIPO[s.tipo][0]}</b>`}${s.durata_min ? ` · ${s.durata_min} min` : ""}${s.sport === "nuoto" && s.volume ? ` · ${fmtNum(s.volume)} m` : ""}${planEsito(s)}`;
+function recordedText(r, sport) {
+  if (!r) return "";
+  const pace = sport === "nuoto" && r.passo_s100 ? ` · ${mmss(r.passo_s100)}/100 m` : sport === "corsa" && r.passo_skm ? ` · circa ${mmss(r.passo_skm)}/km` : sport === "bici" && r.velocita_kmh ? ` · ${fmtNum(r.velocita_kmh, 1)} km/h` : "";
+  return `⌚ Il Watch ha registrato ${r.minuti} min${r.distanza_m ? ` · ${sport === "nuoto" ? fmtNum(r.distanza_m) + " m" : fmtNum(r.distanza_m / 1000, 1) + " km"}` : ""}${pace} · FC media ${r.fc_media}`;
+}
+function testFields(sport) {
+  if (sport === "nuoto") return `<div class="grid2"><label class="field">Tempo 400 m<input class="input" id="t400" inputmode="numeric" placeholder="es. 7:20"></label><label class="field">Tempo 200 m<input class="input" id="t200" inputmode="numeric" placeholder="es. 3:25"></label></div>`;
+  if (sport === "corsa") return `<div class="grid2"><label class="field">Km in 30'<input class="input" id="tkm" inputmode="decimal" placeholder="es. 6,2"></label><label class="field">FC media<input class="input" id="tfc" inputmode="numeric" placeholder="es. 172"></label></div>`;
+  return `<div class="grid2"><label class="field">FC media ultimi 20'<input class="input" id="tfc" inputmode="numeric" placeholder="es. 165"></label><label class="field">Km in 30' (facoltativo)<input class="input" id="tkm" inputmode="decimal" placeholder="es. 16"></label></div>`;
+}
+function readTest(sport) {
+  const num = (id) => { const v = $(id)?.value.trim().replace(",", "."); return v ? Number(v) : null; };
+  if (sport === "nuoto") return { t400: parseMmss($("#t400").value), t200: parseMmss($("#t200").value) };
+  if (sport === "corsa") return { distanza_m: num("#tkm") != null ? Math.round(num("#tkm") * 1000) : null, fc_media: num("#tfc") };
+  return { fc_media: num("#tfc"), km: num("#tkm") };
+}
+function planDetail(w, i) {
+  const s = w.sedute[i], [tl, tc] = TIPO[s.tipo];
+  const others = w.sedute.map((x, j) => (j === i ? "" : `<button class="choice" data-other="${j}" style="font-size:13px">${esc(PLAN_SPORT[x.sport])} · ${esc(x.titolo)}</button>`)).join("");
+  openSheet(`${sheetHead(esc(s.titolo))}
+    <div class="row" style="gap:8px;flex-wrap:wrap">${s.sport === "palestra" ? "" : `<span class="pill ${tc}">${tl}</span>`}<span class="small muted">${esc(PLAN_SPORT[s.sport])}${s.durata_min ? ` · ${s.durata_min} min circa` : ""}${s.sport === "nuoto" && s.volume ? ` · ${fmtNum(s.volume)} m` : ""} · blocco ${w.blocco}, sett. ${w.n_settimana}/4</span></div>
+    ${s.obiettivo ? `<div class="small" style="line-height:1.5;color:var(--text)"><b>Perché:</b> ${esc(s.obiettivo)}</div>` : ""}
+    ${s.adattata ? `<div class="card soft small" style="line-height:1.45">↔︎ ${esc(s.adattata[0].toUpperCase() + s.adattata.slice(1))}.</div>` : ""}
+    ${steps(s)}
+    ${s.sport !== "palestra" ? `<div class="small muted" style="line-height:1.5">Ritmi ${esc(s.ritmi || "")}${s.livello != null && s.tipo !== "test" ? ` · livello ${s.livello}: sale con ogni seduta fatta` : ""}.</div>` : ""}
+    ${s.registrato ? `<div class="small" style="line-height:1.5;font-weight:700">${recordedText(s.registrato, s.sport)}</div>` : ""}
+    <div class="col" style="gap:8px"><div class="small" style="font-weight:800">${s.esito ? (s.esito.stato === "saltato" ? "Segnata come saltata" : `Fatta ✓${s.esito.sensazione ? " · " + SENS[s.esito.sensazione] : ""}`) + ` <span class="muted" style="font-weight:600">· puoi cambiarlo</span>` : "Com'è andata?"}</div>
+      ${s.tipo === "test" ? `<div class="card soft col" style="gap:8px"><div class="small" style="font-weight:800">Risultati del test</div>${testFields(s.sport)}<span class="hint">Servono per calcolare i tuoi ritmi: senza, le sedute restano a sensazione.</span></div>` : ""}
+      <div class="small muted">Com'era? Kairo regola le prossime sedute.</div>
+      <div class="acts" style="grid-template-columns:repeat(3,minmax(0,1fr))">${Object.keys(SENS).map((k) => `<button class="choice" data-sens="${k}" aria-pressed="${s.esito?.sensazione === k}">${k[0].toUpperCase() + k.slice(1)}</button>`).join("")}</div>
+      <button class="choice" data-skip style="font-size:14px">Saltata</button></div>
+    ${s.sport === "palestra" && s.scheda ? `<button class="btn primary" id="pStart" style="min-height:48px">Inizia ${esc(s.scheda)}</button>` : ""}
+    ${others ? `<div class="col" style="gap:6px"><div class="small" style="font-weight:800">Oggi c'è anche</div>${others}</div>` : ""}
+    <a class="btn ghost" href="#/piano">Il piano della settimana</a>`, "Seduta di oggi");
+  const save = async (body) => {
+    sheetBusy();
+    try {
+      const r = await api("/api/piano/esito", { method: "POST", body: { seduta: s.id, ...body } });
+      s.esito = { stato: r.stato, sensazione: r.sensazione };
+      todayWorkout = w; renderWorkoutCard(w); planDetail(w, i);
+      toast(r.test ? "Test salvato: ritmi aggiornati" : r.stato === "saltato" ? "Segnata: saltata" : "Segnata ✓");
+    } catch (e) { toast(e.message); planDetail(w, i); }
+  };
+  $("#sheet").querySelectorAll("[data-sens]").forEach((b) => (b.onclick = () => {
+    const body = { stato: "fatto", sensazione: b.dataset.sens };
+    if (s.tipo === "test") { const t = readTest(s.sport); if (Object.values(t).some((v) => v != null)) body.risultato = t; }
+    save(body);
+  }));
+  $("#sheet [data-skip]").onclick = () => save({ stato: "saltato" });
+  $("#sheet").querySelectorAll("[data-other]").forEach((b) => (b.onclick = () => planDetail(w, Number(b.dataset.other))));
+  const st = $("#pStart"); if (st) st.onclick = async () => { const { schede } = await api("/api/schede"); const sc = schede.find((x) => x.nome === s.scheda); if (sc) { closeSheet(); startSession(sc, w.scarico); } };
 }
 
 function injuryDetail(w) {
@@ -1012,27 +1088,42 @@ const localIso = (d = new Date()) => {
   const off = -d.getTimezoneOffset(), pad = (n) => String(Math.abs(Math.trunc(n))).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}${off >= 0 ? "+" : "-"}${pad(off / 60)}:${pad(off % 60)}`;
 };
-const kgStep = (kg) => (kg >= 20 ? 2.5 : 1);
-// double progression: all sets at the top of the range last time → add weight, otherwise same weight and more reps
-function progression(ex, last) {
+// weight increments by kind of exercise: big lower-body lifts move faster, small isolation lifts slower
+const LOWER = /squat|stacco|deadlift|leg press|pressa|hip thrust|affond|bulgar|rdl|romanian|rumeno|good morning|lunge/i;
+const ISOL = /curl|croci|alzat|estension|french|push ?down|kick ?back|calf|polpacc|face pull|shrug|scrollat|pullover|fly|raise|extension|crunch|addom/i;
+const kgStep = (kg, name = "") => (LOWER.test(name) && !/leg curl|leg extension/i.test(name) ? (kg >= 60 ? 5 : 2.5) : ISOL.test(name) ? (kg >= 30 ? 2.5 : 1) : kg >= 20 ? 2.5 : 1);
+const roundTo = (kg, step) => Math.max(step, Math.round(kg / step) * step);
+// double progression: all sets at the top of the range last time → add weight, otherwise same weight and more reps.
+// In the plan's lighter week (deload): −10% and one set less, to absorb the work of the block.
+function progression(ex, last, scarico = false) {
+  const base = progressionBase(ex, last);
+  if (!scarico || base.kg == null) return { ...base, serie: ex.serie };
+  const step = kgStep(base.kg, ex.nome);
+  return { testo: `Settimana di scarico: ${fmtNum(roundTo(base.kg * 0.9, step), 1)} kg, una serie in meno, ripetizioni pulite lontano dal cedimento.`, kg: roundTo(base.kg * 0.9, step), serie: Math.max(2, ex.serie - 1) };
+}
+function progressionBase(ex, last) {
   if (!last || !last.serie.length) return { testo: "Prima volta: scegli un carico con cui arrivi al range con 2 ripetizioni in riserva.", kg: null };
   const done = last.serie.filter((x) => x.reps != null);
   const kg = Math.max(...last.serie.map((x) => x.kg || 0)) || null;
+  const kgStepN = (k) => kgStep(k, ex.nome);
   const allTop = done.length >= Math.min(ex.serie, last.serie.length) && done.every((x) => x.reps >= ex.max);
   const lastTxt = `Ultima volta: ${last.serie.map((x) => `${x.kg != null ? fmtNum(x.kg, 1) + " kg × " : ""}${x.reps ?? "–"}`).join(", ")}`;
   const h = last.storia || [], rpe = h[0]?.rpe;
   // stall: same weight for the last 3 sessions and no more reps → deload 10% and build back up
   if (kg && h.length >= 3 && h.every((x) => x.kg === h[0].kg) && h[0].reps != null && h[2].reps != null && h[0].reps <= h[2].reps) {
-    const dl = Math.max(kgStep(kg), Math.round((kg * 0.9) / kgStep(kg)) * kgStep(kg));
+    const dl = roundTo(kg * 0.9, kgStepN(kg));
     return { testo: `${lastTxt}. Fermo da 3 sedute allo stesso carico: oggi scarico a ${fmtNum(dl, 1)} kg con ripetizioni pulite, poi si risale.`, kg: dl };
   }
-  // range closed: add weight, unless last time was already at the limit (RPE 9.5-10)
+  // clearly below the range (2+ reps short on a set): the weight was too much
+  if (kg && done.length && done.some((x) => x.reps < ex.min - 1)) return { testo: `${lastTxt}. Sotto il range: scendi a ${fmtNum(kg - kgStepN(kg), 1)} kg e torna nel range ${ex.min}-${ex.max}.`, kg: Math.max(0, kg - kgStepN(kg)) };
+  // range closed: add weight, unless last time was already at the limit (RPE 9.5-10); very easy (RPE ≤ 7) → two steps
   if (kg && allTop && rpe != null && rpe >= 9.5) return { testo: `${lastTxt}. Range chiuso ma al limite (RPE ${fmtNum(rpe, 1)}): resta a ${fmtNum(kg, 1)} kg finché non ti sembra più facile.`, kg };
-  if (kg && allTop) return { testo: `${lastTxt}. Hai chiuso il range: prova ${fmtNum(kg + kgStep(kg), 1)} kg.`, kg: kg + kgStep(kg) };
+  if (kg && allTop && rpe != null && rpe <= 7) return { testo: `${lastTxt}. Range chiuso con margine (RPE ${fmtNum(rpe, 1)}): prova ${fmtNum(kg + 2 * kgStepN(kg), 1)} kg.`, kg: kg + 2 * kgStepN(kg) };
+  if (kg && allTop) return { testo: `${lastTxt}. Hai chiuso il range: prova ${fmtNum(kg + kgStepN(kg), 1)} kg.`, kg: kg + kgStepN(kg) };
   return { testo: `${lastTxt}. ${kg ? `Stesso carico, punta a ${ex.max} ripetizioni.` : ""}`, kg };
 }
 
-async function startSession(scheda) {
+async function startSession(scheda, scarico = false) {
   const cur = store.get("sessione", null);
   if (cur && !confirm(`C'è già un allenamento in corso (${cur.nome}). Vuoi abbandonarlo e iniziare ${scheda.nome}?`)) return route("sessione");
   let ultimo = {};
@@ -1040,9 +1131,9 @@ async function startSession(scheda) {
   store.set("sessione", {
     id: scheda.id, nome: scheda.nome, inizio: localIso(), inizioMs: Date.now(),
     esercizi: scheda.esercizi.map((e) => {
-      const pr = progression(e, ultimo[e.nome]);
+      const pr = progression(e, ultimo[e.nome], scarico);
       return { nome: e.nome, min: e.min, max: e.max, note: e.note || "", consiglio: pr.testo,
-        serie: Array.from({ length: e.serie }, (_, i) => ({ kg: pr.kg ?? ultimo[e.nome]?.serie[i]?.kg ?? null, reps: null, fatto: false })) };
+        serie: Array.from({ length: pr.serie || e.serie }, (_, i) => ({ kg: pr.kg ?? ultimo[e.nome]?.serie[i]?.kg ?? null, reps: null, fatto: false })) };
     }),
   });
   route("sessione");
@@ -1061,12 +1152,14 @@ async function flushQueue() {
 views.palestra = async (el) => {
   el.innerHTML = header("Palestra") + loading(2);
   const sent = await flushQueue();
-  const [{ schede }, forza] = await Promise.all([api("/api/schede"), api("/api/forza").catch(() => null)]);
+  const [{ schede }, forza, piano] = await Promise.all([api("/api/schede"), api("/api/forza").catch(() => null), api("/api/piano").catch(() => null)]);
+  const scarico = !!(piano?.config?.attivo && !piano.pausa && piano.settimana?.scarico);
   const cur = store.get("sessione", null), queued = store.get("coda", []).length;
   let html = header("Palestra");
   if (sent) html += `<div class="card soft small">Inviati ${sent} allenamenti salvati senza rete ✓</div>`;
   if (queued) html += `<div class="card soft small">${queued} allenamenti in attesa di connessione: li invio appena c'è rete.</div>`;
   if ((store.get("profilo", {}) || {}).infortunio?.attivo) html += `<a class="card col" href="#/oggi" style="gap:4px;background:#FDE2DF;text-decoration:none;color:inherit"><div style="font-weight:900;color:var(--red-ink)">🩹 Sei in modalità infortunio</div><div class="small" style="line-height:1.5">Le schede normali per ora sono in pausa: nella pagina Oggi trovi cosa fare per riabilitazione e resto del corpo.</div></a>`;
+  if (scarico) html += `<div class="card soft small" style="line-height:1.5"><b>Settimana di scarico del piano</b>: carichi −10% e una serie in meno. Il corpo assorbe il lavoro delle ultime 3 settimane; la prossima si riparte più forti.</div>`;
   if (cur) html += `<a class="btn orange block" href="#/sessione" style="justify-content:space-between;min-height:60px;border-radius:20px"><span class="col" style="gap:0;text-align:left"><span style="font-weight:900">Allenamento in corso</span><span class="small" style="font-weight:600">${esc(cur.nome)} · ${Math.round((Date.now() - cur.inizioMs) / 60000)} min</span></span>${ico.arrow}</a>`;
   html += `<div class="row between" style="padding:0 2px"><div class="label">Le tue schede</div><button class="small" id="aiSchede" style="background:none;border:0;color:var(--orange-ink);font-weight:800;cursor:pointer">✨ Crea con il coach</button></div>`;
   html += schede.length ? schede.map((sc, i) => `<div class="card col" style="gap:10px">
@@ -1099,7 +1192,7 @@ views.palestra = async (el) => {
       <div class="col" style="gap:4px"><div class="small muted">Serie per settimana (ultime 8)</div><div class="row" style="gap:4px;align-items:flex-end;height:44px">${forza.serie_per_settimana.map((n, i) => `<div style="flex:1;height:${Math.max(3, (n / maxSets) * 44)}px;background:${i === 7 ? "var(--orange)" : "#C9CEDB"};border-radius:4px" title="${n} serie"></div>`).join("")}</div></div></div>`;
   }
   el.innerHTML = html;
-  el.querySelectorAll("[data-start]").forEach((b) => (b.onclick = () => startSession(schede[Number(b.dataset.start)])));
+  el.querySelectorAll("[data-start]").forEach((b) => (b.onclick = () => startSession(schede[Number(b.dataset.start)], scarico)));
   el.querySelectorAll("[data-mus]").forEach((sel) => (sel.onchange = async () => {
     if (!sel.value) return;
     try { await api("/api/muscoli", { method: "POST", body: { esercizio: sel.dataset.mus, muscolo: sel.value } }); toast("Collegato"); views.palestra(el); } catch (e) { toast(e.message); }
@@ -1292,6 +1385,7 @@ views.impostazioni = async (el) => {
   el.innerHTML = `${header("Impostazioni", { back: "oggi", gear: false })}
     ${group("Tu", row("profilo", "👤", "Profilo", esc([p.nome, p.eta ? `${p.eta} anni` : ""].filter(Boolean).join(" · ") || "da completare"))
       + row("sport", inj ? "🩹" : "🏅", "Sport e infortunio", inj ? `<span class="bad">infortunio attivo</span>` : esc(sports || "nessuno"))
+      + row("piano", "📅", "Piano di allenamento", "", "rowPiano")
       + row("settaggio", "🎯", "Settaggio", "", "rowSet")
       + row("memoria", "🧠", "Cosa ricorda il coach", "", "rowMem"))}
     ${group("App", row("notifiche", "🔔", "Notifiche", "", "rowPush")
@@ -1306,6 +1400,7 @@ views.impostazioni = async (el) => {
     <div class="small muted center" style="display:flex;justify-content:center">Kairo ${APP_VERSION}</div>`;
   const set = (id, html) => { const v = $(`#${id} [data-val]`); if (v) v.innerHTML = html; };
   api("/api/ia/chiave").then((r) => set("rowIa", r.sul_server || r.segreto_cloudflare || cfg().groqKey ? "Groq" : "modello di riserva")).catch(() => {});
+  api("/api/piano").then((r) => set("rowPiano", r.config.attivo ? (r.pausa ? `<span class="mid">in pausa</span>` : `blocco ${r.settimana.blocco} · sett. ${r.settimana.n_settimana}`) : "non attivo")).catch(() => {});
   api("/api/settaggio").then((r) => set("rowSet", r.pronto ? `<span class="good">completato</span>` : `<span class="mid">giorno ${r.giorno}</span>`)).catch(() => {});
   api("/api/memoria").then((r) => set("rowMem", r.memoria.length ? `${r.memoria.length} ricordi` : "niente")).catch(() => {});
   if (pushSupported()) navigator.serviceWorker.ready.then((reg) => reg.pushManager.getSubscription()).then((s) => set("rowPush", s ? "attive" : "spente")).catch(() => {});
@@ -1375,6 +1470,88 @@ views.sport = async (el) => {
   if (ed) ed.onclick = () => injurySheet();
   if (off) off.onclick = async () => { try { const saved = await api("/api/infortunio", { method: "POST", body: { attivo: false } }); store.set("profilo", saved); toast("Bentornato! Si riparte con calma"); router(); } catch (e) { toast(e.message); } };
 };
+
+// ---- Piano di allenamento ----
+const DAYS_IT = [[1, "L"], [2, "M"], [3, "M"], [4, "G"], [5, "V"], [6, "S"], [0, "D"]];
+const GOAL_IT = { generale: ["Forma generale", "un po' di tutto: fondo, soglia e velocità a rotazione"], resistenza: ["Resistenza", "arrivare a una distanza più lunga"], velocita: ["Velocità", "andare più forte sulle distanze brevi"] };
+const LEVEL_IT = { principiante: "Principiante", intermedio: "Intermedio", avanzato: "Avanzato" };
+views.piano = async (el, editing = false) => {
+  el.innerHTML = header("Piano", { back: "oggi", gear: false }) + loading(3);
+  const o = await api("/api/piano");
+  if (!o.config.attivo || editing) return planForm(el, o);
+  const w = o.settimana, today = todayStr();
+  const byDay = DAYS_IT.map(([d]) => { const g = shiftDay(w.settimana, (d + 6) % 7); return [g, w.sedute.filter((x) => x.giorno === g)]; });
+  const dots = [1, 2, 3, 4].map((n) => `<span style="width:26px;height:6px;border-radius:3px;background:${n < w.n_settimana ? "var(--orange)" : n === w.n_settimana ? "var(--ink)" : "#E2E5EC"}"></span>`).join("");
+  const R = o.riferimenti, sports = ["nuoto", "corsa", "bici"].filter((x) => o.config.sedute[x] > 0);
+  const refRow = (sp) => {
+    const h = o.test[sp] || [], last = h[h.length - 1], prev = h[h.length - 2];
+    const v = (t) => (sp === "nuoto" ? `${mmss(t.css)}/100 m` : sp === "corsa" ? `${mmss(t.soglia_skm)}/km` : `${t.lthr} bpm`);
+    const name = sp === "nuoto" ? "Nuoto · ritmo soglia (CSS)" : sp === "corsa" ? "Corsa · ritmo soglia" : "Bici · FC di soglia";
+    return `<div class="item"><div class="col" style="gap:2px"><b>${name}</b><span class="small muted">${last ? `test del ${fmtDate(last.giorno, { day: "numeric", month: "short" })}${prev ? ` · prima ${v(prev)}` : ""}` : "il test arriva con la prima seduta dura"}</span></div><b>${last ? v(last) : "–"}</b></div>`;
+  };
+  const rec = o.registrato || [], maxOf = (k, f) => Math.max(1, ...rec.map((x) => (x[k] ? f(x[k]) : 0)));
+  const bars = (k, f, unit) => `<div class="col" style="gap:4px"><div class="row between small"><b>${PLAN_SPORT[k]}</b><span class="muted">${rec[rec.length - 1]?.[k] ? unit(rec[rec.length - 1][k]) + " questa settimana" : "–"}</span></div><div class="row" style="gap:4px;align-items:flex-end;height:36px">${rec.map((x, i) => `<div style="flex:1;height:${x[k] ? Math.max(4, (f(x[k]) / maxOf(k, f)) * 36) : 3}px;background:${i === rec.length - 1 ? "var(--orange)" : "#C9CEDB"};border-radius:4px"></div>`).join("")}</div></div>`;
+  el.innerHTML = `${header("Piano", { back: "oggi", gear: false })}
+    ${o.pausa ? `<div class="card col" style="gap:4px;background:#FDE2DF"><div style="font-weight:900;color:var(--red-ink)">🩹 In pausa per l'infortunio</div><div class="small" style="line-height:1.5">Quando segni «Sono guarito» il piano riparte dal blocco 1, con sedute più facili dopo la pausa.</div></div>` : ""}
+    <div class="card col" style="gap:8px"><div class="row between"><div class="label">Blocco ${w.blocco}</div><div class="row" style="gap:4px">${dots}</div></div>
+      <div class="h2">${w.scarico ? "Settimana di scarico e test" : `Settimana ${w.n_settimana} di 4`}</div>
+      <div class="small" style="line-height:1.5;color:var(--text)">${w.scarico ? "Meno volume per assorbire il lavoro del blocco, e i test che aggiornano i tuoi ritmi." : w.n_settimana === 1 ? "Si riparte: le sedute salgono un po' ogni volta che le completi." : "Le sedute salgono con quello che completi: se una è dura, la prossima resta uguale."}</div></div>
+    <div class="card list">${byDay.map(([g, xs]) => `<div class="item" style="align-items:flex-start;gap:12px;${g === today ? "background:var(--soft);margin:0 -16px;padding-left:16px;padding-right:16px" : ""}"><div style="width:34px;font-weight:900;${g < today ? "color:var(--muted)" : ""}">${fmtDate(g, { weekday: "short" }).slice(0, 3)}<div class="small muted" style="font-weight:600">${Number(g.slice(8))}</div></div>
+      <div class="col" style="gap:6px;flex:1;min-width:0">${xs.length ? xs.map((x) => `<div class="col" style="gap:1px"><div style="font-weight:800">${esc(x.titolo)}</div><div class="small muted">${x.sport === "palestra" ? "Pesi · scheda in rotazione" : `${esc(PLAN_SPORT[x.sport])} · <b class="${TIPO[x.tipo][1]}">${TIPO[x.tipo][0]}</b>`}${x.durata_min ? ` · ${x.durata_min} min` : ""}${x.fatta ? ` · <b class="good">✓${x.sensazione ? " " + SENS[x.sensazione] : ""}</b>` : x.saltata ? " · saltata" : ""}${x.adattata ? ` · ${esc(x.adattata)}` : ""}</div></div>`).join("") : `<div class="small muted" style="padding-top:2px">Riposo</div>`}</div></div>`).join("")}</div>
+    ${w.escluse?.length ? `<div class="card soft small" style="line-height:1.5">Non ci stanno nei tuoi giorni: ${w.escluse.map((x) => `${PLAN_SPORT[x.sport].toLowerCase()} ${TIPO[x.tipo][0].toLowerCase()}`).join(", ")}. Aggiungi un giorno o permetti due sedute nello stesso giorno.</div>` : ""}
+    ${sports.length ? `<div class="col" style="gap:6px"><div class="label" style="padding:0 6px">I tuoi riferimenti</div><div class="card list">${sports.map(refRow).join("")}</div><div class="small muted" style="padding:0 6px;line-height:1.5">I ritmi delle sedute vengono da qui. Si aggiornano a ogni test (ultima settimana di ogni blocco).</div></div>` : ""}
+    ${sports.some((k) => rec.some((x) => x[k])) ? `<div class="card col" style="gap:12px"><div class="label">Cosa ha registrato il Watch · 8 settimane</div>
+      ${o.config.sedute.nuoto && rec.some((x) => x.nuoto) ? bars("nuoto", (x) => x.metri, (x) => `${fmtNum(x.metri)} m`) : ""}${o.config.sedute.corsa && rec.some((x) => x.corsa) ? bars("corsa", (x) => x.metri, (x) => `${fmtNum(x.metri / 1000, 1)} km`) : ""}${o.config.sedute.bici && rec.some((x) => x.bici) ? bars("bici", (x) => x.metri, (x) => `${fmtNum(x.metri / 1000)} km`) : ""}</div>` : ""}
+    <div class="col" style="gap:8px"><button class="btn ghost" id="pEdit">Modifica il piano</button>
+      <button class="small muted" id="pRestart" style="background:none;border:0;cursor:pointer;text-decoration:underline">Ricomincia dal blocco 1</button>
+      <button class="small muted" id="pOff" style="background:none;border:0;cursor:pointer;text-decoration:underline">Disattiva il piano</button></div>`;
+  $("#pEdit").onclick = () => views.piano(el, true);
+  $("#pRestart").onclick = async () => { if (!confirm("Ricominciare dal blocco 1 da questa settimana?")) return; try { await api("/api/piano/ricomincia", { method: "POST" }); toast("Piano ricominciato"); views.piano(el); } catch (e) { toast(e.message); } };
+  $("#pOff").onclick = async () => { if (!confirm("Disattivare il piano? Kairo tornerà a proporti un allenamento al giorno.")) return; try { await api("/api/piano", { method: "POST", body: { ...o.config, attivo: false } }); toast("Piano disattivato"); route("oggi"); } catch (e) { toast(e.message); } };
+};
+function planForm(el, o) {
+  const c = JSON.parse(JSON.stringify(o.config));
+  const draw = () => {
+    const stepper = (k) => `<div class="item"><b>${PLAN_SPORT[k]}</b><div class="row" style="gap:10px"><button class="iconbtn" data-dec="${k}" aria-label="Meno ${PLAN_SPORT[k]}" style="width:36px;height:36px">−</button><b style="width:18px;text-align:center">${c.sedute[k]}</b><button class="iconbtn" data-inc="${k}" aria-label="Più ${PLAN_SPORT[k]}" style="width:36px;height:36px">+</button></div></div>`;
+    const sel = (id, v, opts) => `<select class="input" id="${id}">${opts.map((m) => `<option value="${m}" ${m === v ? "selected" : ""}>${m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? " " + (m % 60) : ""}` : m + " min"}</option>`).join("")}</select>`;
+    const goal = (sp) => { const g = c.obiettivi[sp], km = sp !== "nuoto";
+      return `<div class="card col" style="gap:10px"><div class="h2">${PLAN_SPORT[sp]}</div>
+        <div class="acts" style="grid-template-columns:repeat(3,minmax(0,1fr))">${Object.entries(GOAL_IT).map(([k, [l]]) => `<button class="choice" data-goal="${sp}:${k}" aria-pressed="${g.tipo === k}" style="font-size:14px">${l}</button>`).join("")}</div>
+        <div class="small muted" style="line-height:1.45">${GOAL_IT[g.tipo][1]}.</div>
+        ${g.tipo === "resistenza" ? `<label class="field">Distanza obiettivo (${km ? "km" : "m"})<input class="input" data-dist="${sp}" inputmode="numeric" value="${km ? g.distanza / 1000 : g.distanza}"></label>` : ""}
+        <div class="small" style="font-weight:800">Da dove parti</div>
+        <div class="acts" style="grid-template-columns:repeat(3,minmax(0,1fr))">${Object.entries(LEVEL_IT).map(([k, l]) => `<button class="choice" data-lvl="${sp}:${k}" aria-pressed="${g.livello === k}" style="font-size:14px">${l}</button>`).join("")}</div></div>`; };
+    const end = ["nuoto", "corsa", "bici"].filter((x) => c.sedute[x] > 0);
+    el.innerHTML = `${header("Piano", { back: o.config.attivo ? "piano" : "oggi", gear: false })}
+      <div class="small" style="line-height:1.5;color:var(--text);padding:0 4px">Kairo costruisce le tue settimane in blocchi da 4: tre che salgono e una più leggera con i test. Le sedute di nuoto, corsa e bici le scrive lui e diventano più difficili man mano che le completi; in palestra usa le tue schede e fa progredire i carichi.</div>
+      <div class="col" style="gap:6px"><div class="label" style="padding:0 6px">Sedute a settimana</div><div class="card list">${["palestra", "nuoto", "corsa", "bici"].map(stepper).join("")}</div></div>
+      <div class="card col" style="gap:10px"><div class="small" style="font-weight:800">Giorni in cui puoi allenarti</div>
+        <div class="acts" style="grid-template-columns:repeat(7,minmax(0,1fr))">${DAYS_IT.map(([d, l]) => `<button class="choice" data-day="${d}" aria-pressed="${c.giorni.includes(d)}">${l}</button>`).join("")}</div>
+        <div class="grid2"><label class="field">Tempo nei feriali${sel("mFer", c.minuti.feriale, [30, 45, 60, 75, 90, 120])}</label><label class="field">Nel weekend${sel("mWe", c.minuti.weekend, [45, 60, 90, 120, 150, 180, 240])}</label></div>
+        <button class="choice" id="doppie" aria-pressed="${c.doppie}" style="font-size:14px">Posso fare due sedute nello stesso giorno</button></div>
+      ${end.length ? `<div class="label" style="padding:0 6px">Obiettivi</div>${end.map(goal).join("")}` : ""}
+      <button class="btn primary" id="pSave">${o.config.attivo ? "Salva" : "Crea il piano"}</button>`;
+    el.querySelectorAll("[data-inc]").forEach((b) => (b.onclick = () => { c.sedute[b.dataset.inc] = Math.min(6, c.sedute[b.dataset.inc] + 1); keep(); draw(); }));
+    el.querySelectorAll("[data-dec]").forEach((b) => (b.onclick = () => { c.sedute[b.dataset.dec] = Math.max(0, c.sedute[b.dataset.dec] - 1); keep(); draw(); }));
+    el.querySelectorAll("[data-day]").forEach((b) => (b.onclick = () => { const d = Number(b.dataset.day); c.giorni = c.giorni.includes(d) ? c.giorni.filter((x) => x !== d) : [...c.giorni, d]; keep(); draw(); }));
+    el.querySelectorAll("[data-goal]").forEach((b) => (b.onclick = () => { const [sp, k] = b.dataset.goal.split(":"); c.obiettivi[sp].tipo = k; keep(); draw(); }));
+    el.querySelectorAll("[data-lvl]").forEach((b) => (b.onclick = () => { const [sp, k] = b.dataset.lvl.split(":"); c.obiettivi[sp].livello = k; keep(); draw(); }));
+    $("#doppie").onclick = () => { c.doppie = !c.doppie; keep(); draw(); };
+    $("#pSave").onclick = async () => {
+      keep();
+      if (!Object.values(c.sedute).some((n) => n > 0)) return toast("Aggiungi almeno una seduta");
+      if (!c.giorni.length) return toast("Scegli almeno un giorno");
+      try { await api("/api/piano", { method: "POST", body: { ...c, attivo: true } }); toast("Piano salvato"); views.piano(el); } catch (e) { toast(e.message); }
+    };
+  };
+  // values typed in the fields survive a redraw
+  const keep = () => {
+    if ($("#mFer")) c.minuti.feriale = Number($("#mFer").value);
+    if ($("#mWe")) c.minuti.weekend = Number($("#mWe").value);
+    el.querySelectorAll("[data-dist]").forEach((i) => { const sp = i.dataset.dist, v = Number(String(i.value).replace(",", ".")); if (v > 0) c.obiettivi[sp].distanza = Math.round(sp === "nuoto" ? v : v * 1000); });
+  };
+  draw();
+}
 
 // ---- Cosa ricorda il coach ----
 views.memoria = async (el) => {
@@ -1634,6 +1811,9 @@ function healthChecks(d, err, lat, rel) {
   out.push(!last ? { s: "err", t: "iPhone", text: "Non è mai arrivato nessun dato.", fix: "Installa il comando HealthSync seguendo la Guida (Impostazioni → Guida)." }
     : ageH < 14 ? { s: "ok", t: "iPhone", text: `Ultimi dati arrivati ${ago(last.received)}.`, fix: "" }
     : { s: ageH < 36 ? "warn" : "err", t: "iPhone", text: `Ultimi dati arrivati ${ago(last.received)}.`, fix: "Apri Comandi → Automazione e controlla che le automazioni di HealthSync siano attive e su «Esegui immediatamente». Puoi anche lanciare HealthSync a mano." });
+  // HealthSync 1.3.0+ sends the distances hour by hour: needed to recognise swim, bike and run sessions
+  const hs = d.importazioni.find((x) => x.modulo === "HealthSync");
+  if (hs?.versione && newer("1.3.0", hs.versione)) out.push({ s: "warn", t: "HealthSync", text: `Hai il comando ${hs.versione}: non manda le distanze ora per ora, quindi Kairo non riconosce nuoto, corsa e bici delle tue sedute.`, fix: "Impostazioni → Collegamento iPhone → scarica di nuovo HealthSync e sostituisci quello vecchio (incolla di nuovo il link)." });
   // Watch data that recovery needs
   const lastOf = (m) => d.metriche.find((x) => x.metric === m)?.a;
   const days = (iso) => (iso ? (Date.now() - Date.parse(iso)) / 864e5 : Infinity);
