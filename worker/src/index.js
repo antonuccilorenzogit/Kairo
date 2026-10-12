@@ -23,7 +23,7 @@ const dropTodayAdvice = (db, day) => db.prepare("DELETE FROM advice WHERE day IN
 import { recomputeTrimp, recomputeNightHr } from "./load.js";
 import { getVapid, sendPush, validEndpoint } from "./push.js";
 
-const VERSION = "1.15.1";
+const VERSION = "1.15.2";
 
 // No CORS headers: only the Kairo app (same origin) and the Shortcuts app (not a browser) talk to the API.
 const json = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), {
@@ -445,7 +445,8 @@ async function api(req, env, url) {
         ON CONFLICT(day) DO UPDATE SET energia=excluded.energia, dolori=excluded.dolori, umore=excluded.umore, attivita=excluded.attivita,
         rpe=excluded.rpe, durata_min=excluded.durata_min, note=excluded.note, updated=excluded.updated, sonno_min=excluded.sonno_min, tag=excluded.tag`)
         .bind(day, c.energia ?? null, c.dolori ?? null, c.umore ?? null, c.attivita ?? null, c.rpe ?? null, c.durata_min ?? null, c.note ?? null, new Date().toISOString(), c.sonno_min ?? null, c.tag ?? null).run();
-      await env.DB.prepare("DELETE FROM advice WHERE day IN (?, ?)").bind(day, "CTX:" + day).run(); // advice and chat context must take the check-in into account
+      // a changed check-in changes the recovery: unfreeze it and write the coach's texts again, together
+      await env.DB.batch([env.DB.prepare("DELETE FROM advice WHERE day IN (?, ?)").bind(day, "CTX:" + day), env.DB.prepare("DELETE FROM recupero_giorno WHERE day = ?").bind(day)]);
       return json({ ok: true });
     }
     return json(await env.DB.prepare("SELECT * FROM checkin WHERE day = ?").bind(validDay(url.searchParams.get("d")) || todayLocal(tz)).first());

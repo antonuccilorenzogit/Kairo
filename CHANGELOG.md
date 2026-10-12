@@ -2,6 +2,11 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.15.2] — 2026-10-12
+
+### Corretto
+- **Il recupero non cambia più durante il giorno**: si blocca appena ci sono il check-in e la notte completa, nello stesso momento in cui il coach scrive il messaggio, così score e messaggio restano coerenti. I dati che arrivano dopo (FC a riposo di Apple, misure di giorno, pisolini) contano da domani nelle tue medie. Modificando il check-in recupero e messaggio si rifanno insieme. Nel foglio della precisione: «Lo score di oggi è definitivo, calcolato alle …».
+
 ## [1.15.1] — 2026-10-12
 
 ### Migliorato

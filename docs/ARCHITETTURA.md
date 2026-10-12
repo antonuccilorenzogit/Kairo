@@ -41,6 +41,7 @@
 - Medie personali: mediana e MAD × 1,4826 degli ultimi 60 giorni, esclusi i giorni con etichetta alcol/malanno/viaggio.
 - Componenti e pesi: HRV 0,30 (0,24 con 2 misure, 0,17 con 1 o solo diurne; finestra da 30 min prima del sonno a 60 min dopo il risveglio), sonno 0,20, FC a riposo 0,15, come ti senti 0,10, bilancio di sonno 0,05, respirazione 0,05, stabilità HRV (CV del ln HRV a 7 giorni) 0,05, attività di ieri 0,04, bilancio di attività 0,03, ossigeno 0,03. Tetto: HRV+FC + 20.
 - Con affidabilità bassa lo score resta entro ±15 da ieri. Restituisce anche `incertezza`, `trend_3g`, `spiegazione` (punti per componente), `etichette`, `domani_se_dormi`.
+- **Recupero bloccato**: con check-in e notte completa lo score del giorno viene salvato in `recupero_giorno` e non cambia più; modificare il check-in lo sblocca (e riscrive i testi del coach).
 - `GET /api/recupero/verifica`: rendimento in palestra (1RM stimato / migliore delle 8 settimane precedenti) nei giorni verdi contro gli altri, e correlazione.
 
 ## Allenamenti rilevati ed esiti

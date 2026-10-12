@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.15.1";
+const APP_VERSION = "1.15.2";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -562,6 +562,7 @@ function precisionSheet(r) {
   const left = Math.max(...need), done = Math.max(0, 14 - Math.min(14, left));
   openSheet(`${sheetHead(`Precisione ${esc(r.affidabilita)}`)}
     <div class="small" style="line-height:1.6;color:var(--text)">${why.map((x) => `• ${esc(x)}`).join("<br>")}</div>
+    ${r.bloccato ? `<div class="small" style="line-height:1.5"><b>Lo score di oggi è definitivo</b>: calcolato alle ${new Date(r.bloccato).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })} con il check-in e la notte completa. I dati che arrivano dopo contano da domani.</div>` : ""}
     ${left > 0 ? `<div class="col" style="gap:8px"><div style="font-weight:800">Precisione massima tra ${left} ${left === 1 ? "giorno" : "giorni"}</div>
       <div class="track" style="height:8px"><div class="bar" style="left:0;width:${Math.round((done / 14) * 100)}%;height:8px;background:var(--orange)"></div></div>
       <div class="small muted" style="line-height:1.5">Non devi fare niente: servono solo giorni di fila con il Watch, anche di notte.</div></div>` : `<div class="small good" style="font-weight:700">Hai abbastanza dati: la precisione dipende solo dalle misure di ogni notte.</div>`}

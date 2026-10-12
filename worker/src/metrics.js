@@ -56,7 +56,10 @@ async function load(db, from, to) {
     // sedute di forza: durata e RPE medio per il session-RPE
     db.prepare("SELECT start, max(end) end, avg(rpe) rpe, count(*) n FROM sets WHERE start >= ? AND start < ? GROUP BY start").bind(from, addDays(to, 1)),
     db.prepare("SELECT day, start, end, minuti, fc_media, trimp FROM sessioni WHERE day >= ? AND day <= ? ORDER BY start").bind(from, to),
+    db.prepare("SELECT day, dati FROM recupero_giorno WHERE day >= ? AND day <= ?").bind(from, to),
   ]);
+  const frozen = {};
+  for (const x of r[6].results) try { frozen[x.day] = JSON.parse(x.dati); } catch (_) {}
   const sessioni = {};
   for (const x of r[5].results) (sessioni[x.day] ||= []).push({ inizio: x.start, fine: x.end, minuti: x.minuti, fc_media: x.fc_media, carico: x.trimp });
   const samples = {};
@@ -72,7 +75,7 @@ async function load(db, from, to) {
     const minutes = min > 0 && min < 300 ? min : Math.min(180, (w.n || 0) * 3);
     if (minutes > 0) (gym[w.start.slice(0, 10)] ||= []).push(minutes * (w.rpe || 7));
   }
-  return { samples, sleepRows: r[1].results, daily, checkin, gym, sessioni };
+  return { samples, sleepRows: r[1].results, daily, checkin, gym, sessioni, frozen };
 }
 
 // Le fasi possono arrivare da più fonti (Watch, iPhone, altre app) e sovrapporsi: le fondo in una
@@ -570,6 +573,20 @@ export async function computeHistory(db, endDay, nDays) {
   for (let i = 0; i < days.length; i++) finalize(days, i, maskOf);
   const profile = await getProfile(db);
   enrich(days, data, profile, start);
+  // The day's recovery is frozen as soon as the check-in and the complete night are in: data arriving later
+  // (Apple's resting HR, daytime HRV, naps) no longer change it, so the score and the coach's message stay consistent.
+  const freeze = [];
+  for (const d of days) {
+    if (data.frozen[d.giorno]) { d.recupero = data.frozen[d.giorno]; continue; }
+    const night = d.sonno && (d.sonno.manuale || (d.sonno.fasi_min && (d.sonno.fasi_min.profondo || 0) + (d.sonno.fasi_min.rem || 0) > 0));
+    if (d.giorno >= start && d.giorno === endDay && d.checkin && night && d.recupero.score != null) {
+      d.recupero.bloccato = new Date().toISOString();
+      freeze.push(db.prepare("INSERT OR IGNORE INTO recupero_giorno(day,dati,created) VALUES(?,?,?)").bind(d.giorno, JSON.stringify(d.recupero), d.recupero.bloccato));
+      // a coach's message written before the freeze may quote another score: it is written again with this one
+      freeze.push(db.prepare("DELETE FROM advice WHERE day = ? AND created < ?").bind(d.giorno, d.recupero.bloccato));
+    }
+  }
+  if (freeze.length) await db.batch(freeze);
   const out = days.filter((d) => d.giorno >= start);
   for (const d of out) if (d.sonno) { delete d.sonno._bed; delete d.sonno._wake; delete d.sonno._midH; delete d.sonno._contributi; }
   return out;

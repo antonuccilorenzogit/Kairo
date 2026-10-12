@@ -98,3 +98,17 @@ test("stima di domani: personale dopo 8 notti piene, generica prima", async () =
   const g = (await computeDay(env2.DB, today)).recupero.domani_se_dormi;
   assert.equal(g.personale, false); assert.equal(g.mancano, 8); assert.equal(g.margine, 12);
 });
+
+test("il recupero di oggi si blocca con check-in e notte completa: i dati arrivati dopo non lo cambiano", async () => {
+  const env = makeEnv(); await setup(env); await seed(env);
+  await env.DB.prepare("DELETE FROM samples WHERE metric = 'fcr' AND ts LIKE ?").bind(today + "%").run();
+  await call(env, "/api/checkin", { method: "POST", code: CODE, body: { day: today, energia: 4, dolori: 2, umore: 4 } });
+  const a = (await computeDay(env.DB, today)).recupero;
+  assert.ok(a.bloccato, "bloccato");
+  // Apple's resting HR arrives at 10:00, much higher than usual: today's score does not move
+  await env.DB.prepare("INSERT INTO samples(metric,ts,t,value) VALUES('fcr',?,?,70)").bind(ts(today, "10:00"), Math.floor(Date.parse(ts(today, "10:00")) / 1000)).run();
+  assert.equal((await computeDay(env.DB, today)).recupero.score, a.score);
+  // editing the check-in unfreezes it: recomputed with everything
+  await call(env, "/api/checkin", { method: "POST", code: CODE, body: { day: today, energia: 4, dolori: 2, umore: 4 } });
+  assert.ok((await computeDay(env.DB, today)).recupero.score < a.score);
+});

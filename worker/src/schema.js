@@ -56,6 +56,8 @@ export const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS idx_sessioni_day ON sessioni(day)`,
   // Outcome of the day's workout ("fatto", "altro", "saltato")
   `CREATE TABLE IF NOT EXISTS esiti (day TEXT PRIMARY KEY, stato TEXT NOT NULL, sport TEXT, created TEXT NOT NULL)`,
+  // The day's recovery, frozen once the check-in and the complete night are in (it no longer changes during the day)
+  `CREATE TABLE IF NOT EXISTS recupero_giorno (day TEXT PRIMARY KEY, dati TEXT NOT NULL, created TEXT NOT NULL)`,
   // Coach memory: durable facts about the person (goals, races, injuries, preferences)
   `CREATE TABLE IF NOT EXISTS memoria (
      id INTEGER PRIMARY KEY AUTOINCREMENT, testo TEXT NOT NULL UNIQUE, fonte TEXT NOT NULL, creato TEXT NOT NULL)`,
