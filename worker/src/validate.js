@@ -12,6 +12,7 @@ export const METRICS = {
   kcal_cibo: ["daily", 0, 20000], proteine: ["daily", 0, 1000], carboidrati: ["daily", 0, 2000],
   grassi: ["daily", 0, 1000], acqua: ["daily", 0, 20000],
   trimp: ["daily", 0, 3000], // training load already computed (history imported from Health)
+  fc_notte: ["daily", 25, 150], // lowest heart rate while asleep (computed by the server)
   kcal_ora: ["hourly", 0, 5000],
   sonno: ["sleep"],
 };

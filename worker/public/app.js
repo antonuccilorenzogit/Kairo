@@ -124,10 +124,10 @@ function renderTabs(active) {
   nav.hidden = false;
   nav.innerHTML = TABS.map(([k, l]) => `<a href="#/${k}" ${k === active ? 'aria-current="page"' : ""}>${ico[k]}${l}</a>`).join("");
 }
-function header(title, { back = null, gear = true, sub = "" } = {}) {
+function header(title, { back = null, gear = true, sub = "", sync = false } = {}) {
   return `<div class="row between">
     <div class="row">${back ? `<a class="iconbtn" href="#/${back}" aria-label="Indietro">${ico.back}</a>` : ""}<div class="col" style="gap:2px"><h1 class="title">${title}</h1>${sub ? `<div class="muted">${sub}</div>` : ""}</div></div>
-    ${gear ? `<a class="iconbtn" href="#/impostazioni" aria-label="Impostazioni" style="color:var(--ink)">${ico.gear}</a>` : ""}</div>`;
+    <div class="row" style="gap:8px">${sync ? `<a class="iconbtn" href="shortcuts://run-shortcut?name=HealthSync" id="syncNow" aria-label="Aggiorna i dati (HealthSync)" style="color:var(--ink);font-size:22px;font-weight:800;text-decoration:none">↻</a>` : ""}${gear ? `<a class="iconbtn" href="#/impostazioni" aria-label="Impostazioni" style="color:var(--ink)">${ico.gear}</a>` : ""}</div></div>`;
 }
 const loading = (n = 3) => Array.from({ length: n }, () => '<div class="card"><div class="skeleton" style="height:80px"></div></div>').join("");
 const errorCard = (e) => `<div class="card"><div class="h2">Qualcosa non va</div><p class="muted">${esc(e.message || e)}</p><a class="btn ghost" href="#/diagnostica">Controlla lo stato di Kairo</a></div>`;
@@ -151,6 +151,7 @@ const sheetHead = (t) => `<div class="row between"><div class="h2">${t}</div><bu
 /* ---------- views ---------- */
 const views = {};
 
+let watchSyncReturn = false;
 views.oggi = async (el) => {
   const p = store.get("profilo", null) || (await loadProfile());
   el.innerHTML = `${header(`Ciao${p.nome ? ",<br>" + esc(p.nome) : ""}`, { sub: fmtDate(todayStr()) })}${loading(3)}`;
@@ -165,12 +166,13 @@ views.oggi = async (el) => {
   const monday = new Date().getDay() === 1;
   // right after waking up the Watch has not processed the sleep stages yet: offer a new sync (runs HealthSync)
   const nightPending = hour < 12 && (!d.sonno || (!d.sonno.manuale && d.sonno.fasi_min && (d.sonno.fasi_min.profondo || 0) + (d.sonno.fasi_min.rem || 0) === 0));
+  watchSyncReturn = false;
   if (nightPending) {
     const back = () => { if (document.visibilityState === "visible") { document.removeEventListener("visibilitychange", back); if (location.hash.replace(/^#\/?/, "").startsWith("oggi") || !location.hash) router(); } };
     document.addEventListener("visibilitychange", back);
   }
   const clamp = (n) => `display:-webkit-box;-webkit-line-clamp:${n};-webkit-box-orient:vertical;overflow:hidden`;
-  el.innerHTML = `${header(`Ciao${p.nome ? ",<br>" + esc(p.nome) : ""}`, { sub: fmtDate(d.giorno) })}
+  el.innerHTML = `${header(`Ciao${p.nome ? ",<br>" + esc(p.nome) : ""}`, { sub: fmtDate(d.giorno), sync: true })}
     <div class="col today">
     ${d.allarme ? `<div class="card col" style="background:#FDE2DF;gap:4px"><div style="font-weight:900;color:var(--red-ink)">⚠︎ ${esc(d.allarme.titolo)}</div><div class="small" style="line-height:1.45">${esc(d.allarme.testo)}</div></div>` : ""}
     <a class="card row" href="#/recupero" style="gap:12px">
@@ -192,6 +194,12 @@ views.oggi = async (el) => {
       : `<button class="btn orange block" data-checkin style="justify-content:space-between;min-height:52px;border-radius:18px"><span><b>Check-in del mattino</b> <span class="small" style="font-weight:600">· 10 secondi</span></span>${ico.arrow}</button>`}
     <a class="card row between" href="#/settimana" style="${monday ? "background:var(--soft)" : ""}"><span style="font-weight:800">La tua settimana${monday ? ` <span class="small" style="color:var(--orange-ink)">· resoconto pronto</span>` : ""}</span>${ico.chevron}</a>
     </div>`;
+  // ↻ runs HealthSync in Comandi; back in Kairo, reload the page with the new data
+  $("#syncNow").onclick = () => {
+    if (watchSyncReturn) return; watchSyncReturn = true;
+    const back = () => { if (document.visibilityState !== "visible") return; document.removeEventListener("visibilitychange", back); watchSyncReturn = false; setTimeout(() => router(), 1500); };
+    document.addEventListener("visibilitychange", back);
+  };
   el.querySelectorAll("[data-checkin]").forEach((b) => b.addEventListener("click", () => checkinSheet(d.checkin, !d.sonno || d.sonno.manuale)));
   todayLoad = [stLabel, stCls];
   loadWorkout(false);
@@ -410,7 +418,8 @@ function infoSheet(kind, d) {
     html = sheetHead("FC a riposo · il motore al minimo")
       + body("Quanti battiti al minuto servono al cuore quando non fai niente. Un cuore allenato pompa più sangue a ogni colpo, quindi gliene servono meno. Se sale di 5+ bpm sopra la tua media per più giorni, spesso indica fatica, poco sonno o un malanno.")
       + range("Sportivi ben allenati 40–60 · adulti 60–100 bpm (American Heart Association)", 40, 60, 35, 100, b ?? d.notte.fcr_bpm, ["35", "zona sportivi", "100"], true)
-      + you(b ? `media personale ${fmtNum(b)} bpm, oggi ${fmtNum(d.notte.fcr_bpm)}.` : "non ho ancora abbastanza giorni per la tua media.")
+      + you(b ? `media personale ${fmtNum(b)} bpm, oggi ${fmtNum(c.fc_riposo.valore)}${c.fc_riposo.fonte === "notte" ? " (mentre dormivi)" : ""}.` : "non ho ancora abbastanza giorni per la tua media.")
+      + tip(c.fc_riposo.fonte === "notte" ? "Uso la <b>frequenza più bassa mentre dormi</b> (media di 10 minuti), come Oura e Whoop: è pronta appena ti svegli e la confronto solo con le tue altre notti." : "Uso la FC a riposo calcolata da Apple, che arriva durante la giornata. Dopo 5 notti con il Watch userò quella <b>mentre dormi</b>, pronta già alla sveglia.")
       + (saved ? tip(`Rispetto a chi ha 70 bpm a riposo, il tuo cuore fa circa <b>${fmtNum(saved)} battiti in meno al giorno</b>: ${fmtNum(saved * 365 / 1e6, 1)} milioni in un anno.`) : "");
   } else if (kind === "sonno") {
     const s = d.sonno;
@@ -449,7 +458,7 @@ views.recupero = async (el) => {
   const d = hist[hist.length - 1], r = d.recupero, st = state(r.score);
   const comps = [
     ["hrv", "HRV", d.notte.hrv_ms != null ? `${fmtNum(d.notte.hrv_ms)} ms` : "–", r.componenti.hrv],
-    ["fc_riposo", "FC a riposo", d.notte.fcr_bpm != null ? `${fmtNum(d.notte.fcr_bpm)} bpm` : "–", r.componenti.fc_riposo],
+    ["fc_riposo", r.componenti.fc_riposo.fonte === "notte" ? "FC nel sonno" : "FC a riposo", r.componenti.fc_riposo.valore != null ? `${fmtNum(r.componenti.fc_riposo.valore)} bpm` : "–", r.componenti.fc_riposo],
     ["sonno", "Sonno", d.sonno ? `${d.sonno.punteggio} pt` : "–", r.componenti.sonno],
     ["bilancio_sonno", "Bilancio sonno 14 gg", r.componenti.bilancio_sonno.valore != null ? (r.componenti.bilancio_sonno.valore >= 0 ? "in pari" : `−${fmtMin(-r.componenti.bilancio_sonno.valore)}/notte`) : "–", r.componenti.bilancio_sonno],
     ["respirazione", "Respirazione", d.notte.resp_rpm != null ? fmtNum(d.notte.resp_rpm, 1) : "–", r.componenti.respirazione],

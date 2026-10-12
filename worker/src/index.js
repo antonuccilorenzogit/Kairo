@@ -20,7 +20,7 @@ const coachProfile = async (db, profile) => {
 };
 // Today's coach texts depend on the injury: drop them when it changes.
 const dropTodayAdvice = (db, day) => db.prepare("DELETE FROM advice WHERE day IN (?, ?)").bind(day, "A:" + day).run();
-import { recomputeTrimp } from "./load.js";
+import { recomputeTrimp, recomputeNightHr } from "./load.js";
 import { getVapid, sendPush, validEndpoint } from "./push.js";
 
 const VERSION = "1.9.1";
@@ -145,6 +145,17 @@ async function ingest(payload, env, origin) {
   // new heart-rate samples → recompute the training load of those days
   const fcDays = rows.samples.filter((r) => r[0] === "fc").map((r) => r[1].slice(0, 10));
   if (fcDays.length) await recomputeTrimp(db, fcDays, hrMax(await getProfile(db)));
+  // resting heart rate while asleep: for the nights touched by new heart-rate or sleep data
+  // (the first time also for the last 60 nights already stored)
+  const wakeDays = rows.sleep.map((x) => x[1].slice(0, 10));
+  const nightDays = [...fcDays, ...fcDays.map((d) => new Date(Date.parse(d + "T12:00:00Z") + 86400e3).toISOString().slice(0, 10)), ...wakeDays];
+  const done = await db.prepare("SELECT value FROM settings WHERE key = 'fc_notte_storico'").first();
+  if (!done) {
+    const r = await db.prepare("SELECT DISTINCT substr(end,1,10) d FROM sleep WHERE end >= ?").bind(new Date(Date.now() - 60 * 86400e3).toISOString().slice(0, 10)).all();
+    nightDays.push(...r.results.map((x) => x.d));
+    await db.prepare("INSERT INTO settings(key,value) VALUES('fc_notte_storico','1') ON CONFLICT(key) DO NOTHING").run();
+  }
+  if (nightDays.length) await recomputeNightHr(db, nightDays);
   const clip = (x, n) => (x == null ? null : String(x).slice(0, n));
   await db.prepare("INSERT INTO imports(received,modulo,esportato,righe,versione) VALUES(?,?,?,?,?)")
     .bind(new Date().toISOString(), clip(payload?.modulo, 60), clip(payload?.esportato, 40), stmts.length, clip(payload?.versione, 20)).run();

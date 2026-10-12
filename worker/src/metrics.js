@@ -191,7 +191,7 @@ function rawDay(day, data, sessionsByDay) {
   const d = data.daily[day] || {};
   return {
     giorno: day,
-    notte: { hrv_ms: r1(hrv), hrv_misure: hrvNight.length || hrvFallback.length, hrv_fonte: hrvNight.length ? "notte" : hrvFallback.length ? "24h" : null, hrv_giorno_ms: r1(mean(hrvDay)), fcr_bpm: fcr,
+    notte: { hrv_ms: r1(hrv), hrv_misure: hrvNight.length || hrvFallback.length, hrv_fonte: hrvNight.length ? "notte" : hrvFallback.length ? "24h" : null, hrv_giorno_ms: r1(mean(hrvDay)), fcr_bpm: fcr, fc_notte_bpm: d.fc_notte ?? null,
       resp_rpm: r1(resp), spo2_media: r1(mean(spo2)), spo2_min: spo2.length ? Math.min(...spo2) : null },
     sonno: sleep,
     attivita: { passi: d.passi ?? null, kcal_attive: r1(d.kcal_attive, 0), kcal_riposo: r1(d.kcal_riposo, 0),
@@ -263,6 +263,8 @@ function finalize(days, idx, maskOf) {
   const vals = (f) => prev.map(f).filter((x) => x != null && Number.isFinite(x));
   const bHrv = baseline(vals((d) => (d.notte.hrv_ms ? Math.log(d.notte.hrv_ms) : null)), 0.08);
   const bFcr = baseline(vals((d) => d.notte.fcr_bpm), 2);
+  // heart rate while asleep (ready at wake-up, like Oura/Whoop), compared only with other nights
+  const bFcN = baseline(vals((d) => d.notte.fc_notte_bpm), 2);
   const bResp = baseline(vals((d) => d.notte.resp_rpm), 0.4);
 
   const comp = {};
@@ -285,9 +287,11 @@ function finalize(days, idx, maskOf) {
   }
   // FC a riposo: rispetto alla media a lungo termine (Oura: cala se 3-5 bpm sopra la media)
   {
-    const v = today.notte.fcr_bpm, ok = !bFcr.insufficiente;
-    const z = v != null && ok ? -(v - bFcr.media) / bFcr.dev : null;
-    comp.fc_riposo = { valore: v, unita: "bpm", peso: 0.20, baseline: ok ? r1(bFcr.media) : null, z: r1(z, 2), punteggio: z == null ? null : zScore(z), giorni_baseline: bFcr.n };
+    const night = today.notte.fc_notte_bpm != null && !bFcN.insufficiente;
+    const b = night ? bFcN : bFcr, v = night ? today.notte.fc_notte_bpm : today.notte.fcr_bpm, ok = !b.insufficiente;
+    const z = v != null && ok ? -(v - b.media) / b.dev : null;
+    comp.fc_riposo = { valore: v, unita: "bpm", peso: 0.20, baseline: ok ? r1(b.media) : null, z: r1(z, 2), punteggio: z == null ? null : zScore(z), giorni_baseline: b.n,
+      fonte: v == null ? null : night ? "notte" : "apple" };
   }
   // sonno della notte: il suo punteggio è già 0-100
   comp.sonno = { valore: today.sonno ? today.sonno.punteggio : null, unita: "punti", peso: 0.25, baseline: null, z: null, punteggio: today.sonno ? today.sonno.punteggio : null };
