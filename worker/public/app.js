@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.13.0";
+const APP_VERSION = "1.14.0";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -194,9 +194,9 @@ views.oggi = async (el) => {
     <a class="card row" href="#/recupero" style="gap:12px">
       ${bean(r.score, 54)}
       <div class="col" style="gap:2px;flex:1">${r.score == null
-        ? `<div class="h2">In calibrazione</div><div class="muted small">Servono 5 notti con il Watch (ne ho ${r.giorni_baseline}).</div>`
+        ? `<div class="h2">In calibrazione</div><div class="muted small">Servono 5 notti con il Watch (ne ho ${r.giorni_baseline}): basta aspettare.</div>`
         : `<div class="row" style="gap:8px;align-items:baseline"><span style="font-size:34px;font-weight:900;line-height:1">${r.score}</span><span class="h2 ${st.cls}">${st.label}</span></div>
-           <div class="muted small">Recupero${r.incertezza ? ` ±${r.incertezza}` : ""}${r.trend_3g != null ? ` · tendenza ${r.trend_3g}` : ""}${delta != null ? ` · ${delta >= 0 ? "▲" : "▼"} ${Math.abs(delta)} da ieri` : ""}${r.calibrazione ? " · stima provvisoria" : r.affidabilita === "bassa" ? ` · <span class="mid">poche misure stanotte</span>` : ""}</div>`}</div>${ico.chevron}</a>
+           <div class="muted small">Recupero${r.incertezza ? ` ±${r.incertezza}` : ""}${r.trend_3g != null ? ` · tendenza ${r.trend_3g}` : ""}${delta != null ? ` · ${delta >= 0 ? "▲" : "▼"} ${Math.abs(delta)} da ieri` : ""}${r.calibrazione ? " · stima provvisoria" : r.affidabilita === "bassa" ? ` · <span class="mid">meno misure del solito</span>` : ""}</div>`}</div>${ico.chevron}</a>
     <button class="card col" id="workout" style="gap:6px;border:0;text-align:left;cursor:pointer;width:100%;font:inherit;color:inherit"><div class="label">${p.infortunio?.attivo ? "Infortunio · cosa fare oggi" : "Allenamento di oggi"}</div>
       <div class="skeleton" style="height:22px;width:60%"></div><div class="skeleton" style="height:16px;width:85%"></div></button>
     <a class="card row between" href="${nightPending ? "shortcuts://run-shortcut?name=HealthSync" : "#/sonno"}" style="gap:12px">
@@ -513,7 +513,8 @@ views.recupero = async (el) => {
     const z = c.punteggio == null ? 0 : (c.punteggio - 60) / 20;
     const w = Math.min(Math.abs(z), 3) / 3 * 50;
     const color = z > 0.05 ? "var(--green)" : z < -0.05 ? "var(--red)" : "#C9CEDB";
-    const media = c.punteggio != null ? `${c.punteggio}/100` : c.valore == null ? "nessun dato" : "in calibrazione";
+    const wait = (n) => `tra ${n} ${n === 1 ? "giorno" : "giorni"}`;
+    const media = c.punteggio != null ? `${c.punteggio}/100` : c.mancano > 0 ? wait(c.mancano) : k === "soggettivo" ? "fai il check-in" : "nessun dato oggi";
     return `<button class="comp" data-info="${k === "respirazione" ? "resp" : k === "bilancio_sonno" ? "bilancio" : ["hrv", "fc_riposo", "sonno"].includes(k) ? k : "metodo"}" aria-label="Cosa significa ${name}">
       <div class="row between" style="width:100%"><div class="row" style="gap:6px;font-weight:800">${name} ${ico.info} <span class="small muted" style="font-weight:600">${Math.round(c.peso * 100)}%</span></div>
       <div style="font-weight:800">${val} <span class="small muted" style="font-weight:600">${media}</span></div></div>
@@ -525,7 +526,18 @@ views.recupero = async (el) => {
     return `<div class="col" style="align-items:center;gap:4px;flex:1"><div style="height:90px;width:100%;display:flex;align-items:flex-end;justify-content:center"><div title="${h.giorno}: ${s ?? "n/d"}" style="width:70%;max-width:18px;border-radius:6px;height:${s == null ? 4 : Math.max(6, s * 0.9)}px;background:${s == null ? "#E2E5EC" : sc.fill}"></div></div><div class="small muted" style="font-size:11px">${fmtDate(h.giorno, { day: "numeric" })}</div></div>`;
   }).join("");
   el.innerHTML = `${header("Recupero", { sub: fmtDate(d.giorno, { weekday: "short", day: "numeric", month: "short" }) })}
-    <div class="card row" style="gap:14px">${bean(r.score, 46)}<div class="col" style="gap:2px"><div style="font-size:30px;font-weight:900;line-height:1">${r.score ?? "–"} <span class="${st.cls}" style="font-size:16px">${st.label}</span></div><div class="small muted">Rispetto ai tuoi ultimi 60 giorni${r.calibrazione ? ` · baseline ${r.giorni_baseline} gg` : ""}${r.affidabilita ? ` · affidabilità <b class="${r.affidabilita === "alta" ? "good" : r.affidabilita === "media" ? "mid" : "bad"}">${r.affidabilita}</b>` : ""}</div>${r.affidabilita === "bassa" ? `<div class="small" style="line-height:1.4;color:var(--text)">Stanotte il Watch ha fatto poche misure di HRV: pesano meno e il punteggio è una stima. Dormire con il Watch ben stretto aiuta.</div>` : ""}<button class="small" id="howScore" style="background:none;border:0;padding:0;color:var(--orange-ink);text-align:left;cursor:pointer;font-weight:700">Come si calcola?</button></div></div>
+    <div class="card row" style="gap:14px">${bean(r.score, 46)}<div class="col" style="gap:2px"><div style="font-size:30px;font-weight:900;line-height:1">${r.score ?? "–"} <span class="${st.cls}" style="font-size:16px">${st.label}</span></div><div class="small muted">Rispetto ai tuoi ultimi 60 giorni${r.calibrazione ? ` · baseline ${r.giorni_baseline} gg` : ""}${r.affidabilita ? ` · affidabilità <b class="${r.affidabilita === "alta" ? "good" : r.affidabilita === "media" ? "mid" : "bad"}">${r.affidabilita}</b>` : ""}</div>${r.affidabilita === "bassa" ? `<div class="small" style="line-height:1.4;color:var(--text)">Stanotte il Watch ha fatto meno misure di HRV del solito${r.componenti.hrv.misure_tipiche ? ` (di solito ${r.componenti.hrv.misure_tipiche})` : ""}: oggi conta di più la media degli ultimi 7 giorni e il punteggio è una stima. Per una misura sicura, fai 1 minuto di Respira appena sveglio.</div>` : r.componenti.hrv.fonte === "mattino" ? `<div class="small good" style="line-height:1.4">HRV dalla misura del mattino (Respira) ✓</div>` : ""}<button class="small" id="howScore" style="background:none;border:0;padding:0;color:var(--orange-ink);text-align:left;cursor:pointer;font-weight:700">Come si calcola?</button></div></div>
+    ${(() => {
+      // what is still being learned: nothing to do, just wait
+      const C = r.componenti, items = [];
+      const n = (x) => `${x} ${x === 1 ? "giorno" : "giorni"}`;
+      if (r.calibrazione) items.push(`Le tue medie personali: affidabili dopo 14 giorni (ne ho ${r.giorni_baseline})`);
+      for (const [k, label] of [["hrv", "HRV"], ["fc_riposo", "FC a riposo"], ["bilancio_sonno", "Bilancio di sonno"], ["stabilita_hrv", "Stabilità dell'HRV"], ["respirazione", "Respirazione"]])
+        if (C[k]?.mancano > 0) items.push(`${label}: tra ${n(C[k].mancano)}`);
+      if (C.fc_riposo && C.fc_riposo.fonte !== "notte" && C.fc_riposo.notti_fc_sonno < 5) items.push(`FC nel sonno, pronta alla sveglia: tra ${n(5 - C.fc_riposo.notti_fc_sonno)} (intanto uso quella di Apple, che arriva in giornata)`);
+      if (C.hrv?.mattine > 0 && C.hrv.mattine < 5) items.push(`Misura del mattino (Respira): tra ${n(5 - C.hrv.mattine)} di Respira la uso come valore principale`);
+      return items.length ? `<div class="card soft col" style="gap:6px"><div style="font-weight:800">⏳ Dati in arrivo</div><div class="small" style="line-height:1.5;color:var(--text)">Non devi fare niente: basta aspettare e portare il Watch, anche di notte. Questi dati compaiono da soli:</div><div class="small" style="line-height:1.6">${items.map((x) => `• ${esc(x)}`).join("<br>")}</div></div>` : "";
+    })()}
     ${r.score != null ? `<div class="card col" style="gap:6px">
       <div class="row" style="gap:14px;flex-wrap:wrap"><span class="small">Incertezza <b>±${r.incertezza ?? "–"}</b></span>${r.trend_3g != null ? `<span class="small">Tendenza 3 giorni <b>${r.trend_3g}</b></span>` : ""}${r.etichette?.length ? `<span class="small">Etichette: <b>${r.etichette.map((t) => esc(TAG_LABEL[t] || t)).join(", ")}</b></span>` : ""}</div>
       ${r.spiegazione?.length ? `<div class="small" style="line-height:1.5">${r.spiegazione.map((x) => `${x.punti < 0 ? "▼" : "▲"} <b>${esc(REC_NAMES[x.componente] || x.componente)}</b> ${x.punti > 0 ? "+" : ""}${x.punti}`).join(" · ")}${r.etichette?.some((t) => /alcol|malanno|viaggio/.test(t)) ? `<br><span class="muted">Giornata segnata come fuori dal solito: non entra nelle tue medie.</span>` : ""}</div>` : ""}

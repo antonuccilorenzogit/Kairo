@@ -66,3 +66,22 @@ test("recupero: con una sola misura strana lo score non crolla (al massimo −15
   assert.equal(d.affidabilita, "bassa");
   assert.ok(d.score >= y - 15, `${d.score} vs ieri ${y}`);
 });
+
+test("HRV: 1 misura a notte è normale per chi ne fa sempre 1; il Respira del mattino ha la sua media", async () => {
+  const env = makeEnv(); await setup(env); await seed(env);
+  // keep only the 03:00 reading every night → this person usually has 1 reading
+  await env.DB.prepare("DELETE FROM samples WHERE metric = 'hrv' AND ts NOT LIKE '%T03:00%'").run();
+  let r = (await computeDay(env.DB, today)).recupero;
+  assert.equal(r.componenti.hrv.misure_tipiche, 1);
+  assert.notEqual(r.affidabilita, "bassa", "1 misura è il tuo solito");
+  // a Breathe session after waking up (07:15) with a much higher HRV: not used until 5 mornings
+  const S = env.DB.prepare("INSERT INTO samples(metric,ts,t,value) VALUES('hrv',?,?,?)");
+  await S.bind(ts(today, "07:15"), Math.floor(Date.parse(ts(today, "07:15")) / 1000), 110).run();
+  const before = r.score;
+  r = (await computeDay(env.DB, today)).recupero;
+  assert.equal(r.componenti.hrv.fonte, "notte"); assert.equal(r.score, before, "il Respira non gonfia il punteggio");
+  await env.DB.batch([1, 2, 3, 4, 5, 6].map((i) => S.bind(ts(day(i), "07:15"), Math.floor(Date.parse(ts(day(i), "07:15")) / 1000), 105 + i)));
+  r = (await computeDay(env.DB, today)).recupero;
+  assert.equal(r.componenti.hrv.fonte, "mattino");
+  assert.equal(r.affidabilita, "alta");
+});

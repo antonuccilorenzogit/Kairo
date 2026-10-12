@@ -2,6 +2,15 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.14.0] — 2026-10-12
+
+### HRV più efficace e dati in attesa spiegati
+- **Misura del mattino separata**: l'HRV misurata entro 60 minuti dal risveglio (es. 1 minuto di Respira) è una serie a sé con la sua media personale, perché il respiro guidato alza l'HRV. Dopo 5 mattine diventa il valore principale; prima non altera il punteggio.
+- **Con poche misure pesa di più la media dei 7 giorni** (Plews): stanotte 60% con 3+ misure, 50% con il tuo numero abituale, 30% con meno del solito.
+- **Affidabilità rispetto al tuo solito numero di misure** (il Watch ne fa da 1 a 5 a notte, dipende dalla persona), non a una soglia fissa.
+- **Stabilità dell'HRV** solo su valori affidabili (mattine o notti con almeno 2 misure); l'allarme «HRV instabile» non scatta con dati scarsi.
+- **Dati in arrivo**: in Recupero un riquadro spiega che non devi fare niente e quanti giorni mancano per ogni dato (medie personali, FC nel sonno, stabilità, respirazione, misura del mattino); ogni voce dice «tra N giorni» invece di «nessun dato».
+
 ## [1.13.0] — 2026-10-12
 
 ### Recupero più serio e più resistente
