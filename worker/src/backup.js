@@ -8,7 +8,7 @@ import { cleanProfile } from "./profile.js";
 
 export const KEEP_BACKUPS = 8;
 const PREFIX = "backup/";
-const TABLES = ["samples", "daily", "hourly", "sleep", "checkin", "imports", "memoria", "sets", "schede", "esiti_piano", "test_sport"];
+const TABLES = ["samples", "daily", "hourly", "sleep", "checkin", "imports", "memoria", "sets", "schede", "esiti_piano", "test_sport", "pisolini"];
 
 export async function exportData(db, version) {
   const r = await db.batch([...TABLES.map((t) => db.prepare(`SELECT * FROM ${t}`)), db.prepare("SELECT key, value FROM settings WHERE key IN ('profilo','piano')")]);
@@ -116,6 +116,11 @@ export async function restoreData(db, data) {
     let v; try { v = cleanTest(t.sport, JSON.parse(t.dati)); } catch { v = { errore: 1 }; }
     if (v.errore || !/^\d{4}-\d{2}-\d{2}$/.test(String(t.day))) { skipped++; continue; }
     stmts.push(db.prepare("INSERT OR IGNORE INTO test_sport(day,sport,dati,created) VALUES(?,?,?,?)").bind(t.day, t.sport, JSON.stringify(v), t.created || new Date().toISOString()));
+  }
+  for (const n of Array.isArray(data.pisolini) ? data.pisolini : []) {
+    const a = parseTs(n?.start), b = parseTs(n?.end);
+    if (a == null || b == null || b - a < 5 * 60e3 || b - a > 240 * 60e3) { skipped++; continue; }
+    stmts.push(db.prepare("INSERT OR IGNORE INTO pisolini(start,end,created) VALUES(?,?,?)").bind(n.start, n.end, n.created || new Date().toISOString()));
   }
   const imp = data.impostazioni || {};
   if (imp.profilo) { const pr = cleanProfile(imp.profilo); if (!pr.errore) stmts.push(db.prepare("INSERT OR IGNORE INTO settings(key,value) VALUES('profilo',?)").bind(JSON.stringify(pr))); }

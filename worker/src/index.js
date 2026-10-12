@@ -7,11 +7,11 @@ import { saveSets, strengthSummary, muscleFatigue, unknownExercises, setCustomMu
 import { weeklyReport } from "./report.js";
 import { recommendWorkout, getSchede, saveSchede, lastSets, schedeFromText } from "./workout.js";
 import { sha256, safeEqual, clientIp, lockedFor, recordFailure, clearFailures, pruneFailures, codeProblem } from "./security.js";
-import { parsePayload, cleanCheckin, MAX_BODY_BYTES } from "./validate.js";
+import { parsePayload, cleanCheckin, cleanNap, MAX_BODY_BYTES } from "./validate.js";
 import { exportData, createBackup, listBackups, readBackup, restoreData } from "./backup.js";
 import { getProfile, saveProfile, hrMax, profileText, SPORTS, ALTRI_SPORT } from "./profile.js";
 import { listMemory, addMemory, deleteMemory, memoryText } from "./memory.js";
-import { injuryPlan, injuryText, savePain, clearPain, constraints, constraintList } from "./injury.js";
+import { injuryPlan, injuryText, savePain, clearPain, saveDone, constraints, constraintList } from "./injury.js";
 
 // What every coach prompt knows about the person: profile + remembered facts.
 const coachProfile = async (db, profile) => {
@@ -25,7 +25,7 @@ import { getPlan, savePlan, restartPlan, planToday, planOverview, saveOutcome, b
 import { propose } from "./progression.js";
 import { getVapid, sendPush, validEndpoint } from "./push.js";
 
-const VERSION = "1.19.1";
+const VERSION = "1.20.0";
 
 // No CORS headers: only the Kairo app (same origin) and the Shortcuts app (not a browser) talk to the API.
 const json = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), {
@@ -128,7 +128,7 @@ async function eveningPush(env, origin) {
   const r = await env.DB.prepare("INSERT INTO settings(key,value) VALUES('push_sera',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE settings.value != excluded.value").bind(day).run();
   if (!r.meta?.changes) return;
   const fmt = (min) => `${Math.floor(min / 60)}h${String(min % 60).padStart(2, "0")}`;
-  await sendPush(env, { title: `A letto entro le ${st.a_letto}`, body: `Stanotte ti servono ${fmt(st.fabbisogno_min)} di sonno${st.per_carico_min || st.per_debito_min ? " (oggi un po' di più per recuperare)" : ""}.`, url: "/#/sonno" }, origin);
+  await sendPush(env, { title: `A letto entro le ${st.a_letto}`, body: `Stanotte ti servono ${fmt(st.fabbisogno_min)} di sonno${st.pisolino_min ? ` (${st.pisolino_min} min in meno grazie al pisolino)` : st.per_carico_min || st.per_debito_min ? " (oggi un po' di più per recuperare)" : ""}.`, url: "/#/sonno" }, origin);
 }
 
 async function ingest(payload, env, origin) {
@@ -303,6 +303,13 @@ async function api(req, env, url) {
     if (!saved.infortunio.attivo && before.infortunio?.attivo && (await getPlan(env.DB)).attivo) await restartPlan(env.DB, todayLocal(tz));
     await dropTodayAdvice(env.DB, todayLocal(tz));
     return json(saved);
+  }
+  // injury mode: were today's exercises done? ("fatto", "parte", "saltato")
+  if (p === "/api/infortunio/esito" && req.method === "POST") {
+    const b = (await readJson(req)) || {};
+    if (!(await getProfile(env.DB)).infortunio?.attivo) return json({ errore: "La modalità infortunio non è attiva" }, 400);
+    const r = await saveDone(env.DB, todayLocal(tz), b.stato);
+    return json(r, r.errore ? 400 : 200);
   }
   if (p === "/api/chat") {
     if (req.method === "DELETE") { await env.DB.prepare("DELETE FROM chat").run(); return json({ ok: true }); }
@@ -504,6 +511,24 @@ async function api(req, env, url) {
     }
     return json(await env.DB.prepare("SELECT * FROM checkin WHERE day = ?").bind(validDay(url.searchParams.get("d")) || todayLocal(tz)).first());
   }
+  // a nap entered by hand (when the Watch did not record it): it lowers tonight's sleep need.
+  // It does not touch today's recovery, which is the picture of the morning.
+  if (p === "/api/pisolino") {
+    if (req.method === "POST") {
+      const n = cleanNap(await readJson(req));
+      if (n.errore) return json(n, 400);
+      // compared as instants (the offsets may differ, e.g. across a change to daylight saving time)
+      const s0 = Date.parse(n.inizio), e0 = Date.parse(n.fine);
+      const near = (await env.DB.prepare("SELECT start, end FROM pisolini WHERE end >= ?").bind(new Date(s0 - 2 * 86400e3).toISOString().slice(0, 10)).all()).results;
+      if (near.some((x) => Date.parse(x.start) < e0 && Date.parse(x.end) > s0)) return json({ errore: "Hai già segnato un pisolino in questo orario" }, 400);
+      await env.DB.prepare("INSERT INTO pisolini(start,end,created) VALUES(?,?,?)").bind(n.inizio, n.fine, new Date().toISOString()).run();
+      return json({ ok: true, ...n });
+    }
+    if (req.method === "DELETE") {
+      const r = await env.DB.prepare("DELETE FROM pisolini WHERE start = ?").bind(String(url.searchParams.get("inizio") || "")).run();
+      return json({ ok: true, eliminati: r.meta?.changes || 0 });
+    }
+  }
   if (p === "/api/coach/oggi" && req.method === "POST") {
     const b = (await readJson(req)) || {};
     // today's texts are written only after the morning check-in: one generation, with all the information
@@ -584,7 +609,7 @@ async function api(req, env, url) {
     if (conferma !== "CANCELLA") return json({ errore: "Conferma mancante" }, 400);
     // safety net: an automatic backup right before deleting everything
     if (env.BACKUP) { const bk = await createBackup(env, VERSION, "prima della cancellazione"); if (bk.errore) return json({ errore: `Backup di sicurezza non riuscito, cancellazione annullata: ${bk.errore}` }, 500); }
-    await env.DB.batch(["samples", "daily", "hourly", "sleep", "checkin", "imports", "advice", "memoria"].map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
+    await env.DB.batch(["samples", "daily", "hourly", "sleep", "checkin", "imports", "advice", "memoria", "pisolini"].map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
     return json({ ok: true });
   }
   return json({ errore: "endpoint sconosciuto" }, 404);

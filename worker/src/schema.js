@@ -1,6 +1,6 @@
 // Database schema. Applied automatically on the first request (idempotent),
 // so a fresh deployment needs no manual migration step.
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 export const SCHEMA = [
   // Point samples (HRV, resting HR, SpO2, respiration, weight, heart rate…).
@@ -68,6 +68,9 @@ export const SCHEMA = [
      stato TEXT NOT NULL, sensazione TEXT, risultato TEXT, created TEXT NOT NULL, PRIMARY KEY (day, seduta))`,
   // Test results that set the training paces (swim CSS, running threshold, cycling threshold heart rate)
   `CREATE TABLE IF NOT EXISTS test_sport (day TEXT NOT NULL, sport TEXT NOT NULL, dati TEXT NOT NULL, created TEXT NOT NULL, PRIMARY KEY (day, sport))`,
+  // Naps entered by hand (when the Watch did not record them). Merged with the Watch's sleep stages,
+  // so a nap recorded by both is counted once.
+  `CREATE TABLE IF NOT EXISTS pisolini (start TEXT PRIMARY KEY, end TEXT NOT NULL, created TEXT NOT NULL)`,
   // Web-push subscriptions (one per device that enabled notifications)
   `CREATE TABLE IF NOT EXISTS push_subs (
      endpoint TEXT PRIMARY KEY, p256dh TEXT NOT NULL, auth TEXT NOT NULL, created TEXT NOT NULL)`,
@@ -97,6 +100,8 @@ const MIGRATIONS = {
   5: ["ALTER TABLE checkin ADD COLUMN tag TEXT"],
   // v5 -> v6: training plan tables (created by SCHEMA)
   6: [],
+  // v6 -> v7: naps entered by hand (created by SCHEMA)
+  7: [],
 };
 
 const ready = new WeakSet();

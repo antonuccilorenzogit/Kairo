@@ -26,7 +26,26 @@ export async function savePain(db, day, value) {
   await db.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(PAIN_KEY, JSON.stringify(kept)).run();
   return { ok: true };
 }
-export async function clearPain(db) { await db.prepare("DELETE FROM settings WHERE key = ?").bind(PAIN_KEY).run(); }
+// a new injury starts with an empty pain log and an empty log of the exercises done
+export async function clearPain(db) { await db.prepare("DELETE FROM settings WHERE key IN (?, ?)").bind(PAIN_KEY, DONE_KEY).run(); }
+
+// ---------- were the day's exercises done? ("fatto", "parte" = only some, "saltato") ----------
+const DONE_KEY = "infortunio_esiti";
+export const ESITI_INFORTUNIO = { fatto: "fatti", parte: "fatti in parte", saltato: "saltati" };
+export async function doneLog(db) {
+  const r = await db.prepare("SELECT value FROM settings WHERE key = ?").bind(DONE_KEY).first();
+  try { return r ? JSON.parse(r.value) : {}; } catch { return {}; }
+}
+export async function saveDone(db, day, stato) {
+  if (!Object.hasOwn(ESITI_INFORTUNIO, stato)) return { errore: "Esito non valido" };
+  const log = await doneLog(db);
+  log[day] = stato;
+  const kept = Object.fromEntries(Object.entries(log).sort().slice(-60));
+  await db.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(DONE_KEY, JSON.stringify(kept)).run();
+  return { ok: true, stato };
+}
+const doneTrend = (log, since, before) => Object.entries(log).filter(([d]) => (!since || d >= since) && (!before || d < before)).slice(-7);
+const doneText = (t) => t.map(([d, v]) => `${d.slice(5)} ${ESITI_INFORTUNIO[v]}`).join(", ");
 
 const painTrend = (log, since) => Object.entries(log).filter(([d]) => !since || d >= since).slice(-7);
 
@@ -34,8 +53,9 @@ const painTrend = (log, since) => Object.entries(log).filter(([d]) => !since || 
 export async function injuryText(db, profile) {
   if (!profile.infortunio?.attivo) return "";
   const t = painTrend(await painLog(db), profile.infortunio.dal);
+  const done = doneTrend(await doneLog(db), profile.infortunio.dal);
   const v = constraintList(constraints(profile.infortunio));
-  return (v.length ? `\nVINCOLI ASSOLUTI prescritti dal medico (non proporre MAI nulla che li violi, nemmeno in chat): ${v.join("; ")}.` : "") + (t.length ? `\nDolore dichiarato (0-10) negli ultimi giorni: ${t.map(([d, v]) => `${d.slice(5)} ${v}`).join(", ")}.` : "\nNon ha ancora indicato quanto gli fa male.");
+  return (done.length ? `\nEsercizi del giorno (riabilitazione/resto del corpo): ${doneText(done)}.` : "") + (v.length ? `\nVINCOLI ASSOLUTI prescritti dal medico (non proporre MAI nulla che li violi, nemmeno in chat): ${v.join("; ")}.` : "") + (t.length ? `\nDolore dichiarato (0-10) negli ultimi giorni: ${t.map(([d, v]) => `${d.slice(5)} ${v}`).join(", ")}.` : "\nNon ha ancora indicato quanto gli fa male.");
 }
 
 // ---------- body area from the description ----------
@@ -156,6 +176,8 @@ export async function injuryPlan(env, req, { day, today, profile, profileText, f
   const inj = profile.infortunio;
   const log = await painLog(env.DB);
   const dolore = log[day] ?? null;
+  const done = await doneLog(env.DB);
+  const esito = done[day] || null;
   const giorni = inj.dal ? Math.max(0, daysBetween(inj.dal, day)) : null;
   const area = injuryArea(inj.descrizione);
   const c = constraints(inj);
@@ -164,7 +186,7 @@ export async function injuryPlan(env, req, { day, today, profile, profileText, f
   const key = "A:" + day;
   if (!force) {
     const c = await env.DB.prepare("SELECT text FROM advice WHERE day = ?").bind(key).first();
-    if (c) try { const j = JSON.parse(c.text); if (j.infortunio && j.firma === firma) return { ...j, cache: true }; } catch (_) {}
+    if (c) try { const j = JSON.parse(c.text); if (j.infortunio && j.firma === firma) return { ...j, esito, cache: true }; } catch (_) {}
   }
   const lim = allowedMode({ dolore, giorni });
   const trend = painTrend(log, inj.dal);
@@ -173,6 +195,7 @@ ${vincoli.length ? `VINCOLI ASSOLUTI PRESCRITTI (un piano che li viola viene sca
 - Infortunio descritto dalla persona: """${clip(inj.descrizione, 1000) || "non descritto"}"""
 - Iniziato: ${inj.dal || "data non indicata"}${giorni != null ? ` (${giorni} giorni fa)` : ""}. Zona stimata: ${area}.
 - Dolore oggi (0-10): ${dolore ?? "non indicato"}. Andamento: ${trend.length ? trend.map(([d, v]) => `${d.slice(5)}=${v}`).join(", ") : "nessun dato"}.
+- Esercizi dei giorni scorsi: ${doneTrend(done, inj.dal, day).length ? doneText(doneTrend(done, inj.dal, day)) : "nessun dato"}. Se sono stati saltati o fatti solo in parte, non aumentare: riproponi lo stesso livello o uno più semplice; se fatti con dolore stabile o in calo, puoi progredire di poco.
 - Recupero di stanotte: ${today?.recupero?.score ?? "n/d"}; sonno ${today?.sonno?.durata_min ? `${Math.round(today.sonno.durata_min / 6) / 10} h` : "n/d"}.
 - Sport abituali: ${(profile.sport || []).join(", ") || "n/d"}.
 - LIMITE DI SICUREZZA calcolato da Kairo: al massimo "${lim.modalita}" (${lim.motivo}). Ordine dal più prudente: riposo < resto del corpo < riabilitazione. NON proporre più di questo.
@@ -205,5 +228,5 @@ Rispondi SOLO con JSON: {"modalita":"riposo|resto del corpo|riabilitazione","tit
   plan = { infortunio: true, ...plan, dolore, giorni, area, limite: lim.modalita, vincoli, ...(scartato ? { scartato } : {}), firma };
   await env.DB.prepare("INSERT INTO advice(day,text,provider,model,created) VALUES(?,?,?,?,?) ON CONFLICT(day) DO UPDATE SET text=excluded.text, provider=excluded.provider, model=excluded.model, created=excluded.created")
     .bind(key, JSON.stringify(plan), plan.fonte, plan.modello || null, new Date().toISOString()).run();
-  return plan;
+  return { ...plan, esito };
 }

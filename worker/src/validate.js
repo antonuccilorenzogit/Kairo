@@ -101,3 +101,16 @@ export function cleanCheckin(c, fallbackDay) {
   const bad = Object.entries(out).filter(([, v]) => v === undefined).map(([k]) => k);
   return bad.length ? { errore: `Valori non validi: ${bad.join(", ")}` } : out;
 }
+
+// A nap entered by hand: start and end with the time zone, 5 minutes to 4 hours, ended within the last 7 days.
+export const NAP_LIMITS = { min: 5, max: 240, days: 7 };
+export function cleanNap(b, nowMs = Date.now()) {
+  const s = parseTs(b?.inizio), e = parseTs(b?.fine);
+  if (s == null || e == null) return { errore: "Orari non validi" };
+  const min = (e - s) / 60e3;
+  if (min < NAP_LIMITS.min) return { errore: "Il pisolino deve durare almeno 5 minuti" };
+  if (min > NAP_LIMITS.max) return { errore: "Oltre 4 ore non è un pisolino: segna le ore nel check-in del mattino" };
+  if (e > nowMs + 5 * 60e3) return { errore: "Il pisolino non può finire nel futuro" };
+  if (e < nowMs - NAP_LIMITS.days * 86400e3) return { errore: "Si possono segnare solo i pisolini degli ultimi 7 giorni" };
+  return { inizio: b.inizio, fine: b.fine, min: Math.round(min) };
+}

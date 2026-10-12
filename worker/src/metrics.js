@@ -23,6 +23,10 @@ const BASELINE_DAYS = 60;   // finestra della media personale
 const MIN_BASELINE = 5;
 const CALC_VERSION = 2;     // bump when the recovery formula changes: frozen days are recomputed
 const GAP_MS = 2 * 3600e3;  // pausa oltre la quale due blocchi di sonno sono sessioni diverse
+const NAP_MIN_MIN = 10;     // a nap counts from 10 minutes asleep
+const NIGHT_FLOOR_MIN = 360; // a nap lowers tonight's need, never below 6 h: deep and REM sleep come mostly at night
+// sleep of a day: the main night plus that day's naps (naps of today are handled apart, see enrich)
+const napMin = (d) => d?.pisolini?.totale_min || 0;
 
 const DAY_MS = 86400e3;
 const SLEEP_NEED_MIN = 480;  // fabbisogno di riferimento: 8 h (centro dell'intervallo AASM 7-9 h)
@@ -58,6 +62,7 @@ async function load(db, from, to) {
     db.prepare("SELECT start, max(end) end, avg(rpe) rpe, count(*) n FROM sets WHERE start >= ? AND start < ? GROUP BY start").bind(from, addDays(to, 1)),
     db.prepare("SELECT day, start, end, minuti, fc_media, trimp FROM sessioni WHERE day >= ? AND day <= ? ORDER BY start").bind(from, to),
     db.prepare("SELECT day, dati FROM recupero_giorno WHERE day >= ? AND day <= ?").bind(from, to),
+    db.prepare("SELECT start, end FROM pisolini WHERE end >= ? AND start < ? ORDER BY start").bind(from, addDays(to, 1)),
   ]);
   const frozen = {};
   // a day frozen by an older version of the calculation is computed again (and frozen again)
@@ -77,7 +82,10 @@ async function load(db, from, to) {
     const minutes = min > 0 && min < 300 ? min : Math.min(180, (w.n || 0) * 3);
     if (minutes > 0) (gym[w.start.slice(0, 10)] ||= []).push(minutes * (w.rpe || 7));
   }
-  return { samples, sleepRows: r[1].results, daily, checkin, gym, sessioni, frozen };
+  // naps entered by hand are generic sleep: where the Watch recorded the same minutes, its stages win
+  const manualNaps = r[7].results;
+  const sleepRows = [...r[1].results, ...manualNaps.map((x) => ({ start: x.start, end: x.end, stage: "asleep" }))];
+  return { samples, sleepRows, manualNaps, daily, checkin, gym, sessioni, frozen };
 }
 
 // Le fasi possono arrivare da più fonti (Watch, iPhone, altre app) e sovrapporsi: le fondo in una
@@ -149,7 +157,16 @@ function inWindow(list, fromMs, toMs) {
 function rawDay(day, data, sessionsByDay) {
   const sessions = (sessionsByDay[day] || []).slice().sort((a, b) => b.asleepMin - a.asleepMin);
   const main = sessions[0] && sessions[0].asleepMin >= 120 ? sessions[0] : null;
-  const napsMin = sessions.filter((s) => s !== main).reduce((a, s) => a + s.asleepMin, 0);
+  // naps: the other sleep sessions that end this day (at least 10 minutes asleep; shorter ones are noise)
+  const naps = sessions.filter((s) => s !== main && s.asleepMin >= NAP_MIN_MIN).sort((a, b) => a.startMs - b.startMs);
+  const napsMin = naps.reduce((a, s) => a + s.asleepMin, 0);
+  const manual = (data.manualNaps || []).filter((x) => x.end.slice(0, 10) === day);
+  const pisolini = naps.length ? {
+    totale_min: Math.round(napsMin),
+    sessioni: naps.map((s) => ({ inizio: s.startIso, fine: s.endIso, min: Math.round(s.asleepMin),
+      // entered by hand when one of the manual naps falls inside it (the app can delete it)
+      manuale: manual.find((x) => t(x.start) >= s.startMs && t(x.end) <= s.endMs)?.start || null })),
+  } : null;
 
   let winFrom, winTo;
   if (main) { winFrom = main.startMs - 30 * 60e3; winTo = main.endMs; }
@@ -209,6 +226,7 @@ function rawDay(day, data, sessionsByDay) {
     notte: { hrv_ms: r1(hrv), hrv_misure: hrvNight.length || hrvFallback.length, hrv_fonte: hrvNight.length ? "notte" : hrvFallback.length ? "24h" : null, hrv_mattino: hrvMorning.length ? r1(median(hrvMorning)) : null, hrv_giorno_ms: r1(mean(hrvDay)), fcr_bpm: fcr, fc_notte_bpm: d.fc_notte ?? null,
       resp_rpm: r1(resp), spo2_media: r1(mean(spo2)), spo2_min: spo2.length ? Math.min(...spo2) : null },
     sonno: sleep,
+    pisolini,
     attivita: { passi: d.passi ?? null, kcal_attive: r1(d.kcal_attive, 0), kcal_riposo: r1(d.kcal_riposo, 0),
       dist_km: r1(d.dist_piedi, 2), piani: d.piani ?? null, trimp: d.trimp ?? null,
       // sessions detected from heart rate, with the likely sport (swim/bike distance of the day)
@@ -315,8 +333,9 @@ function finalize(days, idx, maskOf, baseFrom = null) {
   }
 
   // ---- bilancio di sonno: media delle ultime 14 notti rispetto al fabbisogno (Oura "Sleep balance") ----
+  // naps count in the balance (Oura and Whoop do the same), except today's: today's recovery is the morning's picture
   const last14 = days.slice(Math.max(0, idx - 13), idx + 1).filter((d) => d.sonno);
-  const balance = last14.length >= 3 ? mean(last14.map((d) => d.sonno.durata_min)) - SLEEP_NEED_MIN : null;
+  const balance = last14.length >= 3 ? mean(last14.map((d) => d.sonno.durata_min + (d === today ? 0 : napMin(d)))) - SLEEP_NEED_MIN : null;
 
   // ---- baseline personali (60 giorni, solo giorni precedenti) ----
   const vals = (f) => prev.map(f).filter((x) => x != null && Number.isFinite(x));
@@ -547,11 +566,14 @@ function enrich(days, data, profile, from) {
     else if (hrvLow && ratio != null && ratio > 1.3) d.allarme = { tipo: "sovraccarico", titolo: "Stai accumulando fatica", testo: "Da tre giorni l'HRV è sotto il tuo intervallo normale e il carico è sopra il solito. Inserisci 2-3 giorni leggeri prima della prossima seduta dura." };
 
     // fabbisogno di sonno per stanotte (come Whoop: base + carico del giorno + recupero del debito)
+    // past days count their naps too; today's naps are taken off tonight's need directly (Whoop: "recent naps")
     const last7 = days.slice(Math.max(0, i - 6), i + 1).filter((x) => x.sonno);
-    const debt = last7.reduce((a, x) => a + Math.max(0, need0 - x.sonno.durata_min), 0);
+    const debt = last7.reduce((a, x) => a + Math.max(0, need0 - x.sonno.durata_min - (x === d ? 0 : napMin(x))), 0);
     const strainAdd = chronic && load[i] != null ? clamp((load[i] / chronic - 1) * 30, 0, 45) : 0;
     const debtAdd = clamp(debt / 7, 0, 60);
-    const needTonight = Math.round(need0 + strainAdd + debtAdd);
+    const before = need0 + strainAdd + debtAdd;
+    const napToday = napMin(d);
+    const needTonight = Math.round(napToday ? Math.max(before - napToday, Math.min(before, NIGHT_FLOOR_MIN)) : before);
     // sveglia: dal profilo, altrimenti l'orario medio di risveglio delle ultime 14 notti registrate
     let wake = profile.sveglia ? Number(profile.sveglia.slice(0, 2)) * 60 + Number(profile.sveglia.slice(3)) : null;
     if (wake == null) {
@@ -560,6 +582,7 @@ function enrich(days, data, profile, from) {
     }
     const bed = wake == null ? null : (wake - needTonight - 15 + 1440 * 2) % 1440; // 15 minuti per addormentarsi
     d.sonno_stanotte = { fabbisogno_min: needTonight, base_min: need0, base_fonte: needSource, per_carico_min: Math.round(strainAdd), per_debito_min: Math.round(debtAdd), debito_7g_min: Math.round(debt),
+      pisolino_min: napToday ? Math.round(before) - needTonight : 0,
       sveglia: wake == null ? null : `${String(Math.floor(wake / 60)).padStart(2, "0")}:${String(wake % 60).padStart(2, "0")}`,
       a_letto: bed == null ? null : `${String(Math.floor(bed / 60)).padStart(2, "0")}:${String(bed % 60).padStart(2, "0")}` };
   });

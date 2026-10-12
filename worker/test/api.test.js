@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeEnv, call, setup, CODE, count } from "./helpers.js";
+import { SCHEMA_VERSION } from "../src/schema.js";
 
 test("setup: codice troppo corto o banale rifiutato, poi una volta sola", async () => {
   const env = makeEnv();
@@ -181,7 +182,7 @@ test("migrazione da un database della versione 1 senza perdere dati", async () =
   await setup(env);
   assert.equal(await count(env, "samples"), 2, "il doppione con fuso diverso viene unito");
   assert.equal(await count(env, "sleep"), 1);
-  assert.equal((await db.prepare("SELECT value FROM settings WHERE key='schema_version'").first()).value, "6");
+  assert.equal((await db.prepare("SELECT value FROM settings WHERE key='schema_version'").first()).value, String(SCHEMA_VERSION));
 });
 
 test("richieste OPTIONS e pagine dell'app", async () => {

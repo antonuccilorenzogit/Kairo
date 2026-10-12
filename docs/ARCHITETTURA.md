@@ -90,6 +90,8 @@
 | GET | `/api/corpo` | misure corporee, VO₂max e FC per la pagina Corpo |
 | GET/POST | `/api/profilo` | profilo (età, sesso, obiettivi, FC max, sveglia, sonno necessario, fuso) |
 | GET/DELETE | `/api/chat` | conversazione con il coach (salvata sul server) |
+| POST/DELETE | `/api/pisolino` | segna un pisolino (`{"inizio":"…","fine":"…"}` con fuso, 5 min–4 h, ultimi 7 giorni) · DELETE `?inizio=` lo elimina |
+| POST | `/api/infortunio/esito` | esercizi dell'infortunio di oggi (`{"stato":"fatto|parte|saltato"}`) |
 | POST | `/api/infortunio` | modalità infortunio (`{"attivo":true,"descrizione":"…","dal":"AAAA-MM-GG"}`, `{"attivo":false}` per disattivarla) |
 | GET/POST/DELETE | `/api/memoria` | ricordi del coach · POST `{"testo":"…"}` aggiunge · DELETE `?id=N` (o `?id=tutto`) elimina |
 | GET | `/api/settimana?a=` | report dei 7 giorni fino ad `a` · POST `/api/settimana/coach` resoconto del coach |
@@ -117,7 +119,7 @@ Le metriche giornaliere (`passi`, `kcal_attive`, …) arrivano già sommate per 
 
 Nessuna app (Whoop, Oura, Garmin, Bevel) pubblica la formula esatta dei suoi punteggi. Kairo usa i **metodi pubblicati** che queste app dichiarano di usare e le **soglie della letteratura**; i pesi sono di Kairo e sono tutti in `worker/src/metrics.js`.
 
-- **Sessioni di sonno:** le fasi vengono raggruppate in sessioni (pausa > 2 h = nuova sessione) e assegnate al giorno del risveglio.
+- **Sessioni di sonno:** le fasi vengono raggruppate in sessioni (pausa > 2 h = nuova sessione) e assegnate al giorno del risveglio. La più lunga (almeno 2 h) è la notte; le altre da almeno 10 minuti sono pisolini. I pisolini segnati a mano (tabella `pisolini`) entrano come sonno generico nella stessa linea temporale, quindi i minuti registrati anche dal Watch contano una volta. Debito di 7 giorni e bilancio di 14 notti contano i pisolini dei giorni passati; quelli di oggi abbassano solo il fabbisogno di stanotte.
 - **Punteggio del sonno** (contributi come Oura, 0–100 ciascuno):
   - durata 35%: 7–9 h raccomandate (AASM, Watson et al. 2015), pieno punteggio da 8 h, 0 sotto 4 h;
   - efficienza 20%: ≥ 85% buona qualità, ≤ 74% scarsa (National Sleep Foundation, Ohayon et al. 2017);
@@ -138,7 +140,7 @@ Nessuna app (Whoop, Oura, Garmin, Bevel) pubblica la formula esatta dei suoi pun
 - **Rapporto acuto:cronico** (Gabbett 2016): media degli ultimi 7 giorni / media degli ultimi 28 (fino a ieri; almeno 4 e 14 giorni con dati). < 0,8 scarico, 0,8–1,0 mantenimento, 1,0–1,3 costruzione, 1,3–1,5 attenzione, > 1,5 eccesso.
 - **Allenamento consigliato:** fascia di carico per oggi in multipli della media a 28 giorni: recupero verde 0,9–1,5, giallo 0,5–1,0, rosso 0–0,5; con rapporto > 1,3 il massimo scende a 0,8, con rapporto < 0,8 e recupero verde sale a 1,6. Livello: seduta dura (massimo ≥ 1,4), normale (≥ 0,95), leggera (≥ 0,6), riposo attivo.
 - **Allarmi:** "malanno" se per due giorni di fila l'HRV è ≥ 1 DS sotto la media e la FC a riposo ≥ 1 DS sopra (o la respirazione ≥ 1 DS sopra); "sovraccarico" se da tre giorni l'HRV è sotto l'intervallo normale e il rapporto acuto:cronico supera 1,3.
-- **Fabbisogno di sonno stanotte** (principio di Whoop): base (profilo, predefinito 8 h) + fino a 45 minuti se il carico di oggi supera il solito + un settimo del debito degli ultimi 7 giorni (massimo 60 minuti). Orario per andare a letto = sveglia − fabbisogno − 15 minuti per addormentarsi. Notti senza Watch: le ore dichiarate nel check-in (conta solo la durata).
+- **Fabbisogno di sonno stanotte** (principio di Whoop): base (profilo, predefinito 8 h) + fino a 45 minuti se il carico di oggi supera il solito + un settimo del debito degli ultimi 7 giorni (massimo 60 minuti). Meno i pisolini di oggi (Whoop, «recent naps»), mai sotto 6 h. Orario per andare a letto = sveglia − fabbisogno − 15 minuti per addormentarsi. Notti senza Watch: le ore dichiarate nel check-in (conta solo la durata).
 - **Allenamento del giorno:** prima le regole scelgono sport e intensità massima: intensità da allenamento consigliato (dura → intenso, normale → medio, leggera/riposo → leggero) o dal recupero; con un allarme sempre leggero e niente pesi; tra gli sport attivi nel profilo vince quello fatto meno di recente (check-in, serie di palestra, distanze di nuoto e bici dal Watch), evitando quello di ieri; per la palestra la scheda successiva a quella fatta per ultima. Poi l'IA scrive la seduta (JSON validato): può cambiare sport tra quelli attivi ma l'intensità viene sempre limitata a quella delle regole. Senza IA si usano sedute tipo per ogni sport e intensità. Una proposta al giorno, in cache.
 - **Allenamento in palestra:** la seduta vive nel telefono (localStorage) finché non la termini; serie con kg e ripetizioni precompilate dall'ultima volta; doppia progressione (tutte le serie al massimo del range → +2,5 kg, +1 kg sotto i 20 kg). A fine seduta l'RPE della sessione entra nel carico (session-RPE). Senza rete il salvataggio resta in coda e viene inviato alla prima occasione.
 - **Forza:** massimale stimato con la formula di Epley, peso × (1 + ripetizioni/30), sulla serie migliore di ogni seduta (1–12 ripetizioni, riscaldamento escluso).

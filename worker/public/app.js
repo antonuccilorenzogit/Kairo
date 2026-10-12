@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.19.1";
+const APP_VERSION = "1.20.0";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -30,6 +30,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const fmtNum = (n, d = 0) => (n == null || !Number.isFinite(Number(n)) ? "–" : Number(n).toLocaleString("it-IT", { maximumFractionDigits: d, minimumFractionDigits: d }));
 const fmtMin = (m) => (m == null ? "–" : `${Math.floor(m / 60)}h ${String(Math.round(m % 60)).padStart(2, "0")}`);
+const fmtShort = (m) => (m != null && m < 60 ? `${Math.round(m)} min` : fmtMin(m));
 const fmtDate = (d, opts = { weekday: "long", day: "numeric", month: "long" }) => new Date(d + "T12:00:00").toLocaleDateString("it-IT", opts);
 const hhmm = (iso) => (iso ? iso.slice(11, 16) : "–");
 const ago = (iso) => {
@@ -357,7 +358,7 @@ function renderWorkoutCard(w) {
     const [ml, mc] = MOD_LABEL[w.modalita] || ["", "muted"];
     box.innerHTML = line("Infortunio · cosa fare oggi", esc(w.titolo),
       w.dolore == null ? `<b class="${mc}">${ml}</b> · <span style="color:var(--orange-ink);font-weight:800">tocca per segnare il dolore</span>`
-        : `<b class="${mc}">${ml}</b> · dolore ${w.dolore}/10${w.giorni != null ? ` · giorno ${w.giorni + 1}` : ""}`);
+        : `<b class="${mc}">${ml}</b> · dolore ${w.dolore}/10${w.giorni != null ? ` · giorno ${w.giorni + 1}` : ""}${INJ_DONE[w.esito] ? ` · ${INJ_DONE[w.esito][1]}` : ""}`);
   } else {
     const [il, ic] = INT_LABEL[w.intensita] || ["", "muted"];
     const es = w.esito ? (w.esito.stato === "saltato" ? ` · <b class="muted">saltato</b>` : ` · <b class="good">✓ fatto${w.esito.stato === "altro" && w.esito.sport ? ` (${esc(w.esito.sport)})` : ""}</b>`) : "";
@@ -459,8 +460,11 @@ function planDetail(w, i) {
   const st = $("#pStart"); if (st) st.onclick = async () => { const { schede } = await api("/api/schede"); const sc = schede.find((x) => x.nome === s.scheda); if (sc) { closeSheet(); startSession(sc); } };
 }
 
+// were today's injury exercises done? [button, line on the card]
+const INJ_DONE = { fatto: ["Fatti ✓", `<b class="good">✓ fatti</b>`], parte: ["In parte", `<b class="mid">fatti in parte</b>`], saltato: ["Saltati", `<b class="muted">saltati</b>`] };
 function injuryDetail(w) {
   const [ml, mc] = MOD_LABEL[w.modalita] || ["", "muted"];
+  const doneLabel = w.modalita === "riposo" ? "Hai fatto quello che serviva oggi?" : "Hai fatto gli esercizi di oggi?";
   openSheet(`${sheetHead(esc(w.titolo))}
     <div class="col" style="gap:6px"><div class="small" style="font-weight:800">Quanto ti fa male oggi? <span class="muted" style="font-weight:600">0 = niente · 10 = fortissimo</span></div>
       <div class="pain">${Array.from({ length: 11 }, (_, i) => `<button class="choice" data-pain="${i}" aria-pressed="${w.dolore === i}">${i}</button>`).join("")}</div>
@@ -469,12 +473,22 @@ function injuryDetail(w) {
     ${steps(w)}
     <div class="small muted" style="line-height:1.5">${esc(w.perche)}</div>
     ${w.vincoli?.length ? `<div class="card soft col" style="gap:4px;padding:10px 12px"><div class="small" style="font-weight:800">Indicazioni del medico rispettate</div>${w.vincoli.map((x) => `<div class="small" style="line-height:1.4">✓ ${esc(x)}</div>`).join("")}</div>` : ""}
+    <div class="col" style="gap:6px"><div class="small" style="font-weight:800">${w.esito ? `Oggi: ${INJ_DONE[w.esito][1]} <span class="muted" style="font-weight:600">· puoi cambiarlo</span>` : doneLabel}</div>
+      <div class="acts" style="grid-template-columns:repeat(3,minmax(0,1fr))">${Object.entries(INJ_DONE).map(([k, [l]]) => `<button class="choice" data-done="${k}" aria-pressed="${w.esito === k}">${l}</button>`).join("")}</div>
+      <div class="small muted" style="line-height:1.45">Il coach ne tiene conto: se salti o fai solo una parte, domani non aumenta.</div></div>
     <div class="warnbox">${esc(w.attenzione)}</div>
     <div class="row" style="gap:8px"><button class="btn ghost" id="injEdit" style="flex:1;min-height:48px">Modifica infortunio</button><button class="btn primary" id="injOff" style="flex:1;min-height:48px">Sono guarito</button></div>`, "Infortunio");
   $("#sheet").querySelectorAll("[data-pain]").forEach((b) => (b.onclick = async () => {
     sheetBusy();
     try { const n = await fetchWorkout({ dolore: Number(b.dataset.pain) }); renderWorkoutCard(n); injuryDetail(n); } catch (e) { toast(e.message); closeSheet(); return; }
     loadAdvice();
+  }));
+  $("#sheet").querySelectorAll("[data-done]").forEach((b) => (b.onclick = async () => {
+    try {
+      const r = await api("/api/infortunio/esito", { method: "POST", body: { stato: b.dataset.done } });
+      w.esito = r.stato; todayWorkout = w; renderWorkoutCard(w); injuryDetail(w);
+      toast(r.stato === "saltato" ? "Segnato: saltati" : r.stato === "parte" ? "Segnato: in parte" : "Segnato ✓");
+    } catch (e) { toast(e.message); }
   }));
   $("#injEdit").onclick = () => injurySheet();
   $("#injOff").onclick = async () => {
@@ -605,7 +619,7 @@ function infoSheet(kind, d) {
       + `<div class="card list">${[["Durata", "durata", "35%", "7–9 h raccomandate (AASM); pieno punteggio da 8 h"], ["Efficienza", "efficienza", "20%", "≥ 85% del tempo a letto dormendo (National Sleep Foundation)"], ["Sonno profondo", "profondo", "10%", "almeno 15% del sonno"], ["REM", "rem", "10%", "almeno 20% del sonno"], ["Regolarità", "regolarita", "15%", "Sleep Regularity Index sugli ultimi 7 giorni"], ["Orario", "orario", "10%", "punto medio del sonno tra 00:00 e 03:00"]]
           .map(([l, k, w, why]) => `<div class="item"><div class="col" style="gap:2px"><b>${l} <span class="small muted">${w}</span></b><span class="small muted">${why}</span></div><b>${s && s.contributi && s.contributi[k] != null ? s.contributi[k] : "–"}</b></div>`).join("")}</div>`
       + you(s && s.manuale ? `${s.punteggio}/100 · ${fmtMin(s.durata_min)} dichiarate nel check-in: senza il Watch conta solo la durata.` : s ? `${s.punteggio}/100 · ${fmtMin(s.durata_min)} di sonno, efficienza ${s.efficienza}%, profondo ${s.quota_profondo}%, REM ${s.quota_rem}%${s.sri != null ? `, regolarità (SRI) ${s.sri}` : ""}.` : "nessuna notte registrata: dormi con il Watch per avere questo dato.")
-      + body(`<b>Nel Recupero</b> il sonno conta per il 75% questa notte e per il 25% il bilancio delle ultime 14 notti${c.sonno?.bilancio_min != null ? ` (tu: ${c.sonno.bilancio_min >= 0 ? "in pari" : `${fmtMin(-c.sonno.bilancio_min)} in meno a notte`})` : ""}: una notte corta si recupera, un debito lungo pesa di più.`)
+      + body(`<b>Nel Recupero</b> il sonno conta per il 75% questa notte e per il 25% il bilancio delle ultime 14 notti${c.sonno?.bilancio_min != null ? ` (tu: ${c.sonno.bilancio_min >= 0 ? "in pari" : `${fmtMin(-c.sonno.bilancio_min)} in meno a notte`})` : ""}: una notte corta si recupera, un debito lungo pesa di più. I pisolini contano nel bilancio dal giorno dopo.`)
       + tip("Il sonno profondo si concentra nella prima metà della notte, il REM verso il mattino: andare a letto tardi taglia soprattutto il profondo, quello che ripara i muscoli.");
   } else if (kind === "bilancio") {
     const v = d.recupero.segnali?.bilancio_sonno?.valore ?? c.sonno?.bilancio_min ?? null;
@@ -750,7 +764,12 @@ views.sonno = async (el) => {
   const tonight = sn ? `<div class="card col" style="gap:8px"><div class="label">Stanotte</div>
       <div class="row between"><div class="col" style="gap:2px"><div style="font-size:30px;font-weight:900;line-height:1">${fmtMin(sn.fabbisogno_min)}</div><div class="small muted">di sonno ti servono</div></div>
         ${sn.a_letto ? `<div class="col" style="gap:2px;text-align:right"><div style="font-size:30px;font-weight:900;line-height:1;color:var(--orange-ink)">${sn.a_letto}</div><div class="small muted">a letto entro${sn.sveglia ? ` · sveglia ${sn.sveglia}` : ""}</div></div>` : ""}</div>
-      <div class="small" style="color:var(--text);line-height:1.5">Base ${fmtMin(sn.base_min)}${sn.per_carico_min ? ` + ${sn.per_carico_min} min per il carico di oggi` : ""}${sn.per_debito_min ? ` + ${sn.per_debito_min} min per recuperare il debito della settimana` : ""}.${sn.a_letto ? "" : " Imposta la sveglia nel profilo per l'orario consigliato."}</div></div>` : "";
+      <div class="small" style="color:var(--text);line-height:1.5">Base ${fmtMin(sn.base_min)}${sn.per_carico_min ? ` + ${sn.per_carico_min} min per il carico di oggi` : ""}${sn.per_debito_min ? ` + ${sn.per_debito_min} min per recuperare il debito della settimana` : ""}${sn.pisolino_min ? ` − ${sn.pisolino_min} min per il pisolino di oggi` : ""}.${sn.a_letto ? "" : " Imposta la sveglia nel profilo per l'orario consigliato."}</div></div>` : "";
+  // today's naps (from the Watch or entered by hand): they lower tonight's need, not today's recovery
+  const naps = d.pisolini?.sessioni || [];
+  const napCard = `<div class="card col" style="gap:8px"><div class="row between"><div class="label">Pisolini di oggi</div><button class="chip" id="napAdd">+ Segna un pisolino</button></div>
+      ${naps.length ? naps.map((n) => `<div class="row between small"><span><b>${fmtShort(n.min)}</b> · ${hhmm(n.inizio)} → ${hhmm(n.fine)}${n.manuale ? ` <span class="muted">· segnato a mano</span>` : ""}</span>${n.manuale ? `<button class="iconbtn" data-napdel="${esc(n.manuale)}" aria-label="Elimina pisolino">${ico.close}</button>` : ""}</div>`).join("")
+        : `<div class="small muted" style="line-height:1.45">Se il Watch registra il pisolino arriva da solo; altrimenti segnalo qui. Abbassa il sonno che ti serve stanotte (mai sotto le 6 ore) e quindi sposta più tardi l'ora per andare a letto. Il Recupero di oggi non cambia: è la fotografia del mattino; il pisolino conta da domani nel bilancio di sonno.</div>`}</div>`;
   const level = { awake: 6, rem: 39, core: 72, asleep: 72, deep: 105, inbed: 6 };
   const color = { awake: "#FF8A1F", rem: "#9B7BEA", core: "#7DB7F0", asleep: "#7DB7F0", deep: "#2F4A8C", inbed: "#E2E5EC" };
   let hyp = "";
@@ -763,11 +782,13 @@ views.sonno = async (el) => {
     }).join("");
   }
   const week = hist.map((h) => {
-    const m = h.sonno ? h.sonno.durata_min : null;
-    return `<div class="col" style="align-items:center;gap:4px;flex:1"><div class="small" style="font-size:11px;font-weight:800">${m ? fmtMin(m).replace(" ", "") : ""}</div><div style="height:80px;width:100%;display:flex;align-items:flex-end;justify-content:center;position:relative"><div style="width:60%;max-width:22px;border-radius:6px;height:${m ? Math.min(80, m / 600 * 80) : 4}px;background:${m ? "#7DB7F0" : "#E2E5EC"}"></div></div><div class="small muted" style="font-size:11px">${fmtDate(h.giorno, { weekday: "narrow" })}</div></div>`;
+    const m = h.sonno ? h.sonno.durata_min : null, nap = h.pisolini?.totale_min || 0, tot = (m || 0) + nap;
+    const hgt = (x) => Math.min(80, x / 600 * 80);
+    return `<div class="col" style="align-items:center;gap:4px;flex:1"><div class="small" style="font-size:11px;font-weight:800">${tot ? fmtMin(tot).replace(" ", "") : ""}</div><div style="height:80px;width:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;position:relative">${nap ? `<div title="pisolino" style="width:60%;max-width:22px;border-radius:6px 6px 0 0;height:${Math.max(3, hgt(nap))}px;background:#C9DEF7"></div>` : ""}<div style="width:60%;max-width:22px;border-radius:${nap ? "0 0 6px 6px" : "6px"};height:${m ? hgt(m) : nap ? 0 : 4}px;background:${m ? "#7DB7F0" : "#E2E5EC"}"></div></div><div class="small muted" style="font-size:11px">${fmtDate(h.giorno, { weekday: "narrow" })}</div></div>`;
   }).join("");
   const need = (cfg().profilo.sonno_min || 480);
-  const debt = hist.filter((h) => h.sonno).reduce((a, h) => a + (h.sonno.durata_min - need), 0);
+  // naps count in the week's balance (today's too: the day is what you slept in total)
+  const debt = hist.filter((h) => h.sonno).reduce((a, h) => a + (h.sonno.durata_min + (h.pisolini?.totale_min || 0) - need), 0);
   const nNights = hist.filter((h) => h.sonno).length;
   el.innerHTML = `${header("Sonno", { sub: s ? `notte ${fmtDate(shiftDay(d.giorno, -1), { day: "numeric" })} → ${fmtDate(d.giorno, { day: "numeric", month: "short" })}` : "" })}
     ${s ? `<div class="card dark row between" style="align-items:flex-end">
@@ -783,11 +804,48 @@ views.sonno = async (el) => {
       : sAll ? `<div class="card dark col" style="gap:4px"><div class="label" style="color:#FFB27A">Dormito</div><div style="font-size:44px;font-weight:900;line-height:1">${fmtMin(sAll.durata_min)}</div><div class="small" style="color:#C9CEDB">dichiarato nel check-in · senza il Watch non ho fasi, HRV e respirazione notturna</div></div>`
       : `<div class="card col center" style="gap:8px">${bean(null, 90)}<div class="h2">Nessun dato del sonno stanotte</div><div class="muted small" style="max-width:300px">Per avere sonno, respirazione e HRV notturna indossa il Watch mentre dormi. Carica il Watch mentre fai colazione o la doccia.</div></div>`}
     ${tonight}
+    ${napCard}
     <div class="card"><div class="row between" style="margin-bottom:8px"><div class="label">Ultimi 7 giorni</div>${nNights ? `<div class="small ${debt < 0 ? "bad" : "good"}" style="font-weight:800">${debt < 0 ? "Debito" : "Surplus"} ${fmtMin(Math.abs(debt))} su ${fmtMin(need)}</div>` : ""}</div><div class="row" style="gap:2px;align-items:flex-end">${week}</div></div>
     ${s && s.sri != null ? `<div class="card soft"><div style="line-height:1.45"><b>Regolarità ${s.sri}/100</b> (Sleep Regularity Index). ${s.sri >= 86 ? "Sei tra il quarto più regolare della popolazione: ottimo." : s.sri >= 74 ? "Nella media della popolazione (mediana 81)." : "Sotto la media della popolazione (mediana 81): orari più costanti aiutano recupero e sonno profondo."}</div></div>`
       : s && s.regolarita_min != null ? `<div class="card soft"><div style="line-height:1.45">Il tuo orario di addormentamento varia di circa <b>${s.regolarita_min} minuti</b> da una sera all'altra. ${s.regolarita_min > 60 ? "Più regolarità di solito significa sonno più profondo." : "Ottima regolarità."}</div></div>` : ""}`;
   el.querySelectorAll("[data-info]").forEach((b) => b.addEventListener("click", () => infoSheet("sonno", d)));
+  $("#napAdd").onclick = () => napSheet();
+  el.querySelectorAll("[data-napdel]").forEach((b) => (b.onclick = async () => {
+    try { await api(`/api/pisolino?inizio=${encodeURIComponent(b.dataset.napdel)}`, { method: "DELETE" }); toast("Pisolino eliminato"); router(); }
+    catch (e) { toast(e.message); }
+  }));
 };
+
+// Enter a nap by hand: start and end time of today (a start later than the end means it began yesterday)
+function napSheet() {
+  const pad = (n) => String(n).padStart(2, "0");
+  const now = new Date(), r5 = (dt) => new Date(Math.floor(dt.getTime() / 300e3) * 300e3);
+  const hm = (dt) => `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+  const end = r5(now), start = new Date(end.getTime() - 30 * 60e3);
+  openSheet(`${sheetHead("Segna un pisolino")}
+    <div class="grid2"><label class="field">Dalle<input class="input" id="napS" type="time" value="${hm(start)}"></label><label class="field">Alle<input class="input" id="napE" type="time" value="${hm(end)}"></label></div>
+    <div class="small muted" id="napInfo" style="line-height:1.45"></div>
+    <button class="btn primary" id="napSave">Salva</button>`, "Pisolino");
+  // local date + time → ISO with this device's offset
+  const iso = (day, t) => {
+    const dt = new Date(`${day}T${t}:00`), off = -dt.getTimezoneOffset();
+    return `${day}T${t}:00${off >= 0 ? "+" : "-"}${pad(Math.floor(Math.abs(off) / 60))}:${pad(Math.abs(off) % 60)}`;
+  };
+  const read = () => {
+    const s = $("#napS").value, e = $("#napE").value;
+    if (!s || !e) return null;
+    const today = todayStr(), sDay = s > e ? shiftDay(today, -1) : today;
+    const inizio = iso(sDay, s), fine = iso(today, e);
+    return { inizio, fine, min: Math.round((Date.parse(fine) - Date.parse(inizio)) / 60e3) };
+  };
+  const show = () => { const n = read(); $("#napInfo").textContent = n ? `${fmtShort(n.min)} di pisolino.` : ""; };
+  $("#napS").oninput = show; $("#napE").oninput = show; show();
+  $("#napSave").onclick = async () => {
+    const n = read(); if (!n) { toast("Inserisci gli orari"); return; }
+    try { await api("/api/pisolino", { method: "POST", body: { inizio: n.inizio, fine: n.fine } }); closeSheet(); toast("Pisolino segnato"); router(); }
+    catch (e) { toast(e.message); }
+  };
+}
 
 views.coach = async (el) => {
   let msgs = [];

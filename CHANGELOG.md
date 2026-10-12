@@ -2,6 +2,15 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.20.0] — 2026-10-12
+
+### Aggiunto
+- **Pisolini.** Quelli registrati dal Watch arrivano da soli; se il Watch non li registra si segnano dalla pagina Sonno («+ Segna un pisolino», con orario di inizio e fine). Un pisolino registrato sia dal Watch sia a mano conta una volta sola.
+  - **Stanotte**: il pisolino di oggi viene tolto dal sonno che ti serve (come i «recent naps» di Whoop), mai sotto le 6 ore, e l'ora per andare a letto si sposta più tardi. Lo dice anche la notifica della sera.
+  - **Recupero**: quello di oggi non cambia (è la fotografia del mattino). Dal giorno dopo il pisolino conta nel debito di sonno della settimana e nel bilancio di 14 notti.
+  - Nel grafico degli ultimi 7 giorni il pisolino è la parte chiara sopra la barra.
+- **Infortunio: esercizi fatti?** Nella scheda dell'infortunio i pulsanti «Fatti ✓», «In parte», «Saltati». Il coach ne tiene conto: se li salti o li fai solo in parte, il giorno dopo non aumenta.
+
 ## [1.19.1] — 2026-10-12
 
 ### Corretto
