@@ -70,7 +70,7 @@ test("schede: validazione, salvataggio e ultima seduta per precompilare", async 
   assert.deepEqual(r.data.schede[0].esercizi.map((e) => e.nome), ["Panca piana"]);
   await call(env, "/api/forza", { method: "POST", code: CODE, body: { serie: [0, 1].map((i) => ({ start: ts(day(1), "18:00"), exercise: "Panca piana", set_index: i, weight: 80, reps: 10 - i })) } });
   const g = (await call(env, "/api/schede", { code: CODE })).data;
-  assert.deepEqual(g.ultimo["Panca piana"].serie, [{ kg: 80, reps: 10 }, { kg: 80, reps: 9 }]);
+  assert.deepEqual(g.ultimo["Panca piana"].serie.map(({ kg, reps }) => ({ kg, reps })), [{ kg: 80, reps: 10 }, { kg: 80, reps: 9 }]);
   assert.equal((await call(env, "/api/schede", { method: "PUT", code: CODE, body: { schede: "x" } })).status, 400);
 });
 

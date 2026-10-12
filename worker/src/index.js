@@ -21,10 +21,11 @@ const coachProfile = async (db, profile) => {
 // Today's coach texts depend on the injury: drop them when it changes.
 const dropTodayAdvice = (db, day) => db.prepare("DELETE FROM advice WHERE day IN (?, ?)").bind(day, "A:" + day).run();
 import { recomputeTrimp, recomputeNightHr } from "./load.js";
-import { getPlan, savePlan, restartPlan, planToday, planOverview, saveOutcome } from "./plan.js";
+import { getPlan, savePlan, restartPlan, planToday, planOverview, saveOutcome, blockOf, mondayOf } from "./plan.js";
+import { propose } from "./progression.js";
 import { getVapid, sendPush, validEndpoint } from "./push.js";
 
-const VERSION = "1.18.0";
+const VERSION = "1.19.0";
 
 // No CORS headers: only the Kairo app (same origin) and the Shortcuts app (not a browser) talk to the API.
 const json = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), {
@@ -440,7 +441,12 @@ async function api(req, env, url) {
       if (r.errore) return json(r, 400);
     }
     const schede = await getSchede(env.DB);
-    return json({ schede, ultimo: await lastSets(env.DB, [...new Set(schede.flatMap((s) => s.esercizi.map((e) => e.nome)))]) });
+    const ultimo = await lastSets(env.DB, [...new Set(schede.flatMap((s) => s.esercizi.map((e) => e.nome)))]);
+    // next session of each routine: weights, reps and set types decided from what you did last time
+    const plan = await getPlan(env.DB);
+    const scarico = plan.attivo && plan.inizio ? blockOf(plan, mondayOf(todayLocal(tz))).scarico : false;
+    const proposte = Object.fromEntries(schede.map((s) => [s.id, s.esercizi.map((e) => propose(e, ultimo[e.nome], { scarico }))]));
+    return json({ schede, ultimo, proposte, scarico });
   }
   if (p === "/api/schede/ia" && req.method === "POST") {
     const b = (await readJson(req)) || {};

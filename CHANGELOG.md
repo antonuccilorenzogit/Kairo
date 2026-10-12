@@ -2,6 +2,19 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.19.0] — 2026-10-12
+
+### Aggiunto
+- **Palestra: pesante + back-off (+ drop).** Per ogni esercizio della scheda scegli «Serie uguali» o «Pesante + back-off»: serie totali, range di ripetizioni della pesante, quanto sono più leggere le back-off (8–25%) e un drop set finale facoltativo. Le schede restano le tue.
+- **La progressione guarda la serie pesante**: dopo averla fatta segni com'era (facile / giusta / al limite). Con le ripetizioni in cima al range o oltre sale (+1 incremento, +2 se era facile o hai fatto 2 ripetizioni in più); al limite resta finché non diventa più facile; dentro il range punta a una ripetizione in più; sotto il range scende. Ferma da 3 sedute → −10% e si risale.
+- **Back-off e drop calcolati dalla pesante**: le back-off hanno 2 ripetizioni in più della pesante e una percentuale che si adatta a come sono andate (tutte in cima al range → un po' più pesanti, sotto → più leggere); il drop è −25% dalle back-off, a cedimento. Se cambi il peso della pesante durante la seduta, back-off e drop si ricalcolano.
+- **Riscaldamento suggerito** in chili (50% × 8, 70% × 4, 85% × 2) prima della pesante.
+- Le serie si salvano con il loro tipo (pesante, back-off, drop): progressi e fatica muscolare li contano correttamente. Le schede create con il coach riconoscono «top set», «back-off» e «drop set».
+
+### Migliorato
+- La progressione è calcolata dal server con regole fisse (stessa logica per schede vecchie e nuove) ed è coperta da test.
+- Nella settimana di scarico del piano: pesante −10%, una back-off in meno e niente drop.
+
 ## [1.18.0] — 2026-10-12
 
 ### Aggiunto

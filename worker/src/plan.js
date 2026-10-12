@@ -376,8 +376,8 @@ export async function planToday(env, { day, tz, profile, today }) {
     Object.assign(s, { scheda: prossimaScheda?.nome || null, esercizi: prossimaScheda?.esercizi.length || null, titolo: prossimaScheda ? `Palestra · ${prossimaScheda.nome}` : "Palestra",
       obiettivo: w.scarico ? "Settimana di scarico: il corpo assorbe il lavoro delle ultime 3 settimane." : "Progressione dei carichi: la scheda ti dice quando aumentare.",
       struttura: [
-        { fase: "Scheda", dettaglio: prossimaScheda ? prossimaScheda.esercizi.map((e) => `${e.nome} ${e.serie}×${e.min}${e.max !== e.min ? "-" + e.max : ""}`).join(" · ") : "Crea le tue schede nella pagina Palestra" },
-        { fase: "Carichi", dettaglio: w.scarico ? "Scarico: −10% sui carichi e una serie in meno per esercizio, ripetizioni pulite." : "Quando chiudi il range su tutte le serie aumenti il carico; se sei fermo da 3 sedute scarichi del 10% e risali." }] });
+        { fase: "Scheda", dettaglio: prossimaScheda ? prossimaScheda.esercizi.map((e) => `${e.nome} ${e.metodo === "top" ? `1 pesante ${e.min}-${e.max} + ${Math.max(0, e.serie - 1)} back-off${e.drop ? " + drop" : ""}` : `${e.serie}×${e.min}${e.max !== e.min ? "-" + e.max : ""}`}`).join(" · ") : "Crea le tue schede nella pagina Palestra" },
+        { fase: "Carichi", dettaglio: w.scarico ? "Scarico: −10% sui carichi e una serie in meno per esercizio, ripetizioni pulite." : "Kairo ti dà carico e ripetizioni di ogni serie: con pesante + back-off sale guardando la pesante (ripetizioni e com'era), con serie uguali quando chiudi il range su tutte." }] });
   }
   const esiti = (await db.prepare("SELECT seduta, stato, sensazione, risultato FROM esiti_piano WHERE day = ?").bind(day).all()).results;
   // what the Watch recorded today for the same sport (time, distance, pace): shown with the session

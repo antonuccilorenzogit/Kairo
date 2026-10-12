@@ -28,7 +28,10 @@ export function cleanSchede(list) {
       const n = clip(e?.nome, 80);
       const serie = Math.round(Number(e?.serie)), min = Math.round(Number(e?.min)), max = Math.round(Number(e?.max ?? e?.min));
       if (!n || !(serie >= 1 && serie <= 10) || !(min >= 1 && min <= 50) || !(max >= min && max <= 60)) continue;
-      esercizi.push({ nome: n, serie, min, max, note: clip(e?.note, 120) });
+      const x = { nome: n, serie, min, max, note: clip(e?.note, 120) };
+      // heavy set + back-off: % lighter for the back-offs and an optional drop set at the end
+      if (e?.metodo === "top") { const b = Math.round(Number(e?.backoff)); Object.assign(x, { metodo: "top", backoff: b >= 5 && b <= 30 ? b : 12, drop: e?.drop === true }); }
+      esercizi.push(x);
     }
     if (esercizi.length) out.push({ id: clip(s?.id, 40) || `s${Date.now().toString(36)}${i}`, nome, ordine: i, esercizi });
   }
@@ -54,15 +57,19 @@ export async function lastSets(db, names) {
   for (const n of names.slice(0, 60)) {
     const last = await db.prepare("SELECT start FROM sets WHERE exercise = ? AND (set_type IS NULL OR set_type != 'warmup') ORDER BY start DESC LIMIT 1").bind(n).first();
     if (!last) continue;
-    const r = await db.prepare("SELECT weight, reps FROM sets WHERE exercise = ? AND start = ? AND (set_type IS NULL OR set_type != 'warmup') ORDER BY set_index").bind(n, last.start).all();
-    // the last 3 sessions: heaviest weight, reps done at that weight, average RPE (to spot a stall)
-    const h = await db.prepare(`SELECT start, max(weight) kg, avg(rpe) rpe FROM sets WHERE exercise = ? AND (set_type IS NULL OR set_type != 'warmup') GROUP BY start ORDER BY start DESC LIMIT 3`).bind(n).all();
+    const r = await db.prepare("SELECT weight, reps, set_type, rpe FROM sets WHERE exercise = ? AND start = ? AND (set_type IS NULL OR set_type != 'warmup') ORDER BY set_index").bind(n, last.start).all();
+    // the last 3 sessions: heaviest weight (or the heavy set), its reps, reps done at that weight, RPE (to spot a stall)
+    const h = await db.prepare(`SELECT start, max(weight) kg, avg(rpe) rpe FROM sets WHERE exercise = ? AND (set_type IS NULL OR set_type NOT IN ('warmup','dropset')) GROUP BY start ORDER BY start DESC LIMIT 3`).bind(n).all();
     const storia = [];
     for (const x of h.results) {
-      const reps = await db.prepare("SELECT sum(reps) r FROM sets WHERE exercise = ? AND start = ? AND weight = ?").bind(n, x.start, x.kg).first();
-      storia.push({ data: x.start, kg: x.kg, reps: reps?.r ?? null, rpe: x.rpe == null ? null : Math.round(x.rpe * 10) / 10 });
+      const [reps, top] = await db.batch([
+        db.prepare("SELECT sum(reps) r FROM sets WHERE exercise = ? AND start = ? AND weight = ?").bind(n, x.start, x.kg),
+        db.prepare("SELECT weight kg, reps, rpe FROM sets WHERE exercise = ? AND start = ? AND (set_type = 'top' OR weight = ?) ORDER BY set_type = 'top' DESC, reps DESC LIMIT 1").bind(n, x.start, x.kg),
+      ]);
+      const t = top.results[0];
+      storia.push({ data: x.start, kg: t?.kg ?? x.kg, reps: reps.results[0]?.r ?? null, reps_top: t?.reps ?? null, rpe: x.rpe == null ? null : Math.round(x.rpe * 10) / 10 });
     }
-    out[n] = { data: last.start, serie: r.results.map((x) => ({ kg: x.weight, reps: x.reps })), storia };
+    out[n] = { data: last.start, serie: r.results.map((x) => ({ kg: x.weight, reps: x.reps, tipo: x.set_type || "normal", rpe: x.rpe })), storia };
   }
   return out;
 }
@@ -95,7 +102,7 @@ export async function schedeFromText(env, req, text) {
   const t = String(text || "").slice(0, 6000);
   const r = await ask(env, req, [
     { role: "system", content: "Trasformi la descrizione degli allenamenti in palestra di un utente in schede strutturate. Rispondi SOLO con JSON valido, senza testo prima o dopo." },
-    { role: "user", content: `Descrizione dell'utente:\n"""${t}"""\n\nRestituisci {"schede":[{"nome":"Scheda A – Petto e tricipiti","esercizi":[{"nome":"Panca piana con bilanciere","serie":4,"min":8,"max":10,"note":""}]}]}.\nRegole: nomi degli esercizi in italiano, standard e brevi; "min" e "max" sono il range di ripetizioni (se l'utente dà un numero solo, min = max); niente tempi di recupero; massimo 6 schede e 15 esercizi per scheda; non inventare esercizi che l'utente non ha scritto. Se il nome della scheda manca, usa "Scheda A", "Scheda B"…` },
+    { role: "user", content: `Descrizione dell'utente:\n"""${t}"""\n\nRestituisci {"schede":[{"nome":"Scheda A – Petto e tricipiti","esercizi":[{"nome":"Panca piana con bilanciere","serie":4,"min":8,"max":10,"note":""}]}]}.\nRegole: nomi degli esercizi in italiano, standard e brevi; "min" e "max" sono il range di ripetizioni (se l'utente dà un numero solo, min = max); se per un esercizio l'utente fa una serie pesante (top set) seguita da back-off, aggiungi "metodo":"top" (allora "serie" conta la pesante più le back-off, "min"/"max" sono le ripetizioni della pesante e "backoff" è quanto sono più leggere in %, di solito 10-15) e "drop":true se finisce con un drop set; niente tempi di recupero; massimo 6 schede e 15 esercizi per scheda; non inventare esercizi che l'utente non ha scritto. Se il nome della scheda manca, usa "Scheda A", "Scheda B"…` },
   ]);
   const parsed = r.errore ? null : jsonFrom(r.text);
   const ai = parsed ? cleanSchede(parsed.schede) : null;

@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.18.0";
+const APP_VERSION = "1.19.0";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -456,7 +456,7 @@ function planDetail(w, i) {
   }));
   $("#sheet [data-skip]").onclick = () => save({ stato: "saltato" });
   $("#sheet").querySelectorAll("[data-other]").forEach((b) => (b.onclick = () => planDetail(w, Number(b.dataset.other))));
-  const st = $("#pStart"); if (st) st.onclick = async () => { const { schede } = await api("/api/schede"); const sc = schede.find((x) => x.nome === s.scheda); if (sc) { closeSheet(); startSession(sc, w.scarico); } };
+  const st = $("#pStart"); if (st) st.onclick = async () => { const { schede } = await api("/api/schede"); const sc = schede.find((x) => x.nome === s.scheda); if (sc) { closeSheet(); startSession(sc); } };
 }
 
 function injuryDetail(w) {
@@ -1089,51 +1089,25 @@ const localIso = (d = new Date()) => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}${off >= 0 ? "+" : "-"}${pad(off / 60)}:${pad(off % 60)}`;
 };
 // weight increments by kind of exercise: big lower-body lifts move faster, small isolation lifts slower
-const LOWER = /squat|stacco|deadlift|leg press|pressa|hip thrust|affond|bulgar|rdl|romanian|rumeno|good morning|lunge/i;
-const ISOL = /curl|croci|alzat|estension|french|push ?down|kick ?back|calf|polpacc|face pull|shrug|scrollat|pullover|fly|raise|extension|crunch|addom/i;
-const kgStep = (kg, name = "") => (LOWER.test(name) && !/leg curl|leg extension/i.test(name) ? (kg >= 60 ? 5 : 2.5) : ISOL.test(name) ? (kg >= 30 ? 2.5 : 1) : kg >= 20 ? 2.5 : 1);
-const roundTo = (kg, step) => Math.max(step, Math.round(kg / step) * step);
-// double progression: all sets at the top of the range last time → add weight, otherwise same weight and more reps.
-// In the plan's lighter week (deload): −10% and one set less, to absorb the work of the block.
-function progression(ex, last, scarico = false) {
-  const base = progressionBase(ex, last);
-  if (!scarico || base.kg == null) return { ...base, serie: ex.serie };
-  const step = kgStep(base.kg, ex.nome);
-  return { testo: `Settimana di scarico: ${fmtNum(roundTo(base.kg * 0.9, step), 1)} kg, una serie in meno, ripetizioni pulite lontano dal cedimento.`, kg: roundTo(base.kg * 0.9, step), serie: Math.max(2, ex.serie - 1) };
-}
-function progressionBase(ex, last) {
-  if (!last || !last.serie.length) return { testo: "Prima volta: scegli un carico con cui arrivi al range con 2 ripetizioni in riserva.", kg: null };
-  const done = last.serie.filter((x) => x.reps != null);
-  const kg = Math.max(...last.serie.map((x) => x.kg || 0)) || null;
-  const kgStepN = (k) => kgStep(k, ex.nome);
-  const allTop = done.length >= Math.min(ex.serie, last.serie.length) && done.every((x) => x.reps >= ex.max);
-  const lastTxt = `Ultima volta: ${last.serie.map((x) => `${x.kg != null ? fmtNum(x.kg, 1) + " kg × " : ""}${x.reps ?? "–"}`).join(", ")}`;
-  const h = last.storia || [], rpe = h[0]?.rpe;
-  // stall: same weight for the last 3 sessions and no more reps → deload 10% and build back up
-  if (kg && h.length >= 3 && h.every((x) => x.kg === h[0].kg) && h[0].reps != null && h[2].reps != null && h[0].reps <= h[2].reps) {
-    const dl = roundTo(kg * 0.9, kgStepN(kg));
-    return { testo: `${lastTxt}. Fermo da 3 sedute allo stesso carico: oggi scarico a ${fmtNum(dl, 1)} kg con ripetizioni pulite, poi si risale.`, kg: dl };
-  }
-  // clearly below the range (2+ reps short on a set): the weight was too much
-  if (kg && done.length && done.some((x) => x.reps < ex.min - 1)) return { testo: `${lastTxt}. Sotto il range: scendi a ${fmtNum(kg - kgStepN(kg), 1)} kg e torna nel range ${ex.min}-${ex.max}.`, kg: Math.max(0, kg - kgStepN(kg)) };
-  // range closed: add weight, unless last time was already at the limit (RPE 9.5-10); very easy (RPE ≤ 7) → two steps
-  if (kg && allTop && rpe != null && rpe >= 9.5) return { testo: `${lastTxt}. Range chiuso ma al limite (RPE ${fmtNum(rpe, 1)}): resta a ${fmtNum(kg, 1)} kg finché non ti sembra più facile.`, kg };
-  if (kg && allTop && rpe != null && rpe <= 7) return { testo: `${lastTxt}. Range chiuso con margine (RPE ${fmtNum(rpe, 1)}): prova ${fmtNum(kg + 2 * kgStepN(kg), 1)} kg.`, kg: kg + 2 * kgStepN(kg) };
-  if (kg && allTop) return { testo: `${lastTxt}. Hai chiuso il range: prova ${fmtNum(kg + kgStepN(kg), 1)} kg.`, kg: kg + kgStepN(kg) };
-  return { testo: `${lastTxt}. ${kg ? `Stesso carico, punta a ${ex.max} ripetizioni.` : ""}`, kg };
-}
-
-async function startSession(scheda, scarico = false) {
+// Weights and reps of the next session come from the server (src/progression.js): the routines stay yours,
+// Kairo decides the loads from what you actually did (heavy set + back-off, or straight sets).
+// "4×8–10" or, for heavy set + back-off, "1×5–7 + 2 back-off"
+const exShort = (e) => `${e.metodo === "top" ? `1×${e.min}${e.max !== e.min ? "–" + e.max : ""} + ${Math.max(0, e.serie - 1)} back-off${e.drop ? " + drop" : ""}` : `${e.serie}×${e.min}${e.max !== e.min ? "–" + e.max : ""}`}`;
+const SET_LABEL = { top: "Pesante", backoff: "Back-off", dropset: "Drop", normal: "Serie" };
+const FEEL_RPE = { facile: 7, giusta: 8.5, limite: 10 };
+const roundStep = (kg, step) => Math.max(step, Math.round(kg / step) * step);
+async function startSession(scheda) {
   const cur = store.get("sessione", null);
   if (cur && !confirm(`C'è già un allenamento in corso (${cur.nome}). Vuoi abbandonarlo e iniziare ${scheda.nome}?`)) return route("sessione");
-  let ultimo = {};
-  try { ultimo = (await api("/api/schede")).ultimo || {}; } catch (_) {}
+  let prop = null;
+  try { prop = (await api("/api/schede")).proposte?.[scheda.id] || null; } catch (_) {}
   store.set("sessione", {
     id: scheda.id, nome: scheda.nome, inizio: localIso(), inizioMs: Date.now(),
-    esercizi: scheda.esercizi.map((e) => {
-      const pr = progression(e, ultimo[e.nome], scarico);
-      return { nome: e.nome, min: e.min, max: e.max, note: e.note || "", consiglio: pr.testo,
-        serie: Array.from({ length: pr.serie || e.serie }, (_, i) => ({ kg: pr.kg ?? ultimo[e.nome]?.serie[i]?.kg ?? null, reps: null, fatto: false })) };
+    esercizi: scheda.esercizi.map((e, i) => {
+      const pr = prop?.[i] || { metodo: e.metodo || "classico", consiglio: "Senza rete: carichi dell'ultima volta.", serie: Array.from({ length: e.serie }, () => ({ tipo: e.metodo === "top" ? "backoff" : "normal", kg: null, min: e.min, max: e.max })) };
+      if (!prop && e.metodo === "top" && pr.serie[0]) pr.serie[0].tipo = "top";
+      return { nome: e.nome, min: e.min, max: e.max, note: e.note || "", metodo: pr.metodo, consiglio: pr.consiglio, riscaldamento: pr.riscaldamento || null, ratio: pr.ratio || null, step: pr.step || null,
+        serie: pr.serie.map((x) => ({ tipo: x.tipo, kg: x.kg, rmin: x.min, rmax: x.max, reps: null, fatto: false, sens: null })) };
     }),
   });
   route("sessione");
@@ -1164,7 +1138,7 @@ views.palestra = async (el) => {
   html += `<div class="row between" style="padding:0 2px"><div class="label">Le tue schede</div><button class="small" id="aiSchede" style="background:none;border:0;color:var(--orange-ink);font-weight:800;cursor:pointer">✨ Crea con il coach</button></div>`;
   html += schede.length ? schede.map((sc, i) => `<div class="card col" style="gap:10px">
       <div class="row between"><div class="h2">${esc(sc.nome)}</div><a class="small" href="#/scheda?id=${encodeURIComponent(sc.id)}" style="font-weight:800">Modifica</a></div>
-      <div class="small muted" style="line-height:1.5">${sc.esercizi.map((e) => `${esc(e.nome)} <span style="white-space:nowrap">${e.serie}×${e.min}${e.max !== e.min ? "–" + e.max : ""}</span>`).join(" · ")}</div>
+      <div class="small muted" style="line-height:1.5">${sc.esercizi.map((e) => `${esc(e.nome)} <span style="white-space:nowrap">${exShort(e)}</span>`).join(" · ")}</div>
       <button class="btn primary" data-start="${i}">Inizia allenamento</button></div>`).join("")
     : `<div class="card col" style="gap:10px"><div class="h2">Nessuna scheda</div><div class="small" style="line-height:1.5;color:var(--text)">Descrivi al coach i tuoi allenamenti (es. «Lunedì: panca 4x8-10, croci 3x12…») e compila lui le schede. Oppure creale a mano.</div>
       <button class="btn primary" id="aiSchede2">✨ Crea le schede con il coach</button><a class="btn ghost" href="#/scheda?id=nuova">Crea a mano</a></div>`;
@@ -1192,7 +1166,7 @@ views.palestra = async (el) => {
       <div class="col" style="gap:4px"><div class="small muted">Serie per settimana (ultime 8)</div><div class="row" style="gap:4px;align-items:flex-end;height:44px">${forza.serie_per_settimana.map((n, i) => `<div style="flex:1;height:${Math.max(3, (n / maxSets) * 44)}px;background:${i === 7 ? "var(--orange)" : "#C9CEDB"};border-radius:4px" title="${n} serie"></div>`).join("")}</div></div></div>`;
   }
   el.innerHTML = html;
-  el.querySelectorAll("[data-start]").forEach((b) => (b.onclick = () => startSession(schede[Number(b.dataset.start)], scarico)));
+  el.querySelectorAll("[data-start]").forEach((b) => (b.onclick = () => startSession(schede[Number(b.dataset.start)])));
   el.querySelectorAll("[data-mus]").forEach((sel) => (sel.onchange = async () => {
     if (!sel.value) return;
     try { await api("/api/muscoli", { method: "POST", body: { esercizio: sel.dataset.mus, muscolo: sel.value } }); toast("Collegato"); views.palestra(el); } catch (e) { toast(e.message); }
@@ -1218,7 +1192,7 @@ function aiSchedeSheet(current) {
       const r = await api("/api/schede/ia", { method: "POST", body: { testo: txt } });
       if (r.errore) { out.innerHTML = `<div class="small bad">${esc(r.errore)}</div>`; return; }
       out.innerHTML = `<div class="small muted">${r.fonte === "ia" ? "Compilate dal coach" : "Lette dal testo (IA non disponibile)"}: controlla e salva.</div>
-        ${r.schede.map((sc) => `<div class="card col" style="gap:6px"><b>${esc(sc.nome)}</b>${sc.esercizi.map((e) => `<div class="row between small"><span>${esc(e.nome)}</span><b>${e.serie} × ${e.min}${e.max !== e.min ? "–" + e.max : ""}</b></div>`).join("")}</div>`).join("")}
+        ${r.schede.map((sc) => `<div class="card col" style="gap:6px"><b>${esc(sc.nome)}</b>${sc.esercizi.map((e) => `<div class="row between small"><span>${esc(e.nome)}</span><b>${exShort(e)}</b></div>`).join("")}</div>`).join("")}
         <div class="row">${current.length ? `<button class="btn ghost" id="aiAdd" style="flex:1">Aggiungi alle mie</button>` : ""}<button class="btn primary" id="aiSave" style="flex:1">${current.length ? "Sostituisci le mie" : "Salva le schede"}</button></div>`;
       const save = async (list) => { try { await api("/api/schede", { method: "PUT", body: { schede: list } }); closeSheet(); toast("Schede salvate"); router(); } catch (e) { toast(e.message); } };
       out.querySelector("#aiSave").onclick = () => save(r.schede);
@@ -1239,13 +1213,19 @@ views.scheda = async (el) => {
       <div class="card col" style="gap:10px"><label class="field">Nome<input class="input" id="scNome" value="${esc(sc.nome)}" maxlength="60"></label></div>
       ${sc.esercizi.map((e, i) => `<div class="card col" style="gap:8px">
         <div class="row" style="gap:8px"><input class="input" data-f="nome" data-i="${i}" value="${esc(e.nome)}" placeholder="Esercizio" maxlength="80"><button class="iconbtn" data-del="${i}" aria-label="Elimina esercizio" style="background:var(--bg)">${ico.close}</button></div>
-        <div class="row" style="gap:8px"><label class="field" style="flex:1;font-size:13px">Serie<input class="input" type="number" inputmode="numeric" min="1" max="10" data-f="serie" data-i="${i}" value="${e.serie}"></label>
-          <label class="field" style="flex:1;font-size:13px">Rip. min<input class="input" type="number" inputmode="numeric" min="1" max="50" data-f="min" data-i="${i}" value="${e.min}"></label>
-          <label class="field" style="flex:1;font-size:13px">Rip. max<input class="input" type="number" inputmode="numeric" min="1" max="60" data-f="max" data-i="${i}" value="${e.max}"></label></div></div>`).join("")}
+        <div class="acts" style="grid-template-columns:repeat(2,minmax(0,1fr))"><button class="choice" data-met="${i}:classico" aria-pressed="${e.metodo !== "top"}" style="font-size:13px;min-height:38px">Serie uguali</button><button class="choice" data-met="${i}:top" aria-pressed="${e.metodo === "top"}" style="font-size:13px;min-height:38px">Pesante + back-off</button></div>
+        <div class="row" style="gap:8px"><label class="field" style="flex:1;font-size:13px">${e.metodo === "top" ? "Serie totali" : "Serie"}<input class="input" type="number" inputmode="numeric" min="1" max="10" data-f="serie" data-i="${i}" value="${e.serie}"></label>
+          <label class="field" style="flex:1;font-size:13px">${e.metodo === "top" ? "Pesante min" : "Rip. min"}<input class="input" type="number" inputmode="numeric" min="1" max="50" data-f="min" data-i="${i}" value="${e.min}"></label>
+          <label class="field" style="flex:1;font-size:13px">${e.metodo === "top" ? "Pesante max" : "Rip. max"}<input class="input" type="number" inputmode="numeric" min="1" max="60" data-f="max" data-i="${i}" value="${e.max}"></label></div>
+        ${e.metodo === "top" ? `<div class="row" style="gap:8px;align-items:flex-end"><label class="field" style="flex:1;font-size:13px">Back-off più leggere del<select class="input" data-f="backoff" data-i="${i}">${[8, 10, 12, 15, 20, 25].map((v) => `<option value="${v}" ${(e.backoff || 12) === v ? "selected" : ""}>${v}%</option>`).join("")}</select></label>
+          <button class="choice" data-drop="${i}" aria-pressed="${!!e.drop}" style="flex:1;min-height:44px;font-size:13px">Drop set finale</button></div>
+          <span class="hint">1 pesante da ${e.min}–${e.max} + ${Math.max(0, e.serie - 1)} back-off da ${e.min + 2}–${e.max + 2}${e.drop ? " + 1 drop a cedimento" : ""}. Il carico sale guardando solo la pesante.</span>` : ""}</div>`).join("")}
       <button class="btn ghost" id="addEx">+ Aggiungi esercizio</button>
       <button class="btn primary" id="saveSc">Salva scheda</button>
       ${isNew ? "" : `<button class="btn danger" id="delSc">Elimina scheda</button>`}`;
-    el.querySelectorAll("[data-f]").forEach((inp) => (inp.oninput = () => { const e = sc.esercizi[Number(inp.dataset.i)]; e[inp.dataset.f] = inp.dataset.f === "nome" ? inp.value : Number(inp.value); }));
+    el.querySelectorAll("[data-f]").forEach((inp) => (inp.oninput = inp.onchange = () => { const e = sc.esercizi[Number(inp.dataset.i)]; e[inp.dataset.f] = inp.dataset.f === "nome" ? inp.value : Number(inp.value); }));
+    el.querySelectorAll("[data-met]").forEach((b) => (b.onclick = () => { const [i, m] = b.dataset.met.split(":"), e = sc.esercizi[Number(i)]; if (m === "top") Object.assign(e, { metodo: "top", backoff: e.backoff || 12, drop: !!e.drop }); else { delete e.metodo; delete e.backoff; delete e.drop; } draw(); }));
+    el.querySelectorAll("[data-drop]").forEach((b) => (b.onclick = () => { const e = sc.esercizi[Number(b.dataset.drop)]; e.drop = !e.drop; draw(); }));
     el.querySelectorAll("[data-del]").forEach((b) => (b.onclick = () => { sc.esercizi.splice(Number(b.dataset.del), 1); draw(); }));
     $("#scNome").oninput = (e) => (sc.nome = e.target.value);
     $("#addEx").onclick = () => { sc.esercizi.push({ nome: "", serie: 3, min: 8, max: 10, note: "" }); draw(); };
@@ -1274,11 +1254,16 @@ views.sessione = async (el) => {
       ${ses.esercizi.map((e, i) => `<div class="card col" style="gap:8px">
         <div class="row between"><div class="h2" style="font-size:18px">${esc(e.nome)}</div><span class="small muted" style="white-space:nowrap">${e.min}${e.max !== e.min ? "–" + e.max : ""} rip.</span></div>
         ${e.consiglio ? `<div class="small muted" style="line-height:1.4">${esc(e.consiglio)}</div>` : ""}
-        ${e.serie.map((x, j) => `<div class="row" style="gap:8px;${x.fatto ? "opacity:.6" : ""}">
-          <span class="small" style="width:52px;font-weight:800">Serie ${j + 1}</span>
-          <input class="input" type="number" inputmode="decimal" step="0.5" min="0" placeholder="kg" data-k="${i}.${j}" value="${x.kg ?? ""}" style="flex:1;min-height:44px" aria-label="Chili serie ${j + 1}">
-          <input class="input" type="number" inputmode="numeric" min="0" max="100" placeholder="${e.min}${e.max !== e.min ? "–" + e.max : ""}" data-r="${i}.${j}" value="${x.reps ?? ""}" style="flex:1;min-height:44px" aria-label="Ripetizioni serie ${j + 1}">
-          <button class="choice" data-ok="${i}.${j}" aria-pressed="${x.fatto}" style="min-height:44px;width:52px" aria-label="Serie fatta">✓</button></div>`).join("")}
+        ${e.riscaldamento ? `<div class="small" style="line-height:1.4;color:var(--orange-ink);font-weight:700">${esc(e.riscaldamento)}</div>` : ""}
+        ${e.serie.map((x, j) => { const tipo = x.tipo || "normal", n = e.serie.slice(0, j + 1).filter((y) => (y.tipo || "normal") === tipo).length, many = e.serie.filter((y) => (y.tipo || "normal") === tipo).length > 1;
+          const label = tipo === "normal" ? `Serie ${j + 1}` : `${SET_LABEL[tipo]}${many ? " " + n : ""}`;
+          const ph = tipo === "dropset" ? "max" : x.rmin != null ? `${x.rmin}${x.rmax !== x.rmin ? "–" + x.rmax : ""}` : `${e.min}–${e.max}`;
+          return `<div class="row" style="gap:8px;${x.fatto ? "opacity:.6" : ""}">
+          <span class="small" style="width:64px;font-weight:800;${tipo === "top" ? "color:var(--orange-ink)" : ""}">${label}</span>
+          <input class="input" type="number" inputmode="decimal" step="0.5" min="0" placeholder="kg" data-k="${i}.${j}" value="${x.kg ?? ""}" style="flex:1;min-height:44px" aria-label="Chili ${label}">
+          <input class="input" type="number" inputmode="numeric" min="0" max="100" placeholder="${ph}" data-r="${i}.${j}" value="${x.reps ?? ""}" style="flex:1;min-height:44px" aria-label="Ripetizioni ${label}">
+          <button class="choice" data-ok="${i}.${j}" aria-pressed="${x.fatto}" style="min-height:44px;width:52px" aria-label="Serie fatta">✓</button></div>
+          ${tipo === "top" && x.fatto ? `<div class="row" style="gap:6px;align-items:center"><span class="small muted" style="width:64px">Com'era?</span>${[["facile", "Facile"], ["giusta", "Giusta"], ["limite", "Al limite"]].map(([k, l]) => `<button class="choice" data-sens="${i}.${j}.${k}" aria-pressed="${x.sens === k}" style="flex:1;min-height:38px;font-size:13px">${l}</button>`).join("")}</div>` : ""}`; }).join("")}
         <button class="small" data-add="${i}" style="background:none;border:0;color:var(--orange-ink);font-weight:800;cursor:pointer;align-self:flex-start">+ serie</button></div>`).join("")}
       <button class="btn primary block" id="finish">Termina allenamento</button>
       <button class="btn ghost block" id="abandon">Abbandona</button>`;
@@ -1288,12 +1273,21 @@ views.sessione = async (el) => {
     el.querySelectorAll("[data-ok]").forEach((b) => (b.onclick = () => {
       const [i, j] = at(b.dataset.ok), x = ses.esercizi[i].serie[j];
       x.fatto = !x.fatto;
-      if (x.fatto && x.reps == null) x.reps = ses.esercizi[i].max; // tick without typing = top of the range
+      const ex = ses.esercizi[i];
+      if (x.fatto && x.reps == null && x.tipo !== "dropset") x.reps = x.rmax ?? ex.max; // tick without typing = top of the range
+      // heavy set done with another weight than proposed: back-offs and drop follow it
+      if (x.fatto && x.tipo === "top" && x.kg && ex.ratio && ex.step) {
+        const back = roundStep(x.kg * ex.ratio, ex.step);
+        ex.serie.forEach((y) => { if (!y.fatto && y.tipo === "backoff") y.kg = back; if (!y.fatto && y.tipo === "dropset") y.kg = roundStep(back * 0.75, ex.step); });
+      }
       // the next set starts with the same weight
-      const nx = ses.esercizi[i].serie[j + 1]; if (x.fatto && nx && nx.kg == null) nx.kg = x.kg;
+      const nx = ex.serie[j + 1]; if (x.fatto && nx && nx.kg == null) nx.kg = x.kg;
       save(); const y = window.scrollY; draw(); window.scrollTo(0, y);
     }));
-    el.querySelectorAll("[data-add]").forEach((b) => (b.onclick = () => { const e = ses.esercizi[Number(b.dataset.add)]; e.serie.push({ kg: e.serie[e.serie.length - 1]?.kg ?? null, reps: null, fatto: false }); save(); draw(); }));
+    el.querySelectorAll("[data-sens]").forEach((b) => (b.onclick = () => { const [i, j, k] = b.dataset.sens.split("."); const x = ses.esercizi[Number(i)].serie[Number(j)]; x.sens = x.sens === k ? null : k; save(); const y = window.scrollY; draw(); window.scrollTo(0, y); }));
+    el.querySelectorAll("[data-add]").forEach((b) => (b.onclick = () => { const e = ses.esercizi[Number(b.dataset.add)], l = e.serie[e.serie.length - 1];
+      const tipo = e.metodo === "top" ? "backoff" : "normal", ref = e.serie.filter((y) => y.tipo === tipo).pop() || l;
+      e.serie.splice(l?.tipo === "dropset" ? e.serie.length - 1 : e.serie.length, 0, { tipo, kg: ref?.kg ?? null, rmin: ref?.rmin ?? e.min, rmax: ref?.rmax ?? e.max, reps: null, fatto: false, sens: null }); save(); draw(); }));
     $("#abandon").onclick = () => { if (confirm("Abbandonare l'allenamento? Le serie segnate non verranno salvate.")) { store.del("sessione"); route("palestra"); } };
     $("#finish").onclick = () => finishSheet(ses);
   };
@@ -1311,7 +1305,10 @@ function finishSheet(ses) {
   w.querySelector("#rpeF").oninput = (e) => { rpe = Number(e.target.value); w.querySelector("#rpeV").textContent = rpe + "/10"; };
   w.querySelector("#sendF").onclick = async () => {
     const end = localIso();
-    const serie = ses.esercizi.flatMap((e) => e.serie.filter((x) => x.fatto).map((x, j) => ({ start: ses.inizio, end, workout: ses.nome, exercise: e.nome, set_index: j, set_type: "normal", weight: x.kg, reps: x.reps, rpe, fonte: "kairo" })));
+    // the heavy set keeps how it felt (its own RPE): it decides the next weight
+    const serie = ses.esercizi.flatMap((e) => e.serie.filter((x) => x.fatto).map((x, j) => ({ start: ses.inizio, end, workout: ses.nome, exercise: e.nome, set_index: j, set_type: x.tipo || "normal", weight: x.kg, reps: x.reps, rpe: x.tipo === "top" && x.sens ? FEEL_RPE[x.sens] : rpe, fonte: "kairo" })));
+    const noFeel = ses.esercizi.some((e) => e.serie.some((x) => x.fatto && x.tipo === "top" && !x.sens));
+    if (noFeel && !w.dataset.asked) { w.dataset.asked = "1"; toast("Segna com'era la pesante: serve per il carico della prossima volta"); return; }
     if (!serie.length) { toast("Nessuna serie segnata"); return; }
     try { await api("/api/forza", { method: "POST", body: { serie } }); toast(`Salvato: ${serie.length} serie`); }
     catch (_) { store.set("coda", [...store.get("coda", []), serie]); toast("Senza rete: lo invio appena possibile"); }
