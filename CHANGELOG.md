@@ -2,6 +2,12 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.15.0] — 2026-10-12
+
+### Migliorato
+- **Stima di domani personale**: «se stanotte dormi quello che ti serve, domani tra X e Y». Dopo 8 notti piene Kairo impara dal tuo storico come rispondi a una buona dormita (retta tra lo score del giorno prima e quello dopo una notte piena, con il ritorno verso la tua media) e calcola il margine dagli errori passati; prima usa una stima generica (sonno pieno e HRV a metà strada verso la tua media) con margine ±12.
+- **Precisione massima tra N giorni**: un solo riquadro con barra di avanzamento dice quanti giorni di fila con il Watch, anche di notte, servono perché score e stima siano al massimo della precisione.
+
 ## [1.14.0] — 2026-10-12
 
 ### HRV più efficace e dati in attesa spiegati

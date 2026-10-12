@@ -85,3 +85,16 @@ test("HRV: 1 misura a notte è normale per chi ne fa sempre 1; il Respira del ma
   assert.equal(r.componenti.hrv.fonte, "mattino");
   assert.equal(r.affidabilita, "alta");
 });
+
+test("stima di domani: personale dopo 8 notti piene, generica prima", async () => {
+  const env = makeEnv(); await setup(env); await seed(env);
+  await call(env, "/api/profilo", { method: "POST", code: CODE, body: { sonno_min: 420 } }); // 7 h: the seeded nights are full
+  const r = (await computeDay(env.DB, today)).recupero;
+  assert.equal(r.domani_se_dormi.personale, true);
+  assert.ok(r.domani_se_dormi.notti >= 8);
+  assert.ok(r.domani_se_dormi.margine >= 4 && r.domani_se_dormi.margine <= 15);
+  const env2 = makeEnv(); await setup(env2); await seed(env2);
+  await call(env2, "/api/profilo", { method: "POST", code: CODE, body: { sonno_min: 540 } }); // 9 h: no full night
+  const g = (await computeDay(env2.DB, today)).recupero.domani_se_dormi;
+  assert.equal(g.personale, false); assert.equal(g.mancano, 8); assert.equal(g.margine, 12);
+});

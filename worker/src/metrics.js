@@ -405,6 +405,40 @@ function finalize(days, idx, maskOf) {
   return today;
 }
 
+// Tomorrow's recovery if tonight you sleep what you need.
+// Personal (after 8 such nights in the last 90 days): linear fit of "score after a full night" on "score the day
+// before" — it captures how you respond to a good night and the pull back towards your usual values.
+// Generic before that: sleep at ~85 points and HRV halfway back to your average, with a wider margin.
+const GOOD_NIGHTS_NEEDED = 8;
+function tomorrowIfGoodSleep(days, i, need0, comp, sc) {
+  const pairs = [];
+  for (let j = Math.max(1, i - 90); j <= i; j++) {
+    const s0 = days[j - 1]?.recupero?.score, s1 = days[j]?.recupero?.score, sl = days[j]?.sonno;
+    if (s0 != null && s1 != null && sl && !sl.manuale && sl.durata_min >= need0 - 20) pairs.push([s0, s1]);
+  }
+  const today = sc.score;
+  if (pairs.length >= GOOD_NIGHTS_NEEDED) {
+    const mx = mean(pairs.map((p) => p[0])), my = mean(pairs.map((p) => p[1]));
+    const sxx = pairs.reduce((a, p) => a + (p[0] - mx) ** 2, 0);
+    const beta = sxx ? clamp(pairs.reduce((a, p) => a + (p[0] - mx) * (p[1] - my), 0) / sxx, 0, 1) : 0.5;
+    const alpha = my - beta * mx;
+    const res = pairs.map((p) => p[1] - (alpha + beta * p[0]));
+    const margin = clamp(Math.round(median(res.map(Math.abs)) * 1.4826 || 6), 4, 15);
+    return { valore: Math.round(clamp(alpha + beta * today, 0, 100)), margine: margin, personale: true, notti: pairs.length };
+  }
+  // generic: sleep ~85 points, HRV halfway back to your average (a full night usually helps it recover)
+  const c2 = JSON.parse(JSON.stringify(comp));
+  if (c2.sonno.punteggio != null) c2.sonno.punteggio = Math.max(c2.sonno.punteggio, 85);
+  if (c2.hrv.punteggio != null && c2.hrv.punteggio < 60) c2.hrv.punteggio = (c2.hrv.punteggio + 60) / 2;
+  const usable = Object.values(c2).filter((c) => c.punteggio != null);
+  const w = usable.reduce((a, c) => a + c.peso, 0);
+  if (!w) return null;
+  let v = usable.reduce((a, c) => a + c.peso * c.punteggio, 0) / w;
+  const phys = [c2.hrv, c2.fc_riposo].filter((c) => c.punteggio != null);
+  if (phys.length) v = Math.min(v, phys.reduce((a, c) => a + c.peso * c.punteggio, 0) / phys.reduce((a, c) => a + c.peso, 0) + 20);
+  return { valore: Math.round(clamp(v, 0, 100)), margine: 12, personale: false, notti: pairs.length, mancano: GOOD_NIGHTS_NEEDED - pairs.length };
+}
+
 // ---- carico, allenamento consigliato, allarmi e fabbisogno di sonno (dopo il recupero) ----
 const LOAD_LEVELS = [
   { min: 1.4, key: "dura", titolo: "Seduta dura", testo: "puoi spingere: intervalli in bici o a nuoto, pesi pesanti" },
@@ -467,11 +501,8 @@ function enrich(days, data, profile, from) {
         rec.spiegazione = impacts.sort((a, b) => a[1] - b[1]).filter(([, v]) => Math.abs(v) >= 1.5).slice(0, 3).map(([k, v]) => ({ componente: k, punti: Math.round(v) }));
         const tags = (d.checkin?.tag || "").split(",").filter(Boolean);
         if (tags.length) rec.etichette = tags;
-        // estimate for tomorrow if tonight you sleep what you need (sleep score ~85): HRV and the rest unknown
-        if (comp.sonno.punteggio != null && comp.sonno.punteggio < 85) {
-          const gain = (comp.sonno.peso * (85 - comp.sonno.punteggio)) / sc.wSum;
-          rec.domani_se_dormi = Math.round(clamp(sc.score + gain, 0, 100));
-        }
+        // estimate for tomorrow if tonight you sleep what you need: learned from YOUR history
+        rec.domani_se_dormi = tomorrowIfGoodSleep(days, i, need0, comp, sc);
       }
     }
     // fascia consigliata per oggi: recupero (verde/giallo/rosso) e rapporto acuto:cronico
