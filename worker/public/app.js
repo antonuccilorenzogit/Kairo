@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.21.0";
+const APP_VERSION = "1.22.0";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -86,7 +86,7 @@ const ico = {
   info: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9AA0AD" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>',
   chevron: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9AA0AD" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>',
   arrow: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
-  sun: (w = 52) => `<svg width="${w}" height="${Math.round(w * 0.77)}" viewBox="0 0 220 170" aria-hidden="true"><path d="M 50 120 A 60 60 0 0 1 170 120 Z" fill="#FF8A1F"/><path d="M 110 22 L 110 42 M 52 50 L 64 64 M 168 50 L 156 64 M 22 96 L 40 100 M 198 96 L 180 100" stroke="#FF8A1F" stroke-width="12" stroke-linecap="round"/><path d="M 20 140 L 200 140" stroke="#1C2340" stroke-width="12" stroke-linecap="round"/></svg>`,
+  sun: (w = 52) => `<svg width="${w}" height="${Math.round(w * 0.77)}" viewBox="0 0 220 170" aria-hidden="true"><path d="M 50 120 A 60 60 0 0 1 170 120 Z" fill="#FF8A1F"/><path d="M 110 22 L 110 42 M 52 50 L 64 64 M 168 50 L 156 64 M 22 96 L 40 100 M 198 96 L 180 100" stroke="#FF8A1F" stroke-width="12" stroke-linecap="round"/><path d="M 20 140 L 200 140" stroke="#EDEFF2" stroke-width="12" stroke-linecap="round"/></svg>`,
 };
 
 /* Bean, the battery mascot: fills with the recovery score. */
@@ -216,12 +216,12 @@ views.oggi = async (el) => {
   }
   el.innerHTML = `${header(`Ciao${p.nome ? ",<br>" + esc(p.nome) : ""}`, { sub: fmtDate(d.giorno), sync: true })}
     <div class="col today">
-    ${d.allarme ? `<div class="card col" style="background:#FDE2DF;gap:4px"><div style="font-weight:900;color:var(--red-ink)">⚠︎ ${esc(d.allarme.titolo)}</div><div class="small" style="line-height:1.45">${esc(d.allarme.testo)}</div></div>` : ""}
+    ${d.allarme ? `<div class="card col" style="background:var(--red-bg);gap:4px"><div style="font-weight:800;color:var(--red-ink)">⚠︎ ${esc(d.allarme.titolo)}</div><div class="small" style="line-height:1.45">${esc(d.allarme.testo)}</div></div>` : ""}
     <a class="card row" href="#/recupero" style="gap:12px">
       ${bean(r.score, 54)}
       <div class="col" style="gap:2px;flex:1">${r.score == null
         ? `<div class="h2">In calibrazione</div><div class="muted small">Servono 5 notti con il Watch (ne ho ${r.giorni_baseline}): basta aspettare.</div>`
-        : `<div class="row" style="gap:8px;align-items:baseline"><span style="font-size:34px;font-weight:900;line-height:1">${r.score}</span><span class="h2 ${st.cls}">${st.label}</span></div>
+        : `<div class="row" style="gap:8px;align-items:baseline"><span style="font-size:34px;font-weight:800;line-height:1">${r.score}</span><span class="h2 ${st.cls}">${st.label}</span></div>
            <div class="muted small">Recupero${delta != null ? ` · ${delta >= 0 ? "▲" : "▼"} ${Math.abs(delta)} da ieri` : ""}${r.affidabilita === "bassa" ? ` · <span class="mid">precisione bassa</span>` : ""}</div>`}</div>${ico.chevron}</a>
     <button class="card col" id="workout" style="gap:6px;border:0;text-align:left;cursor:pointer;width:100%;font:inherit;color:inherit"><div class="label">${p.infortunio?.attivo ? "Infortunio · cosa fare oggi" : "Allenamento di oggi"}</div>
       <div class="skeleton" style="height:22px;width:60%"></div><div class="skeleton" style="height:16px;width:85%"></div></button>
@@ -540,7 +540,7 @@ async function loadSheet() {
   try { h = await api("/api/history?days=28"); } catch (e) { w.querySelector(".sheet").innerHTML = `<div class="grab"></div>${sheetHead("Carico di allenamento")}<div class="bad">${esc(e.message)}</div>`; return; }
   const c = h[h.length - 1].carico || {};
   const max = Math.max(1, ...h.map((d) => d.carico?.oggi || 0));
-  const bars = h.map((d) => { const v = d.carico?.oggi; return `<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:90px" title="${d.giorno}: ${v ?? "n/d"}"><div style="height:${v == null ? 2 : Math.max(3, (v / max) * 90)}px;background:${v == null ? "#E2E5EC" : d.giorno === h[h.length - 1].giorno ? "var(--orange)" : "#7DB7F0"};border-radius:3px"></div></div>`; }).join("");
+  const bars = h.map((d) => { const v = d.carico?.oggi; return `<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:90px" title="${d.giorno}: ${v ?? "n/d"}"><div style="height:${v == null ? 2 : Math.max(3, (v / max) * 90)}px;background:${v == null ? "#2A2F37" : d.giorno === h[h.length - 1].giorno ? "var(--orange)" : "#7DB7F0"};border-radius:3px"></div></div>`; }).join("");
   w.querySelector(".sheet").innerHTML = `<div class="grab"></div>${sheetHead("Carico di allenamento")}
     <div class="card col" style="gap:6px"><div class="row" style="gap:2px;align-items:flex-end">${bars}</div><div class="row between small muted"><span>${fmtDate(h[0].giorno, { day: "numeric", month: "short" })}</span><span>oggi</span></div></div>
     <div class="grid3"><div class="mini" style="cursor:default"><span class="label">7 giorni</span><span class="big">${c.acuto ?? "–"}</span><span class="small muted">media al giorno</span></div>
@@ -589,7 +589,7 @@ function infoSheet(kind, d) {
   const c = d.recupero.componenti;
   const pos = (v, a, b) => Math.max(0, Math.min(100, (v - a) / (b - a) * 100));
   const range = (title, lo, hi, a, b, you, labels, green) => `<div class="card col"><div class="small muted" style="font-weight:700">${title}</div>
-      <div class="rangebar"><div class="t"></div><div class="b" style="left:${pos(lo, a, b)}%;width:${pos(hi, a, b) - pos(lo, a, b)}%;${green ? "background:#CDEBDB" : ""}"></div>${you != null ? `<div class="you" style="left:${pos(you, a, b)}%"></div>` : ""}</div>
+      <div class="rangebar"><div class="t"></div><div class="b" style="left:${pos(lo, a, b)}%;width:${pos(hi, a, b) - pos(lo, a, b)}%;${green ? "background:#1C3A2E" : ""}"></div>${you != null ? `<div class="you" style="left:${pos(you, a, b)}%"></div>` : ""}</div>
       <div class="row between small muted"><div>${labels[0]}</div><div>${labels[1]}</div><div>${labels[2]}</div></div></div>`;
   const tip = (t) => `<div class="card soft col"><div class="label" style="color:var(--orange-ink)">Lo sapevi?</div><div style="line-height:1.45">${t}</div></div>`;
   const you = (t) => `<div style="line-height:1.5"><b style="color:var(--orange-ink)">Tu:</b> ${t}</div>`;
@@ -690,10 +690,10 @@ views.recupero = async (el) => {
   // 14-day score bars
   const bars = hist.map((h) => {
     const s = h.recupero.score; const sc = state(s);
-    return `<div class="col" style="align-items:center;gap:4px;flex:1"><div style="height:90px;width:100%;display:flex;align-items:flex-end;justify-content:center"><div title="${h.giorno}: ${s ?? "n/d"}" style="width:70%;max-width:18px;border-radius:6px;height:${s == null ? 4 : Math.max(6, s * 0.9)}px;background:${s == null ? "#E2E5EC" : sc.fill}"></div></div><div class="small muted" style="font-size:11px">${fmtDate(h.giorno, { day: "numeric" })}</div></div>`;
+    return `<div class="col" style="align-items:center;gap:4px;flex:1"><div style="height:90px;width:100%;display:flex;align-items:flex-end;justify-content:center"><div title="${h.giorno}: ${s ?? "n/d"}" style="width:70%;max-width:18px;border-radius:6px;height:${s == null ? 4 : Math.max(6, s * 0.9)}px;background:${s == null ? "#2A2F37" : sc.fill}"></div></div><div class="small muted" style="font-size:11px">${fmtDate(h.giorno, { day: "numeric" })}</div></div>`;
   }).join("");
   el.innerHTML = `${header("Recupero", { sub: fmtDate(d.giorno, { weekday: "short", day: "numeric", month: "short" }) })}
-    <div class="card row" style="gap:14px">${bean(r.score, 46)}<div class="col" style="gap:2px"><div style="font-size:30px;font-weight:900;line-height:1">${r.score ?? "–"} <span class="${st.cls}" style="font-size:16px">${st.label}</span></div><div class="small muted">${r.nuova_base ? "Rispetto ai giorni dopo l'infortunio" : "Rispetto ai tuoi ultimi 60 giorni"}</div>${r.affidabilita ? `<button class="small" id="precBtn" style="background:none;border:0;padding:0;text-align:left;cursor:pointer;font-weight:700">precisione <b class="${r.affidabilita === "alta" ? "good" : r.affidabilita === "media" ? "mid" : "bad"}" style="text-decoration:underline">${r.affidabilita}</b></button>` : ""}<button class="small" id="howScore" style="background:none;border:0;padding:0;color:var(--orange-ink);text-align:left;cursor:pointer;font-weight:700">Come si calcola?</button></div></div>
+    <div class="card row" style="gap:14px">${bean(r.score, 46)}<div class="col" style="gap:2px"><div style="font-size:30px;font-weight:800;line-height:1">${r.score ?? "–"} <span class="${st.cls}" style="font-size:16px">${st.label}</span></div><div class="small muted">${r.nuova_base ? "Rispetto ai giorni dopo l'infortunio" : "Rispetto ai tuoi ultimi 60 giorni"}</div>${r.affidabilita ? `<button class="small" id="precBtn" style="background:none;border:0;padding:0;text-align:left;cursor:pointer;font-weight:700">precisione <b class="${r.affidabilita === "alta" ? "good" : r.affidabilita === "media" ? "mid" : "bad"}" style="text-decoration:underline">${r.affidabilita}</b></button>` : ""}<button class="small" id="howScore" style="background:none;border:0;padding:0;color:var(--orange-ink);text-align:left;cursor:pointer;font-weight:700">Come si calcola?</button></div></div>
     ${feel}
     ${alarms.map((a) => `<div class="card small" style="line-height:1.45;border-left:4px solid var(--red)">⚠️ ${esc(a)}</div>`).join("")}
     ${r.domani_se_dormi?.personale ? `<div class="card small" style="line-height:1.45"><b>Se stanotte dormi quello che ti serve, domani circa ${r.domani_se_dormi.valore}</b><br><span class="muted">Imparato da ${r.domani_se_dormi.notti} tue notti piene.</span></div>` : ""}
@@ -749,10 +749,10 @@ function lineChart(vals, labels) {
   const sd = Math.sqrt(vals.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(n - 1, 1));
   const pts = vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Andamento HRV da ${fmtNum(Math.min(...vals))} a ${fmtNum(Math.max(...vals))} ms">
-    <rect x="0" y="${y(mean + sd)}" width="${W}" height="${Math.max(0, y(mean - sd) - y(mean + sd))}" fill="#FFE8D2"/>
+    <rect x="0" y="${y(mean + sd)}" width="${W}" height="${Math.max(0, y(mean - sd) - y(mean + sd))}" fill="#3A2414"/>
     <polyline points="${pts}" fill="none" stroke="#FF8A1F" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-    ${vals.map((v, i) => `<circle cx="${x(i)}" cy="${y(v)}" r="3.5" fill="#fff" stroke="#C2410C" stroke-width="2"/>`).join("")}
-    ${labels.map((l, i) => (i % 2 === 0 || i === n - 1 ? `<text x="${x(i)}" y="${H - 4}" font-size="10" fill="#5F6675" text-anchor="middle">${esc(l)}</text>` : "")).join("")}
+    ${vals.map((v, i) => `<circle cx="${x(i)}" cy="${y(v)}" r="3.5" fill="#0B0D10" stroke="#FF8A1F" stroke-width="2"/>`).join("")}
+    ${labels.map((l, i) => (i % 2 === 0 || i === n - 1 ? `<text x="${x(i)}" y="${H - 4}" font-size="10" fill="#8E949D" text-anchor="middle">${esc(l)}</text>` : "")).join("")}
   </svg>`;
 }
 
@@ -770,8 +770,8 @@ views.sonno = async (el) => {
   const [hist, stages] = await Promise.all([api("/api/history?days=7"), api(`/api/sonno?d=${today}`)]);
   const d = hist[hist.length - 1], sAll = d.sonno, s = sAll && !sAll.manuale ? sAll : null, sn = d.sonno_stanotte;
   const tonight = sn ? `<div class="card col" style="gap:8px"><div class="label">Stanotte</div>
-      <div class="row between"><div class="col" style="gap:2px"><div style="font-size:30px;font-weight:900;line-height:1">${fmtMin(sn.fabbisogno_min)}</div><div class="small muted">di sonno ti servono</div></div>
-        ${sn.a_letto ? `<div class="col" style="gap:2px;text-align:right"><div style="font-size:30px;font-weight:900;line-height:1;color:var(--orange-ink)">${sn.a_letto}</div><div class="small muted">a letto entro${sn.sveglia ? ` · sveglia ${sn.sveglia}` : ""}</div></div>` : ""}</div>
+      <div class="row between"><div class="col" style="gap:2px"><div style="font-size:30px;font-weight:800;line-height:1">${fmtMin(sn.fabbisogno_min)}</div><div class="small muted">di sonno ti servono</div></div>
+        ${sn.a_letto ? `<div class="col" style="gap:2px;text-align:right"><div style="font-size:30px;font-weight:800;line-height:1;color:var(--orange-ink)">${sn.a_letto}</div><div class="small muted">a letto entro${sn.sveglia ? ` · sveglia ${sn.sveglia}` : ""}</div></div>` : ""}</div>
       <div class="small" style="color:var(--text);line-height:1.5">Base ${fmtMin(sn.base_min)}${baseNote(sn)}${sn.per_carico_min ? ` + ${sn.per_carico_min} min per il carico di oggi` : ""}${sn.per_debito_min ? ` + ${sn.per_debito_min} min per recuperare il debito della settimana` : ""}${sn.pisolino_min ? ` − ${sn.pisolino_min} min per il pisolino di oggi` : ""}.${sn.a_letto ? "" : " Imposta la sveglia nel profilo per l'orario consigliato."}</div>
       <div class="small muted" style="line-height:1.5">Debito di sonno della settimana: <b style="color:var(--text)">${sn.debito_7g_min ? fmtShort(sn.debito_7g_min) : "nessuno"}</b>${sn.debito_pagato_min ? ` (il pisolino ne ha tolti ${fmtShort(sn.debito_pagato_min)})` : ""}.</div></div>` : "";
   // today's naps (from the Watch or entered by hand): they lower tonight's need, not today's recovery
@@ -780,7 +780,7 @@ views.sonno = async (el) => {
       ${naps.length ? naps.map((n) => `<div class="row between small"><span><b>${fmtShort(n.min)}</b> · ${hhmm(n.inizio)} → ${hhmm(n.fine)}${n.manuale ? ` <span class="muted">· segnato a mano</span>` : ""}</span>${n.manuale ? `<button class="iconbtn" data-napdel="${esc(n.manuale)}" aria-label="Elimina pisolino">${ico.close}</button>` : ""}</div>`).join("")
         : `<div class="small muted" style="line-height:1.45">Se il Watch registra il pisolino arriva da solo; altrimenti segnalo qui. Conta minuto per minuto: toglie lo stesso tempo dal debito di sonno della settimana e dal sonno che ti serve stanotte (mai sotto le 6 ore), quindi sposta più tardi l'ora per andare a letto. Il Recupero di oggi non cambia: è la fotografia del mattino; il pisolino conta da domani nel bilancio di sonno.</div>`}</div>`;
   const level = { awake: 6, rem: 39, core: 72, asleep: 72, deep: 105, inbed: 6 };
-  const color = { awake: "#FF8A1F", rem: "#9B7BEA", core: "#7DB7F0", asleep: "#7DB7F0", deep: "#2F4A8C", inbed: "#E2E5EC" };
+  const color = { awake: "#FF8A1F", rem: "#9B7BEA", core: "#7DB7F0", asleep: "#7DB7F0", deep: "#2F4A8C", inbed: "#2A2F37" };
   let hyp = "";
   if (s && stages.length) {
     const rows = stages.filter((x) => x.stage !== "inbed");
@@ -793,7 +793,7 @@ views.sonno = async (el) => {
   const week = hist.map((h) => {
     const m = h.sonno ? h.sonno.durata_min : null, nap = h.pisolini?.totale_min || 0, tot = (m || 0) + nap;
     const hgt = (x) => Math.min(80, x / 600 * 80);
-    return `<div class="col" style="align-items:center;gap:4px;flex:1"><div class="small" style="font-size:11px;font-weight:800">${tot ? fmtMin(tot).replace(" ", "") : ""}</div><div style="height:80px;width:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;position:relative">${nap ? `<div title="pisolino" style="width:60%;max-width:22px;border-radius:6px 6px 0 0;height:${Math.max(3, hgt(nap))}px;background:#C9DEF7"></div>` : ""}<div style="width:60%;max-width:22px;border-radius:${nap ? "0 0 6px 6px" : "6px"};height:${m ? hgt(m) : nap ? 0 : 4}px;background:${m ? "#7DB7F0" : "#E2E5EC"}"></div></div><div class="small muted" style="font-size:11px">${fmtDate(h.giorno, { weekday: "narrow" })}</div></div>`;
+    return `<div class="col" style="align-items:center;gap:4px;flex:1"><div class="small" style="font-size:11px;font-weight:800">${tot ? fmtMin(tot).replace(" ", "") : ""}</div><div style="height:80px;width:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;position:relative">${nap ? `<div title="pisolino" style="width:60%;max-width:22px;border-radius:6px 6px 0 0;height:${Math.max(3, hgt(nap))}px;background:#C9DEF7"></div>` : ""}<div style="width:60%;max-width:22px;border-radius:${nap ? "0 0 6px 6px" : "6px"};height:${m ? hgt(m) : nap ? 0 : 4}px;background:${m ? "#7DB7F0" : "#2A2F37"}"></div></div><div class="small muted" style="font-size:11px">${fmtDate(h.giorno, { weekday: "narrow" })}</div></div>`;
   }).join("");
   const need = (cfg().profilo.sonno_min || 480);
   // naps count in the week's balance (today's too: the day is what you slept in total)
@@ -801,16 +801,16 @@ views.sonno = async (el) => {
   const nNights = hist.filter((h) => h.sonno).length;
   el.innerHTML = `${header("Sonno", { sub: s ? `notte ${fmtDate(shiftDay(d.giorno, -1), { day: "numeric" })} → ${fmtDate(d.giorno, { day: "numeric", month: "short" })}` : "" })}
     ${s ? `<div class="card dark row between" style="align-items:flex-end">
-        <div class="col" style="gap:4px"><div class="label" style="color:#FFB27A">Dormito</div><div style="font-size:44px;font-weight:900;line-height:1">${fmtMin(s.durata_min)}</div><div class="small" style="color:#C9CEDB">${hhmm(s.inizio)} → ${hhmm(s.fine)} · efficienza ${s.efficienza}%</div></div>
-        <button class="col center" data-info="sonno" style="background:none;border:0;color:inherit;cursor:pointer;gap:2px" aria-label="Come si calcola il punteggio"><div style="font-size:40px;font-weight:900;color:#FFB27A;line-height:1">${s.punteggio}</div><div class="small" style="color:#C9CEDB">punteggio ⓘ</div></button></div>
+        <div class="col" style="gap:4px"><div class="label" style="color:#FFB27A">Dormito</div><div style="font-size:44px;font-weight:800;line-height:1">${fmtMin(s.durata_min)}</div><div class="small" style="color:#C9CEDB">${hhmm(s.inizio)} → ${hhmm(s.fine)} · efficienza ${s.efficienza}%</div></div>
+        <button class="col center" data-info="sonno" style="background:none;border:0;color:inherit;cursor:pointer;gap:2px" aria-label="Come si calcola il punteggio"><div style="font-size:40px;font-weight:800;color:#FFB27A;line-height:1">${s.punteggio}</div><div class="small" style="color:#C9CEDB">punteggio ⓘ</div></button></div>
       <div class="card col" style="gap:10px"><div class="label">Fasi della notte</div>
         <div class="row" style="gap:8px;align-items:stretch"><div class="col small muted" style="justify-content:space-between;height:132px;padding:6px 0;font-size:11px;width:54px"><div>Sveglio</div><div>REM</div><div>Leggero</div><div>Profondo</div></div>
-        <svg viewBox="0 0 262 132" width="100%" style="flex:1" role="img" aria-label="Ipnogramma della notte">${[16, 49, 82, 115].map((yy) => `<line x1="0" y1="${yy}" x2="262" y2="${yy}" stroke="#EEF0F4"/>`).join("")}${hyp}</svg></div>
+        <svg viewBox="0 0 262 132" width="100%" style="flex:1" role="img" aria-label="Ipnogramma della notte">${[16, 49, 82, 115].map((yy) => `<line x1="0" y1="${yy}" x2="262" y2="${yy}" stroke="#1E2228"/>`).join("")}${hyp}</svg></div>
         <div class="row between small muted" style="padding-left:62px"><div>${hhmm(s.inizio)}</div><div>${hhmm(s.fine)}</div></div></div>
       <div class="grid2" style="grid-template-columns:repeat(4,minmax(0,1fr));gap:8px">
-        ${[["Leggero", s.fasi_min.leggero, "#7DB7F0"], ["Profondo", s.fasi_min.profondo, "#2F4A8C"], ["REM", s.fasi_min.rem, "#9B7BEA"], ["Sveglio", s.fasi_min.veglia, "#FF8A1F"]].map(([l, m, c]) => `<div class="mini" style="cursor:default"><span class="status-dot" style="background:${c}"></span><div class="small muted">${l}</div><div style="font-weight:900;font-size:17px">${m >= 60 ? fmtMin(m) : m + " min"}</div></div>`).join("")}
+        ${[["Leggero", s.fasi_min.leggero, "#7DB7F0"], ["Profondo", s.fasi_min.profondo, "#2F4A8C"], ["REM", s.fasi_min.rem, "#9B7BEA"], ["Sveglio", s.fasi_min.veglia, "#FF8A1F"]].map(([l, m, c]) => `<div class="mini" style="cursor:default"><span class="status-dot" style="background:${c}"></span><div class="small muted">${l}</div><div style="font-weight:800;font-size:17px">${m >= 60 ? fmtMin(m) : m + " min"}</div></div>`).join("")}
       </div>`
-      : sAll ? `<div class="card dark col" style="gap:4px"><div class="label" style="color:#FFB27A">Dormito</div><div style="font-size:44px;font-weight:900;line-height:1">${fmtMin(sAll.durata_min)}</div><div class="small" style="color:#C9CEDB">dichiarato nel check-in · senza il Watch non ho fasi, HRV e respirazione notturna</div></div>`
+      : sAll ? `<div class="card dark col" style="gap:4px"><div class="label" style="color:#FFB27A">Dormito</div><div style="font-size:44px;font-weight:800;line-height:1">${fmtMin(sAll.durata_min)}</div><div class="small" style="color:#C9CEDB">dichiarato nel check-in · senza il Watch non ho fasi, HRV e respirazione notturna</div></div>`
       : `<div class="card col center" style="gap:8px">${bean(null, 90)}<div class="h2">Nessun dato del sonno stanotte</div><div class="muted small" style="max-width:300px">Per avere sonno, respirazione e HRV notturna indossa il Watch mentre dormi. Carica il Watch mentre fai colazione o la doccia.</div></div>`}
     ${tonight}
     ${napCard}
@@ -893,7 +893,7 @@ views.settimana = async (el) => {
   const arrow = (x, y, goodUp = true, d = 0) => (x == null || y == null || Math.abs(x - y) < (d ? 0.5 : 1) ? `<span class="muted">come la settimana prima</span>` : `<span class="${goodUp == null ? "muted" : (x > y) === goodUp ? "good" : "bad"}">${x > y ? "▲" : "▼"} ${fmtNum(Math.abs(x - y), d)} rispetto alla settimana prima</span>`);
   const STATO = { calibrazione: "in calibrazione", scarico: "sotto il tuo solito", mantenimento: "stai mantenendo", costruzione: "stai costruendo bene", attenzione: "carico alto, attenzione", eccesso: "troppo carico" };
   const maxLoad = Math.max(1, ...w.giorni.map((g) => g.carico || 0));
-  const days = w.giorni.map((g, i) => { const sc = state(g.recupero); return `<div class="col" data-day="${i}" style="flex:1;align-items:center;gap:4px;cursor:pointer"><div style="height:70px;width:100%;display:flex;align-items:flex-end;justify-content:center"><div style="width:60%;max-width:22px;border-radius:5px;height:${g.carico == null ? 3 : Math.max(4, (g.carico / maxLoad) * 70)}px;background:${g.carico == null ? "#E2E5EC" : "#7DB7F0"}"></div></div><span class="status-dot" style="background:${g.recupero == null ? "#E2E5EC" : sc.fill}"></span><span class="small muted" style="font-size:11px">${fmtDate(g.giorno, { weekday: "narrow" })}</span></div>`; }).join("");
+  const days = w.giorni.map((g, i) => { const sc = state(g.recupero); return `<div class="col" data-day="${i}" style="flex:1;align-items:center;gap:4px;cursor:pointer"><div style="height:70px;width:100%;display:flex;align-items:flex-end;justify-content:center"><div style="width:60%;max-width:22px;border-radius:5px;height:${g.carico == null ? 3 : Math.max(4, (g.carico / maxLoad) * 70)}px;background:${g.carico == null ? "#2A2F37" : "#7DB7F0"}"></div></div><span class="status-dot" style="background:${g.recupero == null ? "#2A2F37" : sc.fill}"></span><span class="small muted" style="font-size:11px">${fmtDate(g.giorno, { weekday: "narrow" })}</span></div>`; }).join("");
   const row = (label, value, sub) => `<div class="item"><div class="col" style="gap:2px"><b>${label}</b><span class="small">${sub}</span></div><div class="big" style="font-size:20px">${value}</div></div>`;
   el.innerHTML = `${header("La tua settimana", { back: "oggi", sub: `${fmtDate(w.da, { day: "numeric", month: "short" })} – ${fmtDate(w.a, { day: "numeric", month: "short" })}` })}
     <div class="card soft row" style="gap:12px;align-items:flex-start">${ico.sun(30)}<div id="wcoach" class="small md" style="line-height:1.5;color:var(--text);flex:1"><div class="skeleton" style="width:95%"></div><div class="skeleton" style="width:70%;margin-top:6px"></div></div></div>
@@ -964,10 +964,10 @@ function timeChart(points, color, unit, dec = 1) {
   for (const [d] of points) { const k = d.slice(0, 7); if (!seen.has(k)) { seen.add(k); months.push(d); } }
   const step = Math.ceil(months.length / 5);
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Andamento nel tempo">
-    ${ticks.map((t) => `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="#ECE6DC"/><text x="0" y="${y(t) + 4}" font-size="11" fill="#9AA0AD" font-weight="700">${fmtNum(t, dec)}${unit}</text>`).join("")}
+    ${ticks.map((t) => `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="#262A31"/><text x="0" y="${y(t) + 4}" font-size="11" fill="#9AA0AD" font-weight="700">${fmtNum(t, dec)}${unit}</text>`).join("")}
     ${months.filter((_, i) => i % step === 0).map((d) => `<text x="${x(d) - 8}" y="${H - 6}" font-size="11" fill="#9AA0AD" font-weight="700">${new Date(d + "T12:00:00").toLocaleDateString("it-IT", { month: "short" })}</text>`).join("")}
     <path d="${points.map((p, i) => `${i ? "L" : "M"} ${x(p[0]).toFixed(1)} ${y(p[1]).toFixed(1)}`).join(" ")}" fill="none" stroke="${color}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
-    ${points.map((p, i) => `<circle cx="${x(p[0]).toFixed(1)}" cy="${y(p[1]).toFixed(1)}" r="${i === points.length - 1 ? 6 : 3.5}" fill="${i === points.length - 1 ? color : "#fff"}" stroke="${color}" stroke-width="2.5"/>`).join("")}
+    ${points.map((p, i) => `<circle cx="${x(p[0]).toFixed(1)}" cy="${y(p[1]).toFixed(1)}" r="${i === points.length - 1 ? 6 : 3.5}" fill="${i === points.length - 1 ? color : "#0B0D10"}" stroke="${color}" stroke-width="2.5"/>`).join("")}
   </svg>`;
 }
 
@@ -988,16 +988,16 @@ function quadrantOf(dF, dL) {
 function quadrantSvg(dF, dL) {
   const cx = 160 + Math.max(-1, Math.min(1, dF / 4)) * 135, cy = 120 - Math.max(-1, Math.min(1, dL / 3)) * 95;
   const q = quadrantOf(dF, dL);
-  const box = (x, y, key, title, sub, fill, ink) => `<rect x="${x}" y="${y}" width="148" height="108" rx="14" fill="${q === key ? fill : "#F4F1EC"}"/>
-    <text x="${x + 12}" y="${y + 22}" font-weight="900" font-size="13" fill="${q === key ? ink : "#5F6675"}">${title}</text><text x="${x + 12}" y="${y + 38}" font-size="10.5" font-weight="600" fill="#5F6675">${sub}</text>`;
+  const box = (x, y, key, title, sub, fill, ink) => `<rect x="${x}" y="${y}" width="148" height="108" rx="14" fill="${q === key ? fill : "#1E2228"}"/>
+    <text x="${x + 12}" y="${y + 22}" font-weight="900" font-size="13" fill="${q === key ? ink : "#5F6675"}">${title}</text><text x="${x + 12}" y="${y + 38}" font-size="10.5" font-weight="600" fill="#8E949D">${sub}</text>`;
   return `<svg viewBox="0 0 320 252" width="100%" role="img" aria-label="Qualità del cambiamento: ${QUAD[q][0]}">
-    ${box(10, 10, "ricomposizione", "Ricomposizione", "− grasso · + muscoli", "#DDF3E7", "#2E8B5A")}
-    ${box(162, 10, "massa", "Massa", "+ grasso · + muscoli", "#FFF1CC", "#8A5F00")}
-    ${box(10, 122, "definizione", "Definizione", "− grasso · − muscoli", "#FFF1CC", "#8A5F00")}
-    ${box(162, 122, "rivedere", "Da rivedere", "+ grasso · − muscoli", "#FDE2DF", "#B8322A")}
+    ${box(10, 10, "ricomposizione", "Ricomposizione", "− grasso · + muscoli", "#14342A", "#3DDC97")}
+    ${box(162, 10, "massa", "Massa", "+ grasso · + muscoli", "#3A3016", "#F5C451")}
+    ${box(10, 122, "definizione", "Definizione", "− grasso · − muscoli", "#3A3016", "#F5C451")}
+    ${box(162, 122, "rivedere", "Da rivedere", "+ grasso · − muscoli", "#3A1A1A", "#FF7A7A")}
     <line x1="160" y1="10" x2="160" y2="230" stroke="#C9CEDB" stroke-width="1.5" stroke-dasharray="4 4"/><line x1="10" y1="120" x2="310" y2="120" stroke="#C9CEDB" stroke-width="1.5" stroke-dasharray="4 4"/>
-    <path d="M 160 120 L ${cx.toFixed(1)} ${cy.toFixed(1)}" stroke="#1C2340" stroke-width="2" stroke-dasharray="3 4"/>
-    <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="12" fill="${{ good: "#5DC796", mid: "#F7C65C", bad: "#EE6352" }[QUAD[q][1]]}" stroke="#fff" stroke-width="4"/>
+    <path d="M 160 120 L ${cx.toFixed(1)} ${cy.toFixed(1)}" stroke="#EDEFF2" stroke-width="2" stroke-dasharray="3 4"/>
+    <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="12" fill="${{ good: "#5DC796", mid: "#F7C65C", bad: "#EE6352" }[QUAD[q][1]]}" stroke="#0B0D10" stroke-width="4"/>
     <text x="10" y="248" font-size="10" font-weight="700" fill="#9AA0AD">← meno grasso</text><text x="236" y="248" font-size="10" font-weight="700" fill="#9AA0AD">più grasso →</text>
   </svg>`;
 }
@@ -1033,7 +1033,7 @@ views.corpo = async (el) => {
     html += `<div class="card col" style="gap:10px"><div class="h2">Nessuna misura ancora</div><div style="line-height:1.55;color:var(--text)">Kairo legge peso e composizione corporea da Salute. Usa una bilancia che scrive in Salute (InBody, Withings, Xiaomi…) oppure aggiungi il peso a mano nell'app Salute. Se ne hai di vecchie, caricale con <a href="#/importa">Importa da Salute</a>.</div></div>`;
   } else {
     const age_d = daysBetween(last.giorno, today);
-    if (age_d > 30) html += `<div class="card row" style="background:#FFF1CC;color:#8A5F00;gap:10px;padding:12px 16px;font-weight:700"><span style="font-size:20px" aria-hidden="true">⏳</span><span>L'ultima misura ha ${age_d} giorni. Rifai una misura per vedere i progressi di questi mesi.</span></div>`;
+    if (age_d > 30) html += `<div class="card row" style="background:var(--yellow-bg);color:var(--yellow-ink);gap:10px;padding:12px 16px;font-weight:700"><span style="font-size:20px" aria-hidden="true">⏳</span><span>L'ultima misura ha ${age_d} giorni. Rifai una misura per vedere i progressi di questi mesi.</span></div>`;
 
     // 1 · composition
     const prev3 = [...ms].reverse().find((m) => m.giorno <= shiftDay(last.giorno, -80) && m.grasso_pct != null);
@@ -1044,7 +1044,7 @@ views.corpo = async (el) => {
       <div class="row between"><div class="label">Composizione</div><button class="iconbtn" id="fatInfo" style="width:32px;height:32px;background:none" aria-label="Cos'è la massa grassa">${ico.info}</button></div>
       ${pctFat != null ? `<div class="row" style="align-items:flex-end;gap:12px;flex-wrap:wrap"><div class="huge">${fmtNum(pctFat, 1)}<span style="font-size:30px">%</span></div>
         <div class="col" style="gap:4px;padding-bottom:6px"><div style="font-weight:800">di massa grassa</div>${dPct != null ? `<span class="pill ${dPct <= 0 ? "good" : "bad"}">${signed(dPct, 1)} in ${Math.round(daysBetween(prev3.giorno, last.giorno) / 30)} mesi</span>` : ""}</div></div>
-        <div style="display:flex;height:30px;border-radius:15px;overflow:hidden;font-weight:900;font-size:13px">
+        <div style="display:flex;height:30px;border-radius:15px;overflow:hidden;font-weight:800;font-size:13px">
           <div style="width:${Math.max(pctFat, 24)}%;background:#FFB27A;display:flex;align-items:center;padding:0 10px;white-space:nowrap">${fmtNum(fk, 1)} kg</div>
           <div style="flex:1;background:#BFEBD3;display:flex;align-items:center;padding:0 10px">${fmtNum(lk, 1)} kg di massa magra</div></div>
         <div class="row small muted" style="gap:16px"><span><span class="status-dot" style="background:#FFB27A"></span> Grasso</span><span><span class="status-dot" style="background:#5DC796"></span> Muscoli, ossa e acqua</span></div>`
@@ -1081,13 +1081,13 @@ views.corpo = async (el) => {
     if (dV != null) tip = dV < -1 ? `il VO₂max è calato di ${fmtNum(-dV, 1)} in 6 mesi. Due uscite aerobiche sostenute a settimana (bici, nuoto o corsa) lo riportano su in 6–8 settimane.` : dV > 1 ? `il VO₂max è salito di ${fmtNum(dV, 1)} in 6 mesi: il lavoro aerobico sta funzionando, continua così.` : `il VO₂max è stabile. Per alzarlo aggiungi una seduta a intervalli a settimana, per esempio 4 × 4 minuti molto intensi in bici.`;
     html += `<div class="card dark col" style="gap:6px">
       <div class="row between"><div class="label" style="color:#AEB4C6">Motore</div><span class="small" style="color:#AEB4C6">VO₂max e cuore</span></div>
-      ${fa ? `<div class="row" style="gap:14px;padding:6px 0 10px"><div style="font-size:64px;font-weight:900;letter-spacing:-2px;line-height:1;color:#FFB547">${fa}</div>
-        <div class="col" style="gap:2px"><div style="font-weight:900;font-size:18px">anni: l'età del tuo cuore</div><div class="small" style="color:#AEB4C6">${fa === 20 && vNow[1] >= vo2Median(20, sex) ? "Il valore minimo della scala: il tuo VO₂max è sopra la media dei ventenni" : "L'età in cui il tuo VO₂max sarebbe nella media"}${age ? `. Hai ${age} anni` : ""}. Metodo Garmin, tabelle Cooper Institute.</div></div></div>`
+      ${fa ? `<div class="row" style="gap:14px;padding:6px 0 10px"><div style="font-size:64px;font-weight:800;letter-spacing:-2px;line-height:1;color:#FFB547">${fa}</div>
+        <div class="col" style="gap:2px"><div style="font-weight:800;font-size:18px">anni: l'età del tuo cuore</div><div class="small" style="color:#AEB4C6">${fa === 20 && vNow[1] >= vo2Median(20, sex) ? "Il valore minimo della scala: il tuo VO₂max è sopra la media dei ventenni" : "L'età in cui il tuo VO₂max sarebbe nella media"}${age ? `. Hai ${age} anni` : ""}. Metodo Garmin, tabelle Cooper Institute.</div></div></div>`
       : vNow ? `<div class="small" style="color:#AEB4C6;padding:4px 0 8px">Inserisci età e sesso nel <a href="#/profilo" style="color:#FFB547">Profilo</a> per vedere l'età del tuo cuore.</div>` : ""}
       ${vNow ? row("VO₂max", lvl ? lvl[0] : `misurato ${ago(vNow[0] + "T12:00:00")}`, fmtNum(vNow[1], 1), "", dl(dV, false, "in 6 mesi", 1), false, "vo2Info") : ""}
       ${vNow && age ? (() => { const r = cooperRow(age, sex), lo = r.p40 - 8, hi = r.p95 + 4, at = (v) => Math.max(0, Math.min(100, ((v - lo) / (hi - lo)) * 100));
           const segs = [[lo, r.p40, "#3A2E3F"], [r.p40, r.p60, "#3C4A7A"], [r.p60, r.p80, "#3D6A5C"], [r.p80, r.p95, "#2E8B5A"], [r.p95, hi, "#5DC796"]];
-          return `<div class="rangebar" style="margin:-2px 0 0">${segs.map(([a, b, c]) => `<div class="b" style="left:${at(a)}%;width:${at(b) - at(a)}%;background:${c};border-radius:0"></div>`).join("")}<div class="you" style="left:${at(vNow[1])}%;border-color:#1C2340"></div></div>
+          return `<div class="rangebar" style="margin:-2px 0 0">${segs.map(([a, b, c]) => `<div class="b" style="left:${at(a)}%;width:${at(b) - at(a)}%;background:${c};border-radius:0"></div>`).join("")}<div class="you" style="left:${at(vNow[1])}%;border-color:#EDEFF2"></div></div>
           <div class="row between small" style="color:#AEB4C6;margin-top:-4px;font-size:11px"><span>scarso</span><span>discreto</span><span>buono</span><span>eccellente</span><span>superiore</span></div>
           <div class="small" style="color:#AEB4C6;font-size:11px;text-align:center">${sex === "F" ? "Donne" : "Uomini"} ${Math.floor(age / 10) * 10}–${Math.floor(age / 10) * 10 + 9} anni · Cooper Institute</div>`; })() : ""}
       ${fcrNow ? row("FC a riposo", fcrLevel(fcrNow), fmtNum(fcrNow, 0), "bpm", dl(fcrOld != null ? fcrNow - fcrOld : null, true, "in 3 mesi"), true) : ""}
@@ -1113,7 +1113,7 @@ views.corpo = async (el) => {
     const series = { grasso_pct: ms.filter((m) => m.grasso_pct != null).map((m) => [m.giorno, m.grasso_pct]), peso: ms.filter((m) => m.peso != null).map((m) => [m.giorno, m.peso]), magra: ms.filter((m) => leanKg(m) != null).map((m) => [m.giorno, Math.round(leanKg(m) * 10) / 10]) };
     const conf = { grasso_pct: ["#FF8A1F", "%"], peso: ["#1C2340", ""], magra: ["#2E8B5A", ""] };
     const drawChart = (k) => { $("#chart").innerHTML = timeChart(series[k].slice(-30), conf[k][0], conf[k][1]); el.querySelectorAll("#seg button").forEach((b) => b.setAttribute("aria-selected", b.dataset.s === k)); };
-    if (!series.grasso_pct.length) { $("#seg").remove(); $("#chart").innerHTML = timeChart(series.peso.slice(-30), "#1C2340", ""); } else drawChart("grasso_pct");
+    if (!series.grasso_pct.length) { $("#seg").remove(); $("#chart").innerHTML = timeChart(series.peso.slice(-30), "#EDEFF2", ""); } else drawChart("grasso_pct");
     el.querySelectorAll("#seg button").forEach((b) => (b.onclick = () => drawChart(b.dataset.s)));
     const drawQuad = (days) => {
       el.querySelectorAll("#qseg button").forEach((b) => b.setAttribute("aria-selected", Number(b.dataset.q) === days));
@@ -1199,9 +1199,9 @@ views.palestra = async (el) => {
   let html = header("Palestra");
   if (sent) html += `<div class="card soft small">Inviati ${sent} allenamenti salvati senza rete ✓</div>`;
   if (queued) html += `<div class="card soft small">${queued} allenamenti in attesa di connessione: li invio appena c'è rete.</div>`;
-  if ((store.get("profilo", {}) || {}).infortunio?.attivo) html += `<a class="card col" href="#/oggi" style="gap:4px;background:#FDE2DF;text-decoration:none;color:inherit"><div style="font-weight:900;color:var(--red-ink)">🩹 Sei in modalità infortunio</div><div class="small" style="line-height:1.5">Le schede normali per ora sono in pausa: nella pagina Oggi trovi cosa fare per riabilitazione e resto del corpo.</div></a>`;
+  if ((store.get("profilo", {}) || {}).infortunio?.attivo) html += `<a class="card col" href="#/oggi" style="gap:4px;background:var(--red-bg);text-decoration:none;color:inherit"><div style="font-weight:800;color:var(--red-ink)">🩹 Sei in modalità infortunio</div><div class="small" style="line-height:1.5">Le schede normali per ora sono in pausa: nella pagina Oggi trovi cosa fare per riabilitazione e resto del corpo.</div></a>`;
   if (scarico) html += `<div class="card soft small" style="line-height:1.5"><b>Settimana di scarico del piano</b>: carichi −10% e una serie in meno. Il corpo assorbe il lavoro delle ultime 3 settimane; la prossima si riparte più forti.</div>`;
-  if (cur) html += `<a class="btn orange block" href="#/sessione" style="justify-content:space-between;min-height:60px;border-radius:20px"><span class="col" style="gap:0;text-align:left"><span style="font-weight:900">Allenamento in corso</span><span class="small" style="font-weight:600">${esc(cur.nome)} · ${Math.round((Date.now() - cur.inizioMs) / 60000)} min</span></span>${ico.arrow}</a>`;
+  if (cur) html += `<a class="btn orange block" href="#/sessione" style="justify-content:space-between;min-height:60px;border-radius:20px"><span class="col" style="gap:0;text-align:left"><span style="font-weight:800">Allenamento in corso</span><span class="small" style="font-weight:600">${esc(cur.nome)} · ${Math.round((Date.now() - cur.inizioMs) / 60000)} min</span></span>${ico.arrow}</a>`;
   html += `<div class="row between" style="padding:0 2px"><div class="label">Le tue schede</div><button class="small" id="aiSchede" style="background:none;border:0;color:var(--orange-ink);font-weight:800;cursor:pointer">✨ Crea con il coach</button></div>`;
   html += schede.length ? schede.map((sc, i) => `<div class="card col" style="gap:10px">
       <div class="row between"><div class="h2">${esc(sc.nome)}</div><a class="small" href="#/scheda?id=${encodeURIComponent(sc.id)}" style="font-weight:800">Modifica</a></div>
@@ -1494,7 +1494,7 @@ views.profilo = async (el) => {
       <label class="field">Chi sei e come ti alleni<textarea class="input" id="note" rows="3" style="padding:12px;min-height:84px" placeholder="Es. palestra 3 volte a settimana, nuoto 1-2 volte, bici nel weekend">${esc(p.note)}</textarea></label>
       <div class="grid2"><label class="field">Sveglia abituale<input class="input" id="sveglia" type="time" value="${esc(p.sveglia || "")}"></label>
         <label class="field">Sonno che ti serve<select class="input" id="sonnomin"><option value="" ${!p.sonno_min ? "selected" : ""}>Automatico</option>${sleepOpts.map(([v, l]) => `<option value="${v}" ${p.sonno_min === v ? "selected" : ""}>${l}</option>`).join("")}</select></label></div>
-      <span class="hint" style="margin-top:-6px">La sveglia serve per dirti a che ora andare a letto. «Automatico» impara quanto ti serve dalle notti dopo cui ti svegli recuperato.</span>
+      <span class="hint" style="margin-top:-6px">La sveglia serve per dirti a che ora andare a letto. «Automatico» lo stima dalle tue notti: oltre quante ore la mattina dopo non migliora più, e quanto dormi quando ti svegli senza sveglia (servono almeno 30 notti; intanto 8 ore).</span>
       <label class="field">FC massima (se la conosci)<input class="input" id="fcmax" type="number" inputmode="numeric" min="120" max="230" placeholder="${p.eta ? `stimata ${Math.round(208 - 0.7 * p.eta)} bpm` : "es. 195"}" value="${esc(p.fc_max || "")}"><span class="hint">Serve a calcolare il carico. Vuota = stima dall'età.</span></label>
       <button class="btn primary" id="saveProfilo">Salva</button></div>`;
   $("#saveProfilo").onclick = async () => {
@@ -1545,7 +1545,7 @@ views.piano = async (el, editing = false) => {
   if (!o.config.attivo || editing) return planForm(el, o);
   const w = o.settimana, today = todayStr();
   const byDay = DAYS_IT.map(([d]) => { const g = shiftDay(w.settimana, (d + 6) % 7); return [g, w.sedute.filter((x) => x.giorno === g)]; });
-  const dots = [1, 2, 3, 4].map((n) => `<span style="width:26px;height:6px;border-radius:3px;background:${n < w.n_settimana ? "var(--orange)" : n === w.n_settimana ? "var(--ink)" : "#E2E5EC"}"></span>`).join("");
+  const dots = [1, 2, 3, 4].map((n) => `<span style="width:26px;height:6px;border-radius:3px;background:${n < w.n_settimana ? "var(--orange)" : n === w.n_settimana ? "var(--ink)" : "#2A2F37"}"></span>`).join("");
   const R = o.riferimenti, sports = ["nuoto", "corsa", "bici"].filter((x) => o.config.sedute[x] > 0);
   const refRow = (sp) => {
     const h = o.test[sp] || [], last = h[h.length - 1], prev = h[h.length - 2];
@@ -1556,11 +1556,11 @@ views.piano = async (el, editing = false) => {
   const rec = o.registrato || [], maxOf = (k, f) => Math.max(1, ...rec.map((x) => (x[k] ? f(x[k]) : 0)));
   const bars = (k, f, unit) => `<div class="col" style="gap:4px"><div class="row between small"><b>${PLAN_SPORT[k]}</b><span class="muted">${rec[rec.length - 1]?.[k] ? unit(rec[rec.length - 1][k]) + " questa settimana" : "–"}</span></div><div class="row" style="gap:4px;align-items:flex-end;height:36px">${rec.map((x, i) => `<div style="flex:1;height:${x[k] ? Math.max(4, (f(x[k]) / maxOf(k, f)) * 36) : 3}px;background:${i === rec.length - 1 ? "var(--orange)" : "#C9CEDB"};border-radius:4px"></div>`).join("")}</div></div>`;
   el.innerHTML = `${header("Piano", { back: "oggi", gear: false })}
-    ${o.pausa ? `<div class="card col" style="gap:4px;background:#FDE2DF"><div style="font-weight:900;color:var(--red-ink)">🩹 In pausa per l'infortunio</div><div class="small" style="line-height:1.5">Quando segni «Sono guarito» il piano riparte dal blocco 1, con sedute più facili dopo la pausa.</div></div>` : ""}
+    ${o.pausa ? `<div class="card col" style="gap:4px;background:var(--red-bg)"><div style="font-weight:800;color:var(--red-ink)">🩹 In pausa per l'infortunio</div><div class="small" style="line-height:1.5">Quando segni «Sono guarito» il piano riparte dal blocco 1, con sedute più facili dopo la pausa.</div></div>` : ""}
     <div class="card col" style="gap:8px"><div class="row between"><div class="label">Blocco ${w.blocco}</div><div class="row" style="gap:4px">${dots}</div></div>
       <div class="h2">${w.scarico ? "Settimana di scarico e test" : `Settimana ${w.n_settimana} di 4`}</div>
       <div class="small" style="line-height:1.5;color:var(--text)">${w.scarico ? "Meno volume per assorbire il lavoro del blocco, e i test che aggiornano i tuoi ritmi." : w.n_settimana === 1 ? "Si riparte: le sedute salgono un po' ogni volta che le completi." : "Le sedute salgono con quello che completi: se una è dura, la prossima resta uguale."}</div></div>
-    <div class="card list">${byDay.map(([g, xs]) => `<div class="item" style="align-items:flex-start;gap:12px;${g === today ? "background:var(--soft);margin:0 -16px;padding-left:16px;padding-right:16px" : ""}"><div style="width:34px;font-weight:900;${g < today ? "color:var(--muted)" : ""}">${fmtDate(g, { weekday: "short" }).slice(0, 3)}<div class="small muted" style="font-weight:600">${Number(g.slice(8))}</div></div>
+    <div class="card list">${byDay.map(([g, xs]) => `<div class="item" style="align-items:flex-start;gap:12px;${g === today ? "background:var(--soft);margin:0 -16px;padding-left:16px;padding-right:16px" : ""}"><div style="width:34px;font-weight:800;${g < today ? "color:var(--muted)" : ""}">${fmtDate(g, { weekday: "short" }).slice(0, 3)}<div class="small muted" style="font-weight:600">${Number(g.slice(8))}</div></div>
       <div class="col" style="gap:6px;flex:1;min-width:0">${xs.length ? xs.map((x) => `<div class="col" style="gap:1px"><div style="font-weight:800">${esc(x.titolo)}</div><div class="small muted">${x.sport === "palestra" ? "Pesi · scheda in rotazione" : `${esc(PLAN_SPORT[x.sport])} · <b class="${TIPO[x.tipo][1]}">${TIPO[x.tipo][0]}</b>`}${x.durata_min ? ` · ${x.durata_min} min` : ""}${x.fatta ? ` · <b class="good">✓${x.sensazione ? " " + SENS[x.sensazione] : ""}</b>` : x.saltata ? " · saltata" : ""}${x.adattata ? ` · ${esc(x.adattata)}` : ""}</div></div>`).join("") : `<div class="small muted" style="padding-top:2px">Riposo</div>`}</div></div>`).join("")}</div>
     ${w.escluse?.length ? `<div class="card soft small" style="line-height:1.5">Non ci stanno nei tuoi giorni: ${w.escluse.map((x) => `${PLAN_SPORT[x.sport].toLowerCase()} ${TIPO[x.tipo][0].toLowerCase()}`).join(", ")}. Aggiungi un giorno o permetti due sedute nello stesso giorno.</div>` : ""}
     ${sports.length ? `<div class="col" style="gap:6px"><div class="label" style="padding:0 6px">I tuoi riferimenti</div><div class="card list">${sports.map(refRow).join("")}</div><div class="small muted" style="padding:0 6px;line-height:1.5">I ritmi delle sedute vengono da qui. Si aggiornano a ogni test (ultima settimana di ogni blocco).</div></div>` : ""}
@@ -1923,12 +1923,12 @@ views.diagnostica = async (el) => {
   const checks = healthChecks(d, err, lat, rel);
   const todo = checks.filter((x) => x.s === "err" || x.s === "warn");
   const worst = checks.some((x) => x.s === "err") ? "err" : todo.length ? "warn" : "ok";
-  const COL = { ok: ["#DDF3E8", "var(--green-ink)", "✓"], warn: ["#FDF1D6", "var(--yellow-ink)", "!"], err: ["#FDE2DF", "var(--red-ink)", "✕"] };
+  const COL = { ok: ["var(--green-bg)", "var(--green-ink)", "✓"], warn: ["var(--yellow-bg)", "var(--yellow-ink)", "!"], err: ["var(--red-bg)", "var(--red-ink)", "✕"] };
   const c = cfg();
   const dot = (s) => `<span class="status-dot ${s}"></span>`;
   const item = (s, label, value) => `<div class="item"><div class="row" style="gap:10px">${dot(s)}<span>${label}</span></div><div class="small muted" style="text-align:right">${value}</div></div>`;
   let html = subHeader("Stato di Kairo");
-  html += `<div class="card row" style="gap:14px;background:${COL[worst][0]}"><span style="width:44px;height:44px;border-radius:50%;background:${COL[worst][1]};color:#fff;display:grid;place-items:center;font-size:22px;font-weight:900;flex:none">${COL[worst][2]}</span>
+  html += `<div class="card row" style="gap:14px;background:${COL[worst][0]}"><span style="width:44px;height:44px;border-radius:50%;background:${COL[worst][1]};color:var(--on-ink);display:grid;place-items:center;font-size:22px;font-weight:800;flex:none">${COL[worst][2]}</span>
     <div class="col" style="gap:2px"><div class="h2" style="color:${COL[worst][1]}">${worst === "ok" ? "Tutto funziona" : `${todo.length} ${todo.length === 1 ? "cosa" : "cose"} da sistemare`}</div><div class="small" style="color:var(--text)">${worst === "ok" ? "Dati, coach e backup sono a posto." : "Qui sotto trovi cosa fare."}</div></div></div>`;
   html += `<div class="card list" style="padding:4px 16px">${checks.map((x) => `<div class="item" style="align-items:flex-start;gap:12px"><span style="padding-top:6px">${dot(x.s)}</span><div class="col" style="gap:3px;flex:1"><div style="font-weight:800">${x.t}</div><div class="small" style="color:var(--text);font-weight:500;line-height:1.45">${esc(x.text)}</div>${x.fix ? `<div class="small" style="font-weight:600;line-height:1.45;color:${x.s === "ok" ? "var(--muted)" : "var(--ink)"}">→ ${esc(x.fix)}</div>` : ""}</div></div>`).join("")}</div>`;
   html += `<div class="row" style="gap:8px"><button class="btn ghost" id="testAi" style="flex:1">Prova il coach</button><button class="btn ghost" id="copy" style="flex:1">Copia report</button></div><div id="aiOut" class="small muted"></div>`;
@@ -1974,7 +1974,7 @@ views.diagnostica = async (el) => {
 /* ---------- info & licenses ---------- */
 views.info = async (el) => {
   el.innerHTML = `${header("Informazioni", { back: "impostazioni", gear: false })}
-    <div class="card col center" style="gap:8px">${ico.sun(70)}<div style="font-size:40px;font-weight:900;letter-spacing:-1px">kairo<span style="color:var(--orange)">.</span></div><div class="muted">Versione ${APP_VERSION}</div><div class="small" style="max-width:320px;line-height:1.5">Kairós: il momento giusto. Kairo legge i dati del tuo Apple Watch e ti dice ogni mattina come hai recuperato.</div></div>
+    <div class="card col center" style="gap:8px">${ico.sun(70)}<div style="font-size:40px;font-weight:800;letter-spacing:-1px">kairo<span style="color:var(--orange)">.</span></div><div class="muted">Versione ${APP_VERSION}</div><div class="small" style="max-width:320px;line-height:1.5">Kairós: il momento giusto. Kairo legge i dati del tuo Apple Watch e ti dice ogni mattina come hai recuperato.</div></div>
     <div class="card col" style="gap:10px"><div class="h2">Open source</div>
       <div style="line-height:1.5;color:var(--text)">Kairo è software libero, rilasciato con licenza <b>MIT</b>. Il codice è pubblico: chiunque può controllarlo, installarlo sul proprio account e contribuire.</div>
       <a class="btn primary" href="${GITHUB_URL}" target="_blank" rel="noopener">Codice su GitHub</a>
@@ -1996,11 +1996,11 @@ views.info = async (el) => {
 
 /* ---------- guide: A–Z setup wizard ---------- */
 async function copyText(t, ok = "Copiato") { try { await navigator.clipboard.writeText(t); toast(ok); } catch { toast("Copia non riuscita: selezionalo e copialo a mano"); } }
-const tip = (t, body) => `<div class="card soft col" style="gap:4px"><div style="font-weight:900">${t}</div><div class="small" style="line-height:1.5">${body}</div></div>`;
+const tip = (t, body) => `<div class="card soft col" style="gap:4px"><div style="font-weight:800">${t}</div><div class="small" style="line-height:1.5">${body}</div></div>`;
 const GUIDE = [
   { t: "Prima di iniziare", body: () => `
     <div style="line-height:1.55;color:var(--text)">In 6 passi l'iPhone inizierà a mandare a Kairo i dati del Watch, da solo, ogni giorno. Ci vogliono circa <b>5 minuti</b>, una volta sola.</div>
-    <div class="card soft col" style="gap:6px"><div style="font-weight:900">Fai questa guida sull'iPhone, in Safari</div><div class="small" style="line-height:1.5">Ti serve l'app <b>Comandi</b> (è già sull'iPhone; se l'hai cancellata, riscaricala gratis dall'App Store).</div></div>
+    <div class="card soft col" style="gap:6px"><div style="font-weight:800">Fai questa guida sull'iPhone, in Safari</div><div class="small" style="line-height:1.5">Ti serve l'app <b>Comandi</b> (è già sull'iPhone; se l'hai cancellata, riscaricala gratis dall'App Store).</div></div>
     <div class="h2" style="font-size:17px">Un'impostazione da attivare</div>
     <ol class="steps"><li>Apri <b>Impostazioni</b> dell'iPhone → <b>App</b> → <b>Comandi</b> → <b>Avanzate</b>.</li>
       <li>Attiva <b>Consenti condivisione di grandi quantità di dati</b>.</li>
@@ -2022,15 +2022,15 @@ const GUIDE = [
     <button class="btn primary block" id="verify">Controlla se i dati sono arrivati</button><div id="verifyOut" class="small" style="line-height:1.5"></div>` },
   { t: "Rendilo automatico", body: () => `
     <div style="line-height:1.55;color:var(--text)">Crei due automazioni, così il comando parte da solo. Apri <b>Comandi</b> → scheda <b>Automazione</b> (in basso).</div>
-    <div class="card soft col" style="gap:8px"><div style="font-weight:900">A · Quando spegni la sveglia</div>
+    <div class="card soft col" style="gap:8px"><div style="font-weight:800">A · Quando spegni la sveglia</div>
       <ol class="steps"><li>Tocca <b>+</b> (in alto a destra) → <b>Sveglia</b>.</li>
         <li>Scegli <b>Viene fermata</b> e <b>Esegui immediatamente</b>.</li>
         <li><b>Avanti</b> → scegli <b>HealthSync</b> → <b>Fine</b>.</li></ol></div>
-    <div class="card soft col" style="gap:8px"><div style="font-weight:900">B · Quando metti in carica</div>
+    <div class="card soft col" style="gap:8px"><div style="font-weight:800">B · Quando metti in carica</div>
       <ol class="steps"><li>Tocca <b>+</b> → <b>Caricatore</b>.</li>
         <li>Scegli <b>È collegato</b> e <b>Esegui immediatamente</b>.</li>
         <li><b>Avanti</b> → <b>HealthSync</b> → <b>Fine</b>.</li></ol></div>
-    <div class="card soft col" style="gap:8px"><div style="font-weight:900">C · Mezz'ora dopo la sveglia <span class="small muted" style="font-weight:600">(consigliata)</span></div>
+    <div class="card soft col" style="gap:8px"><div style="font-weight:800">C · Mezz'ora dopo la sveglia <span class="small muted" style="font-weight:600">(consigliata)</span></div>
       <div class="small" style="line-height:1.5">Il Watch finisce di elaborare le fasi del sonno qualche minuto dopo il risveglio: questo invio porta la notte completa.</div>
       <ol class="steps"><li>Tocca <b>+</b> → <b>Ora del giorno</b>.</li>
         <li>Scegli un orario circa 30 minuti dopo la tua sveglia, <b>Ogni giorno</b>, e <b>Esegui immediatamente</b>.</li>
@@ -2067,7 +2067,7 @@ views.guida = async (el) => {
     el.innerHTML = `${header("Guida", { back: "impostazioni", gear: false, sub: "Collega l'iPhone in 5 minuti" })}
       <div class="col" style="gap:8px"><div class="row between small"><b>Passo ${i + 1} di ${GUIDE.length}</b><span class="muted">${Math.round((i / (GUIDE.length - 1)) * 100)}%</span></div>
         <div class="track"><div class="bar" style="left:0;width:${(i / (GUIDE.length - 1)) * 100}%;background:var(--orange)"></div></div>
-        <div class="chips" style="gap:6px">${GUIDE.map((s, k) => `<button class="chip" data-go="${k}" style="padding:4px 10px;font-size:12px;${k === i ? "background:var(--ink);color:#fff;border-color:var(--ink)" : k < i ? "background:#DDF3E7;border-color:#DDF3E7" : ""}" aria-label="Passo ${k + 1}: ${esc(s.t)}">${k + 1}</button>`).join("")}</div></div>
+        <div class="chips" style="gap:6px">${GUIDE.map((s, k) => `<button class="chip" data-go="${k}" style="padding:4px 10px;font-size:12px;${k === i ? "background:var(--ink);color:var(--on-ink);border-color:var(--ink)" : k < i ? "background:#DDF3E7;border-color:#DDF3E7" : ""}" aria-label="Passo ${k + 1}: ${esc(s.t)}">${k + 1}</button>`).join("")}</div></div>
       <div class="card col" style="gap:14px"><div class="h2">${i + 1} · ${g.t}</div>${g.body(c)}</div>
       <div class="row">${i > 0 ? `<button class="btn ghost" id="prev" style="flex:1">Indietro</button>` : ""}${i < GUIDE.length - 1 ? `<button class="btn primary" id="next" style="flex:2">Avanti</button>` : ""}</div>
       <a class="small center" style="display:block" href="${GITHUB_URL}/blob/main/docs/SETUP.md" target="_blank" rel="noopener">Guida completa su GitHub</a>`;
@@ -2164,7 +2164,7 @@ views.importa = async (el) => {
         rows += r.righe || 0; done++;
         out.innerHTML = bar((done / jobs.length) * 100, `Invio ${done} di ${jobs.length}…`);
       }
-      out.innerHTML = `<div class="card soft col" style="gap:6px;margin-top:10px"><div style="font-weight:900" class="good">Importazione completata</div><div class="small">${fmtNum(rows)} righe salvate. Le tue medie personali sono pronte.</div><a class="btn primary" href="#/recupero">Vai a Recupero</a></div>`;
+      out.innerHTML = `<div class="card soft col" style="gap:6px;margin-top:10px"><div style="font-weight:800" class="good">Importazione completata</div><div class="small">${fmtNum(rows)} righe salvate. Le tue medie personali sono pronte.</div><a class="btn primary" href="#/recupero">Vai a Recupero</a></div>`;
     } catch (e) {
       btn.disabled = false; btn.textContent = "Riprova l'invio";
       out.innerHTML = `<div class="small bad" style="padding-top:8px">${esc(e.message)} (inviati ${done} blocchi di ${jobs.length}). Puoi riprovare: i dati già salvati non vengono duplicati.</div>`;
@@ -2256,7 +2256,7 @@ views.benvenuto = async (el) => {
   if (info && !info.setup_richiesto && cfg().code) return route("oggi");
   if (info && !info.setup_richiesto) return route("accesso");
   el.innerHTML = `<div class="col center" style="gap:14px;padding-top:30px">${ico.sun(90)}
-      <div style="font-size:48px;font-weight:900;letter-spacing:-1.5px">kairo<span style="color:var(--orange)">.</span></div>
+      <div style="font-size:48px;font-weight:800;letter-spacing:-1.5px">kairo<span style="color:var(--orange)">.</span></div>
       <div class="muted" style="max-width:300px;line-height:1.5">Ogni giorno parte da come hai recuperato.</div>${bean(82, 120)}</div>
     <div class="card col" style="gap:12px"><div class="h2">Crea il tuo codice di accesso</div>
       <div class="small" style="line-height:1.5;color:var(--text)">Benvenuto! Scegli un codice di almeno 10 caratteri (meglio una frase corta, es. «mattino-bici-42»): ti servirà per aprire Kairo su iPhone e PC. Salvalo nel portachiavi o in Note.</div>
@@ -2273,7 +2273,7 @@ views.benvenuto = async (el) => {
 };
 
 views.accesso = async (el) => {
-  el.innerHTML = `<div class="col center" style="gap:12px;padding-top:30px">${ico.sun(80)}<div style="font-size:42px;font-weight:900;letter-spacing:-1px">kairo<span style="color:var(--orange)">.</span></div></div>
+  el.innerHTML = `<div class="col center" style="gap:12px;padding-top:30px">${ico.sun(80)}<div style="font-size:42px;font-weight:800;letter-spacing:-1px">kairo<span style="color:var(--orange)">.</span></div></div>
     <div class="card col" style="gap:12px"><div class="h2">Accedi</div><div class="small muted">Inserisci il codice di accesso che hai creato la prima volta.</div>
       <label class="field">Codice di accesso<input class="input" id="code" type="password" autocomplete="current-password"></label>
       <button class="btn primary" id="go">Entra</button><div id="msg" class="small bad"></div>

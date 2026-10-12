@@ -2,6 +2,13 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.22.0] — 2026-10-12
+
+### Cambiato
+- **Nuovo aspetto «Strumento»**: fondo quasi nero, superfici scure con bordi sottili, un solo colore d'accento (l'arancione) e i colori di stato (verde, giallo, rosso) più luminosi per leggersi sul nero. Pulsanti principali arancioni, barra in basso traslucida come su iOS.
+- **Testo arrotondato e più deciso**, come in iOS: su iPhone e Mac Kairo usa il carattere di sistema arrotondato (SF Pro Rounded); altrove Nunito. Numeri a larghezza fissa, così i valori non «ballano».
+- Solo grafica: funzioni, pagine e calcoli sono gli stessi della 1.21.0.
+
 ## [1.21.0] — 2026-10-12
 
 ### Migliorato
