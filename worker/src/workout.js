@@ -2,6 +2,15 @@
 // The AI proposes the session; recovery, training load and alarms set the limits; fixed rules are the fallback.
 import { ask } from "./coach.js";
 import { muscleFatigue, routineFatigue } from "./strength.js";
+import { hrMax } from "./profile.js";
+
+// Heart-rate zones as % of max HR (same as the training load): Z1 50-60 … Z5 90-100.
+export function hrZones(hrmax) {
+  return [1, 2, 3, 4, 5].map((z) => ({ z, min: Math.round(hrmax * (0.4 + z / 10)), max: Math.round(hrmax * (0.5 + z / 10)) }));
+}
+const zonesText = (zs) => zs.map((x) => `Z${x.z} ${x.min}-${x.max}`).join(" · ");
+// "(zona 2)" / "(zona 2-3)" in the fixed sessions → the person's bpm
+const withBpm = (txt, zs) => txt.replace(/zona (\d)(?:-(\d))?/g, (_, a, b) => `zona ${a}${b ? "-" + b : ""}: ${zs[a - 1].min}-${zs[(b || a) - 1].max} bpm`);
 
 export const INTENSITA = ["leggero", "medio", "intenso"];
 const NOMI = { palestra: "Palestra", nuoto: "Nuoto", bici: "Bici", corsa: "Corsa" };
@@ -46,7 +55,14 @@ export async function lastSets(db, names) {
     const last = await db.prepare("SELECT start FROM sets WHERE exercise = ? AND (set_type IS NULL OR set_type != 'warmup') ORDER BY start DESC LIMIT 1").bind(n).first();
     if (!last) continue;
     const r = await db.prepare("SELECT weight, reps FROM sets WHERE exercise = ? AND start = ? AND (set_type IS NULL OR set_type != 'warmup') ORDER BY set_index").bind(n, last.start).all();
-    out[n] = { data: last.start, serie: r.results.map((x) => ({ kg: x.weight, reps: x.reps })) };
+    // the last 3 sessions: heaviest weight, reps done at that weight, average RPE (to spot a stall)
+    const h = await db.prepare(`SELECT start, max(weight) kg, avg(rpe) rpe FROM sets WHERE exercise = ? AND (set_type IS NULL OR set_type != 'warmup') GROUP BY start ORDER BY start DESC LIMIT 3`).bind(n).all();
+    const storia = [];
+    for (const x of h.results) {
+      const reps = await db.prepare("SELECT sum(reps) r FROM sets WHERE exercise = ? AND start = ? AND weight = ?").bind(n, x.start, x.kg).first();
+      storia.push({ data: x.start, kg: x.kg, reps: reps?.r ?? null, rpe: x.rpe == null ? null : Math.round(x.rpe * 10) / 10 });
+    }
+    out[n] = { data: last.start, serie: r.results.map((x) => ({ kg: x.weight, reps: x.reps })), storia };
   }
   return out;
 }
@@ -98,6 +114,9 @@ async function recentSports(db, hist) {
     if (ck?.attivita) for (const a of ck.attivita.split(",")) if (NOMI[a]) days[hist[i].giorno].add(a);
   }
   const from = hist[0].giorno, to = addDay(hist[hist.length - 1].giorno, 1);
+  // what you said you did with the day's workout ("Fatto", "Fatto altro")
+  const es = await db.prepare("SELECT day, sport FROM esiti WHERE day >= ? AND day < ? AND stato != 'saltato' AND sport IS NOT NULL").bind(from, to).all();
+  for (const x of es.results) if (NOMI[x.sport]) days[x.day]?.add(x.sport);
   const gym = await db.prepare("SELECT DISTINCT substr(start,1,10) d FROM sets WHERE start >= ? AND start < ?").bind(from, to).all();
   for (const g of gym.results) days[g.d]?.add("palestra");
   const dist = await db.prepare("SELECT metric, day FROM daily WHERE metric IN ('dist_nuoto','dist_bici') AND value > 0 AND day >= ? AND day < ?").bind(from, to).all();
@@ -131,7 +150,7 @@ const TEMPLATE = {
 function ruleBased(ctx) {
   const { sport, intensita } = ctx.scelta;
   const t = TEMPLATE[sport][intensita];
-  return { sport, intensita, titolo: t.titolo, durata_min: t.durata_min, struttura: t.struttura.map(([fase, dettaglio]) => ({ fase, dettaglio })),
+  return { sport, intensita, titolo: t.titolo, durata_min: t.durata_min, struttura: t.struttura.map(([fase, dettaglio]) => ({ fase, dettaglio: withBpm(dettaglio, ctx.zone) })),
     scheda: sport === "palestra" ? ctx.prossimaScheda?.nome || null : null, perche: ctx.perche, fonte: "regole" };
 }
 
@@ -171,7 +190,8 @@ export async function recommendWorkout(env, req, { hist, profile, profileText, s
   const order = schede.map((_, i) => schede[(idx + 1 + i) % schede.length]);
   const prossimaScheda = order.length ? order.reduce((best, s) => (routineFatigue(s, fat) < routineFatigue(best, fat) - 0.5 ? s : best), order[0]) : null;
   const stanchi = fat.filter((f) => f.stato !== "fresco").map((f) => `${f.muscolo} ${f.stato}`).join(", ");
-  const ctx = { scelta, perche: scelta.perche, prossimaScheda };
+  const zone = hrZones(hrMax(profile));
+  const ctx = { scelta, perche: scelta.perche, prossimaScheda, zone };
 
   const c = today.carico || {};
   const giorni = recent.map((d) => `${d.giorno}: ${d.sport.join(", ") || "riposo o nessun dato"}`).join("\n");
@@ -181,6 +201,7 @@ export async function recommendWorkout(env, req, { hist, profile, profileText, s
 - ${today.allarme ? `ALLARME: ${today.allarme.titolo}.` : "Nessun allarme."}
 - Sport che pratica (puoi proporre SOLO questi): ${sports.join(", ")}.
 - Ultimi giorni:\n${giorni}
+- Zone di frequenza cardiaca di questa persona (bpm): ${zonesText(zone)}. Per nuoto, bici e corsa scrivi l'intensità anche in bpm con queste zone.
 - Muscoli ancora affaticati dalle ultime sedute: ${stanchi || "nessuno"}${stanchi ? " (non proporre sedute che li caricano di nuovo)" : ""}.
 - Schede di palestra: ${schede.length ? schede.map((s) => `${s.nome} (${s.esercizi.map((e) => e.nome).slice(0, 6).join(", ")})`).join("; ") : "nessuna"}${prossimaScheda ? `; la prossima in rotazione è "${prossimaScheda.nome}"` : ""}.
 - Proposta calcolata dalle regole: ${scelta.sport}, intensità ${scelta.intensita}.${exclude ? ` L'utente ha chiesto un'alternativa a ${exclude}: non proporre ${exclude}.` : ""}
@@ -202,6 +223,7 @@ Per nuoto, bici e corsa scrivi una seduta concreta con distanze o tempi, intensi
     };
   }
   if (!rec) rec = ruleBased(ctx);
+  if (rec.sport !== "palestra") rec.zone = zone;
   await env.DB.prepare("INSERT INTO advice(day,text,provider,model,created) VALUES(?,?,?,?,?) ON CONFLICT(day) DO UPDATE SET text=excluded.text, provider=excluded.provider, model=excluded.model, created=excluded.created")
     .bind(key, JSON.stringify(rec), rec.fonte, rec.modello || null, new Date().toISOString()).run();
   return rec;

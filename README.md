@@ -17,6 +17,7 @@ Open source, gratuito, i dati restano nel <i>tuo</i> account.</p>
 - **Allenamento del giorno dall'IA**: tra i tuoi sport (palestra, nuoto, bici, corsa) sceglie cosa fare, con quale intensità e, per gli sport di resistenza, la seduta completa con tecnica e andature, nei limiti di recupero e carico
 - **Modalità infortunio**: descrivi l'infortunio e ogni giorno il coach ti dice se riposare, quali esercizi riabilitativi fare o come allenare il resto del corpo, in base al dolore
 - **Palestra**: le tue schede (anche compilate dal coach a partire da una descrizione), allenamento in corso sul telefono anche senza rete con carichi precompilati e progressione, e andamento dei massimali
+- **Allenamenti rilevati dal battito** anche senza avviarli sul Watch, con zone di frequenza cardiaca in bpm nelle sedute
 - **Carico di allenamento** dalla frequenza cardiaca (TRIMP) e dalla fatica percepita in palestra, con il rapporto settimana/mese per migliorare senza esagerare
 - **Allarmi** quando HRV, frequenza cardiaca e respirazione segnalano fatica accumulata o un malanno in arrivo
 - **Score di Recupero 0–100** con Bean, la batteria che si riempie

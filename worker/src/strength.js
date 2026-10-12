@@ -73,20 +73,42 @@ const MUSCLE_MAP = [
   [/french|tricipit|push.?down|skull|kick.?back.*tric|estension.*tric/i, [["tricipiti", 1]]],
   [/crunch|plank|addom|abs|core|russian|leg raise|ab wheel/i, [["addome", 1]]],
 ];
-export function muscleWeights(name) {
+export const MUSCLES = ["petto", "schiena", "spalle", "bicipiti", "tricipiti", "quadricipiti", "femorali", "glutei", "polpacci", "addome", "trapezio", "lombari", "avambracci"];
+// custom: { "nome esercizio in minuscolo": "muscolo" | "nessuno" } chosen by the person in Palestra
+export function muscleWeights(name, custom = {}) {
+  const c = custom[String(name).toLowerCase().trim()];
+  if (c) return c === "nessuno" ? [] : [[c, 1]];
   for (const [re, m] of MUSCLE_MAP) if (re.test(name)) return m;
   return [];
 }
-export const musclesOf = (name) => muscleWeights(name).map(([m]) => m);
+export async function customMuscles(db) {
+  const r = await db.prepare("SELECT value FROM settings WHERE key = 'muscoli_custom'").first();
+  try { return r ? JSON.parse(r.value) : {}; } catch { return {}; }
+}
+export async function setCustomMuscle(db, esercizio, muscolo) {
+  const name = String(esercizio || "").toLowerCase().trim().slice(0, 80);
+  if (!name || !(MUSCLES.includes(muscolo) || muscolo === "nessuno")) return { errore: "Esercizio o muscolo non valido" };
+  const c = await customMuscles(db); c[name] = muscolo;
+  await db.prepare("INSERT INTO settings(key,value) VALUES('muscoli_custom',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(JSON.stringify(c)).run();
+  return { ok: true };
+}
+// exercises of your routines and of the last 60 days that Kairo cannot link to a muscle
+export async function unknownExercises(db, schede = []) {
+  const c = await customMuscles(db);
+  const r = await db.prepare("SELECT DISTINCT exercise FROM sets WHERE start >= ?").bind(new Date(Date.now() - 60 * 86400e3).toISOString().slice(0, 10)).all();
+  const names = [...new Set([...schede.flatMap((s) => s.esercizi.map((e) => e.nome)), ...r.results.map((x) => x.exercise)])];
+  return names.filter((n) => !muscleWeights(n, c).length && c[n.toLowerCase().trim()] !== "nessuno").slice(0, 30);
+}
+export const musclesOf = (name, custom) => muscleWeights(name, custom).map(([m]) => m);
 
 // For each muscle: recent fatigue (hard sets in the last 72 h, decaying: <24 h ×1, 24-48 h ×0.6, 48-72 h ×0.3)
 // and weekly volume (sets in 7 days, helper muscles count only their fraction) vs the 10-20 sets/week range (Schoenfeld 2017).
 export async function muscleFatigue(db, nowMs = Date.now()) {
   const since = new Date(nowMs - 7 * 86400e3).toISOString().slice(0, 10);
   const r = await db.prepare("SELECT start, exercise, count(*) n FROM sets WHERE start >= ? AND (set_type IS NULL OR set_type != 'warmup') GROUP BY start, exercise").bind(since).all();
-  const out = {};
+  const out = {}, custom = await customMuscles(db);
   for (const x of r.results) {
-    const ms = muscleWeights(x.exercise); if (!ms.length) continue;
+    const ms = muscleWeights(x.exercise, custom); if (!ms.length) continue;
     const h = (nowMs - Date.parse(x.start)) / 36e5;
     const w = h < 24 ? 1 : h < 48 ? 0.6 : h < 72 ? 0.3 : 0;
     ms.forEach(([m, k]) => {
@@ -94,13 +116,15 @@ export async function muscleFatigue(db, nowMs = Date.now()) {
       o.fatica += x.n * k * w; o.serie_7g += x.n * k;
     });
   }
-  return Object.values(out).map((o) => ({ ...o, fatica: Math.round(o.fatica * 10) / 10, serie_7g: Math.round(o.serie_7g),
+  const list = Object.values(out).map((o) => ({ ...o, fatica: Math.round(o.fatica * 10) / 10, serie_7g: Math.round(o.serie_7g),
     stato: o.fatica >= 6 ? "stanco" : o.fatica >= 2.5 ? "in recupero" : "fresco",
     volume: o.serie_7g < 10 ? "basso" : o.serie_7g > 20 ? "alto" : "giusto" })).sort((a, b) => b.fatica - a.fatica);
+  Object.defineProperty(list, "custom", { value: custom }); // used by routineFatigue, not serialized
+  return list;
 }
 // How tired a routine's muscles are (to pick the best routine for today).
 export const routineFatigue = (scheda, fat) => {
   const by = Object.fromEntries(fat.map((f) => [f.muscolo, f.fatica]));
-  const ms = [...new Set(scheda.esercizi.flatMap((e) => musclesOf(e.nome).slice(0, 1)))];
+  const ms = [...new Set(scheda.esercizi.flatMap((e) => musclesOf(e.nome, fat.custom).slice(0, 1)))];
   return ms.length ? ms.reduce((a, m) => a + (by[m] || 0), 0) / ms.length : 0;
 };

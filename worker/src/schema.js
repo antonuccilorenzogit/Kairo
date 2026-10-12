@@ -50,6 +50,12 @@ export const SCHEMA = [
   // Gym routines ("schede"): exercises with sets and a rep range, as JSON
   `CREATE TABLE IF NOT EXISTS schede (
      id TEXT PRIMARY KEY, nome TEXT NOT NULL, ordine INTEGER NOT NULL, esercizi TEXT NOT NULL, updated TEXT NOT NULL)`,
+  // Training sessions detected from heart rate (≥ 10 min above 60% of max HR)
+  `CREATE TABLE IF NOT EXISTS sessioni (
+     start TEXT PRIMARY KEY, day TEXT NOT NULL, end TEXT NOT NULL, minuti INTEGER NOT NULL, fc_media REAL, trimp INTEGER)`,
+  `CREATE INDEX IF NOT EXISTS idx_sessioni_day ON sessioni(day)`,
+  // Outcome of the day's workout ("fatto", "altro", "saltato")
+  `CREATE TABLE IF NOT EXISTS esiti (day TEXT PRIMARY KEY, stato TEXT NOT NULL, sport TEXT, created TEXT NOT NULL)`,
   // Coach memory: durable facts about the person (goals, races, injuries, preferences)
   `CREATE TABLE IF NOT EXISTS memoria (
      id INTEGER PRIMARY KEY AUTOINCREMENT, testo TEXT NOT NULL UNIQUE, fonte TEXT NOT NULL, creato TEXT NOT NULL)`,

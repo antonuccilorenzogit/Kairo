@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.11.0";
+const APP_VERSION = "1.12.0";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -175,7 +175,7 @@ views.oggi = async (el) => {
         <button class="small muted" id="skipCk" style="background:none;border:0;cursor:pointer;text-decoration:underline">Oggi salto il check-in</button></div>
       <a class="card row between" href="#/settimana"><span style="font-weight:800">La tua settimana</span>${ico.chevron}</a>
       </div>`;
-    el.querySelectorAll("[data-checkin]").forEach((b) => b.addEventListener("click", () => checkinSheet(null, !d.sonno || d.sonno.manuale)));
+    el.querySelectorAll("[data-checkin]").forEach((b) => b.addEventListener("click", () => checkinSheet(null, !d.sonno || d.sonno.manuale, y.attivita.sessioni || [])));
     $("#skipCk").onclick = async () => { try { await api("/api/checkin", { method: "POST", body: { day: todayStr() } }); router(); } catch (e) { toast(e.message); } };
     $("#syncNow").onclick = () => { const back = () => { if (document.visibilityState !== "visible") return; document.removeEventListener("visibilitychange", back); setTimeout(() => router(), 1500); }; document.addEventListener("visibilitychange", back); };
     return;
@@ -196,7 +196,7 @@ views.oggi = async (el) => {
       <div class="col" style="gap:2px;flex:1">${r.score == null
         ? `<div class="h2">In calibrazione</div><div class="muted small">Servono 5 notti con il Watch (ne ho ${r.giorni_baseline}).</div>`
         : `<div class="row" style="gap:8px;align-items:baseline"><span style="font-size:34px;font-weight:900;line-height:1">${r.score}</span><span class="h2 ${st.cls}">${st.label}</span></div>
-           <div class="muted small">Recupero${delta != null ? ` · ${delta >= 0 ? "▲" : "▼"} ${Math.abs(delta)} da ieri` : ""}${r.calibrazione ? " · stima provvisoria" : ""}</div>`}</div>${ico.chevron}</a>
+           <div class="muted small">Recupero${delta != null ? ` · ${delta >= 0 ? "▲" : "▼"} ${Math.abs(delta)} da ieri` : ""}${r.calibrazione ? " · stima provvisoria" : r.affidabilita === "bassa" ? ` · <span class="mid">poche misure stanotte</span>` : ""}</div>`}</div>${ico.chevron}</a>
     <button class="card col" id="workout" style="gap:6px;border:0;text-align:left;cursor:pointer;width:100%;font:inherit;color:inherit"><div class="label">${p.infortunio?.attivo ? "Infortunio · cosa fare oggi" : "Allenamento di oggi"}</div>
       <div class="skeleton" style="height:22px;width:60%"></div><div class="skeleton" style="height:16px;width:85%"></div></button>
     <a class="card row between" href="${nightPending ? "shortcuts://run-shortcut?name=HealthSync" : "#/sonno"}" style="gap:12px">
@@ -216,7 +216,7 @@ views.oggi = async (el) => {
     const back = () => { if (document.visibilityState !== "visible") return; document.removeEventListener("visibilitychange", back); watchSyncReturn = false; setTimeout(() => router(), 1500); };
     document.addEventListener("visibilitychange", back);
   };
-  el.querySelectorAll("[data-checkin]").forEach((b) => b.addEventListener("click", () => checkinSheet(d.checkin, !d.sonno || d.sonno.manuale)));
+  el.querySelectorAll("[data-checkin]").forEach((b) => b.addEventListener("click", () => checkinSheet(d.checkin, !d.sonno || d.sonno.manuale, y.attivita.sessioni || [])));
   todayLoad = [stLabel, stCls];
   loadWorkout(false);
   // the advice arrives asynchronously so the page is usable immediately; tapping it shows the whole message
@@ -283,7 +283,8 @@ function renderWorkoutCard(w) {
         : `<b class="${mc}">${ml}</b> · dolore ${w.dolore}/10${w.giorni != null ? ` · giorno ${w.giorni + 1}` : ""}`);
   } else {
     const [il, ic] = INT_LABEL[w.intensita] || ["", "muted"];
-    box.innerHTML = line("Allenamento di oggi", esc(w.titolo), `${esc(SPORT[w.sport])} · ${w.durata_min} min · <b class="${ic}">${il}</b>${w.scheda ? ` · ${esc(w.scheda)}` : ""}`);
+    const es = w.esito ? (w.esito.stato === "saltato" ? ` · <b class="muted">saltato</b>` : ` · <b class="good">✓ fatto${w.esito.stato === "altro" && w.esito.sport ? ` (${esc(w.esito.sport)})` : ""}</b>`) : "";
+    box.innerHTML = line("Allenamento di oggi", esc(w.titolo), `${esc(SPORT[w.sport])} · ${w.durata_min} min · <b class="${ic}">${il}</b>${w.scheda ? ` · ${esc(w.scheda)}` : ""}${es}`);
   }
   box.onclick = () => (w.infortunio ? injuryDetail(w) : workoutDetail(w));
 }
@@ -296,11 +297,21 @@ function workoutDetail(w) {
   openSheet(`${sheetHead(esc(w.titolo))}
     <div class="row" style="gap:8px;flex-wrap:wrap"><span class="pill ${ic}">${il}</span><span class="small muted">${esc(SPORT[w.sport])} · ${w.durata_min} min circa${w.scheda ? ` · <b style="color:var(--ink)">${esc(w.scheda)}</b>` : ""}</span></div>
     ${steps(w)}
+    ${w.zone ? `<div class="card soft col" style="gap:4px;padding:10px 12px"><div class="small" style="font-weight:800">Le tue zone di frequenza cardiaca</div><div class="small" style="line-height:1.6">${w.zone.map((z) => `<span style="white-space:nowrap">Z${z.z} <b>${z.min}–${z.max}</b></span>`).join(" · ")} bpm</div></div>` : ""}
     <div class="small muted" style="line-height:1.5">${esc(w.perche)}</div>
+    <div class="col" style="gap:6px"><div class="small" style="font-weight:800">${w.esito ? (w.esito.stato === "saltato" ? "Oggi: saltato" : `Oggi: fatto ✓${w.esito.sport ? ` · ${esc(w.esito.sport)}` : ""}`) + ` <span class="muted" style="font-weight:600">· puoi cambiarlo</span>` : "Com'è andata?"}</div>
+      <div class="acts" style="grid-template-columns:repeat(3,minmax(0,1fr))"><button class="choice" data-esito="fatto">Fatto ✓</button><button class="choice" data-esito="altro">Fatto altro</button><button class="choice" data-esito="saltato">Saltato</button></div>
+      <div class="acts" id="altroBox" style="grid-template-columns:repeat(3,minmax(0,1fr));display:none">${["palestra", "nuoto", "bici", "corsa", "calcio", "camminata"].map((k) => `<button class="choice" data-altro="${k}">${k[0].toUpperCase() + k.slice(1)}</button>`).join("")}</div></div>
     ${todayLoad[0] ? `<button id="wLoad" class="row between" style="background:none;border:0;border-top:1px solid var(--line);padding:12px 0 0;cursor:pointer;font:inherit;color:inherit;width:100%"><span class="small">Carico di allenamento: <b class="${todayLoad[1]}">${todayLoad[0]}</b></span>${ico.chevron}</button>` : ""}
     <div class="row" style="gap:8px">${w.sport === "palestra" && w.scheda ? `<button class="btn primary" id="wStart" style="flex:2;min-height:48px">Inizia ${esc(w.scheda)}</button>` : ""}<button class="btn ghost" id="wOther" style="flex:1;min-height:48px">Altra proposta</button></div>
     <button class="small muted" id="wHurt" style="background:none;border:0;cursor:pointer;padding:0;text-decoration:underline">Ti sei fatto male? Attiva la modalità infortunio</button>`, "Allenamento di oggi");
   const wl = $("#wLoad"); if (wl) wl.onclick = () => loadSheet();
+  const saveEsito = async (stato, sport) => {
+    try { const r = await api("/api/allenamento/esito", { method: "POST", body: { stato, sport } }); w.esito = { stato: r.stato, sport: r.sport }; todayWorkout = w; renderWorkoutCard(w); workoutDetail(w); toast(stato === "saltato" ? "Segnato: saltato" : "Segnato ✓"); }
+    catch (e) { toast(e.message); }
+  };
+  $("#sheet").querySelectorAll("[data-esito]").forEach((b) => (b.onclick = () => (b.dataset.esito === "altro" ? ($("#altroBox").style.display = "") : saveEsito(b.dataset.esito, w.sport))));
+  $("#sheet").querySelectorAll("[data-altro]").forEach((b) => (b.onclick = () => saveEsito("altro", b.dataset.altro)));
   $("#wOther").onclick = async () => {
     sheetBusy();
     try { const n = await fetchWorkout({ altro: true, escludi: w.sport, forza: true }); renderWorkoutCard(n); workoutDetail(n); } catch (e) { toast(e.message); closeSheet(); }
@@ -507,7 +518,7 @@ views.recupero = async (el) => {
     return `<div class="col" style="align-items:center;gap:4px;flex:1"><div style="height:90px;width:100%;display:flex;align-items:flex-end;justify-content:center"><div title="${h.giorno}: ${s ?? "n/d"}" style="width:70%;max-width:18px;border-radius:6px;height:${s == null ? 4 : Math.max(6, s * 0.9)}px;background:${s == null ? "#E2E5EC" : sc.fill}"></div></div><div class="small muted" style="font-size:11px">${fmtDate(h.giorno, { day: "numeric" })}</div></div>`;
   }).join("");
   el.innerHTML = `${header("Recupero", { sub: fmtDate(d.giorno, { weekday: "short", day: "numeric", month: "short" }) })}
-    <div class="card row" style="gap:14px">${bean(r.score, 46)}<div class="col" style="gap:2px"><div style="font-size:30px;font-weight:900;line-height:1">${r.score ?? "–"} <span class="${st.cls}" style="font-size:16px">${st.label}</span></div><div class="small muted">Rispetto ai tuoi ultimi 60 giorni${r.calibrazione ? ` · baseline ${r.giorni_baseline} gg` : ""}</div><button class="small" id="howScore" style="background:none;border:0;padding:0;color:var(--orange-ink);text-align:left;cursor:pointer;font-weight:700">Come si calcola?</button></div></div>
+    <div class="card row" style="gap:14px">${bean(r.score, 46)}<div class="col" style="gap:2px"><div style="font-size:30px;font-weight:900;line-height:1">${r.score ?? "–"} <span class="${st.cls}" style="font-size:16px">${st.label}</span></div><div class="small muted">Rispetto ai tuoi ultimi 60 giorni${r.calibrazione ? ` · baseline ${r.giorni_baseline} gg` : ""}${r.affidabilita ? ` · affidabilità <b class="${r.affidabilita === "alta" ? "good" : r.affidabilita === "media" ? "mid" : "bad"}">${r.affidabilita}</b>` : ""}</div>${r.affidabilita === "bassa" ? `<div class="small" style="line-height:1.4;color:var(--text)">Stanotte il Watch ha fatto poche misure di HRV: pesano meno e il punteggio è una stima. Dormire con il Watch ben stretto aiuta.</div>` : ""}<button class="small" id="howScore" style="background:none;border:0;padding:0;color:var(--orange-ink);text-align:left;cursor:pointer;font-weight:700">Come si calcola?</button></div></div>
     <div class="card" style="padding:16px 16px 10px"><div class="row between" style="padding:0 2px 6px"><div class="label">Cosa ha pesato oggi</div><div class="small muted">tocca per capire</div></div>
       ${comps.map(compRow).join("")}
       <div class="row between small muted" style="padding:8px 2px 4px"><div>← peggiora</div><div>migliora →</div></div></div>
@@ -613,22 +624,27 @@ views.settimana = async (el) => {
   el.innerHTML = header("La tua settimana", { back: "oggi" }) + loading(3);
   const w = await api("/api/settimana");
   const a = w.settimana, b = w.precedente;
-  const arrow = (x, y, goodUp = true, d = 0) => (x == null || y == null || Math.abs(x - y) < (d ? 0.5 : 1) ? `<span class="muted">come la settimana prima</span>` : `<span class="${(x > y) === goodUp ? "good" : "bad"}">${x > y ? "▲" : "▼"} ${fmtNum(Math.abs(x - y), d)} rispetto alla settimana prima</span>`);
+  // goodUp = null: a change that is neither good nor bad by itself (training load)
+  const arrow = (x, y, goodUp = true, d = 0) => (x == null || y == null || Math.abs(x - y) < (d ? 0.5 : 1) ? `<span class="muted">come la settimana prima</span>` : `<span class="${goodUp == null ? "muted" : (x > y) === goodUp ? "good" : "bad"}">${x > y ? "▲" : "▼"} ${fmtNum(Math.abs(x - y), d)} rispetto alla settimana prima</span>`);
   const STATO = { calibrazione: "in calibrazione", scarico: "sotto il tuo solito", mantenimento: "stai mantenendo", costruzione: "stai costruendo bene", attenzione: "carico alto, attenzione", eccesso: "troppo carico" };
   const maxLoad = Math.max(1, ...w.giorni.map((g) => g.carico || 0));
-  const days = w.giorni.map((g) => { const sc = state(g.recupero); return `<div class="col" style="flex:1;align-items:center;gap:4px"><div style="height:70px;width:100%;display:flex;align-items:flex-end;justify-content:center"><div style="width:60%;max-width:22px;border-radius:5px;height:${g.carico == null ? 3 : Math.max(4, (g.carico / maxLoad) * 70)}px;background:${g.carico == null ? "#E2E5EC" : "#7DB7F0"}"></div></div><span class="status-dot" style="background:${g.recupero == null ? "#E2E5EC" : sc.fill}"></span><span class="small muted" style="font-size:11px">${fmtDate(g.giorno, { weekday: "narrow" })}</span></div>`; }).join("");
+  const days = w.giorni.map((g, i) => { const sc = state(g.recupero); return `<div class="col" data-day="${i}" style="flex:1;align-items:center;gap:4px;cursor:pointer"><div style="height:70px;width:100%;display:flex;align-items:flex-end;justify-content:center"><div style="width:60%;max-width:22px;border-radius:5px;height:${g.carico == null ? 3 : Math.max(4, (g.carico / maxLoad) * 70)}px;background:${g.carico == null ? "#E2E5EC" : "#7DB7F0"}"></div></div><span class="status-dot" style="background:${g.recupero == null ? "#E2E5EC" : sc.fill}"></span><span class="small muted" style="font-size:11px">${fmtDate(g.giorno, { weekday: "narrow" })}</span></div>`; }).join("");
   const row = (label, value, sub) => `<div class="item"><div class="col" style="gap:2px"><b>${label}</b><span class="small">${sub}</span></div><div class="big" style="font-size:20px">${value}</div></div>`;
   el.innerHTML = `${header("La tua settimana", { back: "oggi", sub: `${fmtDate(w.da, { day: "numeric", month: "short" })} – ${fmtDate(w.a, { day: "numeric", month: "short" })}` })}
     <div class="card soft row" style="gap:12px;align-items:flex-start">${ico.sun(30)}<div id="wcoach" class="small md" style="line-height:1.5;color:var(--text);flex:1"><div class="skeleton" style="width:95%"></div><div class="skeleton" style="width:70%;margin-top:6px"></div></div></div>
-    <div class="card col" style="gap:6px"><div class="row" style="gap:4px">${days}</div><div class="small muted center" style="display:flex;justify-content:center;gap:12px"><span><span class="status-dot" style="background:#7DB7F0"></span> carico</span><span><span class="status-dot" style="background:#5DC796"></span> recupero</span></div></div>
+    <div class="card col" style="gap:6px"><div class="row" style="gap:4px">${days}</div><div class="small muted" style="line-height:1.6;padding-top:4px"><b style="color:#7DB7F0">▮</b> barra = <b>carico</b> del giorno (più alta = più fatica)<br><b>●</b> pallino = <b>recupero</b> della mattina: <span class="good">verde</span> 67+ · <span class="mid">giallo</span> 34–66 · <span class="bad">rosso</span> sotto 34 · grigio nessun dato<br>Tocca un giorno per i numeri.</div><div id="dayInfo" class="small" style="font-weight:700;min-height:18px"></div></div>
     <div class="card list">
-      ${row("Allenamento", `${a.giorni_allenamento} giorni`, `${STATO[w.stato_carico] || ""} · carico ${fmtNum(a.carico)} ${arrow(a.carico, b.carico)}`)}
+      ${row("Allenamento", `${a.giorni_allenamento} giorni`, `${STATO[w.stato_carico] || ""} · carico ${fmtNum(a.carico)} ${arrow(a.carico, b.carico, null)}`)}
       ${row("Recupero medio", a.recupero ?? "–", arrow(a.recupero, b.recupero))}
-      ${row("Sonno medio", a.sonno_min ? fmtMin(a.sonno_min) : "–", `${a.notti} notti registrate · ${arrow(a.sonno_min, b.sonno_min)}`)}
+      ${row("Sonno medio", a.sonno_min ? fmtMin(a.sonno_min) : "–", `${a.notti} notti registrate su 7 · ${arrow(a.sonno_min, b.sonno_min)}`)}
       ${row("HRV", a.hrv != null ? `${fmtNum(a.hrv)} ms` : "–", w.hrv_media_personale ? `${a.hrv >= w.hrv_media_personale ? '<span class="good">sopra</span>' : '<span class="mid">sotto</span>'} la tua media (${fmtNum(w.hrv_media_personale)})` : "")}
       ${row("FC a riposo", a.fcr != null ? `${fmtNum(a.fcr)} bpm` : "–", w.fcr_media_personale ? `${a.fcr <= w.fcr_media_personale ? '<span class="good">sotto</span>' : '<span class="mid">sopra</span>'} la tua media (${fmtNum(w.fcr_media_personale)})` : "")}
       ${w.vo2max ? row("VO₂max", fmtNum(w.vo2max.valore, 1), w.vo2max.quattro_settimane_fa ? arrow(w.vo2max.valore, w.vo2max.quattro_settimane_fa, true, 1).replace("settimana prima", "4 settimane fa") : "") : ""}
     </div>`;
+  el.querySelectorAll("[data-day]").forEach((x) => (x.onclick = () => {
+    const g = w.giorni[Number(x.dataset.day)];
+    $("#dayInfo").innerHTML = `${fmtDate(g.giorno, { weekday: "long", day: "numeric" })}: carico ${g.carico ?? "–"} · recupero ${g.recupero ?? "–"} · sonno ${g.sonno_min ? fmtMin(g.sonno_min) : "–"}`;
+  }));
   api("/api/settimana/coach", { method: "POST" }).then((r) => { const b2 = $("#wcoach"); if (b2) b2.innerHTML = md(r.errore || r.testo); }).catch((e) => { const b2 = $("#wcoach"); if (b2) b2.textContent = e.message; });
 };
 
@@ -882,6 +898,14 @@ function progression(ex, last) {
   const kg = Math.max(...last.serie.map((x) => x.kg || 0)) || null;
   const allTop = done.length >= Math.min(ex.serie, last.serie.length) && done.every((x) => x.reps >= ex.max);
   const lastTxt = `Ultima volta: ${last.serie.map((x) => `${x.kg != null ? fmtNum(x.kg, 1) + " kg × " : ""}${x.reps ?? "–"}`).join(", ")}`;
+  const h = last.storia || [], rpe = h[0]?.rpe;
+  // stall: same weight for the last 3 sessions and no more reps → deload 10% and build back up
+  if (kg && h.length >= 3 && h.every((x) => x.kg === h[0].kg) && h[0].reps != null && h[2].reps != null && h[0].reps <= h[2].reps) {
+    const dl = Math.max(kgStep(kg), Math.round((kg * 0.9) / kgStep(kg)) * kgStep(kg));
+    return { testo: `${lastTxt}. Fermo da 3 sedute allo stesso carico: oggi scarico a ${fmtNum(dl, 1)} kg con ripetizioni pulite, poi si risale.`, kg: dl };
+  }
+  // range closed: add weight, unless last time was already at the limit (RPE 9.5-10)
+  if (kg && allTop && rpe != null && rpe >= 9.5) return { testo: `${lastTxt}. Range chiuso ma al limite (RPE ${fmtNum(rpe, 1)}): resta a ${fmtNum(kg, 1)} kg finché non ti sembra più facile.`, kg };
   if (kg && allTop) return { testo: `${lastTxt}. Hai chiuso il range: prova ${fmtNum(kg + kgStep(kg), 1)} kg.`, kg: kg + kgStep(kg) };
   return { testo: `${lastTxt}. ${kg ? `Stesso carico, punta a ${ex.max} ripetizioni.` : ""}`, kg };
 }
@@ -937,6 +961,11 @@ views.palestra = async (el) => {
       <div class="list">${forza.muscoli.map((m) => `<div class="item"><span class="row" style="gap:10px"><span class="status-dot ${ST[m.stato]}"></span><span style="text-transform:capitalize">${esc(m.muscolo)}</span><span class="small muted" style="font-weight:600">${esc(m.stato)}</span></span><span class="small ${m.volume === "giusto" ? "muted" : "mid"}" style="font-weight:700">${m.serie_7g}${m.volume !== "giusto" ? ` · ${m.volume}` : ""}</span></div>`).join("")}</div>
       <div class="small muted" style="line-height:1.45">Stanco = allenato nelle ultime 24–48 ore: l'allenamento del giorno sceglie la scheda con i muscoli più freschi. Per crescere servono circa 10–20 serie a settimana per muscolo.</div></div>`;
   }
+  // exercises Kairo cannot link to a muscle: the person chooses once
+  if (forza && forza.non_riconosciuti?.length) {
+    html += `<div class="card col" style="gap:8px"><div class="label">Esercizi da collegare</div><div class="small muted" style="line-height:1.45">Non so quale muscolo allenano: scegli tu, così contano nella fatica e nella scelta della scheda.</div>
+      <div class="list">${forza.non_riconosciuti.map((n) => `<div class="item"><span style="font-weight:700">${esc(n)}</span><select class="input" data-mus="${esc(n)}" style="width:auto;min-height:38px;padding:4px 8px"><option value="">scegli…</option>${forza.elenco_muscoli.map((m) => `<option value="${m}">${m}</option>`).join("")}<option value="nessuno">nessuno (cardio, stretching)</option></select></div>`).join("")}</div></div>`;
+  }
   // progress of the main lifts
   if (forza && forza.esercizi.length) {
     const maxSets = Math.max(1, ...forza.serie_per_settimana);
@@ -949,6 +978,10 @@ views.palestra = async (el) => {
   }
   el.innerHTML = html;
   el.querySelectorAll("[data-start]").forEach((b) => (b.onclick = () => startSession(schede[Number(b.dataset.start)])));
+  el.querySelectorAll("[data-mus]").forEach((sel) => (sel.onchange = async () => {
+    if (!sel.value) return;
+    try { await api("/api/muscoli", { method: "POST", body: { esercizio: sel.dataset.mus, muscolo: sel.value } }); toast("Collegato"); views.palestra(el); } catch (e) { toast(e.message); }
+  }));
   for (const id of ["#aiSchede", "#aiSchede2"]) { const b = $(id); if (b) b.onclick = () => aiSchedeSheet(schede); }
   el.querySelectorAll("[data-ex]").forEach((b) => (b.onclick = () => {
     const e = forza.esercizi[Number(b.dataset.ex)];
@@ -1074,8 +1107,12 @@ function finishSheet(ses) {
 }
 
 /* ---------- check-in ---------- */
-function checkinSheet(existing, askSleep = false) {
-  const s = { energia: existing?.energia ?? 3, dolori: existing?.dolori ?? 2, umore: existing?.umore ?? 3, act: new Set((existing?.attivita || "").split(",").filter(Boolean)), rpe: existing?.rpe ?? 6, durata: existing?.durata_min ?? 60, sonno: existing?.sonno_min ?? 450 };
+function checkinSheet(existing, askSleep = false, detected = []) {
+  // training sessions the Watch detected yesterday (from heart rate): duration and sport prefilled
+  const detMin = detected.reduce((a, x) => a + x.minuti, 0), detSport = detected.map((x) => x.sport).find(Boolean);
+  const s = { energia: existing?.energia ?? 3, dolori: existing?.dolori ?? 2, umore: existing?.umore ?? 3,
+    act: new Set((existing?.attivita || (!existing && detSport ? detSport : "")).split(",").filter(Boolean)), rpe: existing?.rpe ?? 6,
+    durata: existing?.durata_min ?? (detMin ? Math.min(240, Math.round(detMin / 5) * 5) : 60), sonno: existing?.sonno_min ?? 450 };
   const ACTS = [["palestra", "Palestra"], ["nuoto", "Nuoto"], ["bici", "Bici"], ["calcio", "Calcio"], ["corsa", "Corsa"], ["camminata", "Camminata"], ["altro", "Altro"], ["riposo", "Riposo"]];
   const scale = (k, label, hint) => `<div class="col"><div class="row between"><div style="font-weight:800">${label}</div><div class="small muted">${hint}</div></div>
     <div class="scale" role="group" aria-label="${label}">${[1, 2, 3, 4, 5].map((n) => `<button class="choice" data-k="${k}" data-v="${n}" aria-pressed="${s[k] === n}">${n}</button>`).join("")}</div></div>`;
@@ -1085,6 +1122,7 @@ function checkinSheet(existing, askSleep = false) {
       <div class="muted">Com'è andata ieri, e come ti senti oggi?</div>
       ${askSleep ? `<div class="card col"><label class="row between" for="slp" style="font-weight:800"><span>Quanto hai dormito? <span class="small muted" style="font-weight:600">(senza Watch)</span></span><span style="color:var(--orange-ink)">${fmtMin(s.sonno)}</span></label><input id="slp" type="range" min="180" max="720" step="15" value="${s.sonno}"></div>` : ""}
       ${scale("energia", "Energia", "1 a terra · 5 al top")}${scale("dolori", "Indolenzimento", "1 niente · 5 tanto")}${scale("umore", "Umore", "1 giù · 5 alle stelle")}
+      ${detMin ? `<div class="card soft small" style="line-height:1.45">⌚ Il Watch ha rilevato ieri <b>${detMin} min</b> di allenamento${detected.length > 1 ? ` in ${detected.length} sessioni` : ""} · FC media ${Math.round(detected.reduce((a, x) => a + x.fc_media * x.minuti, 0) / detMin)}${detSport ? ` · probabilmente <b>${esc(detSport)}</b>` : ""}. Dimmi cos'era.</div>` : ""}
       <div class="col"><div style="font-weight:800">Cosa hai fatto ieri</div><div class="acts" style="grid-template-columns:repeat(4,minmax(0,1fr))">${ACTS.map(([k, l]) => `<button class="choice" data-a="${k}" aria-pressed="${s.act.has(k)}">${l}</button>`).join("")}</div></div>
       ${sport ? `<div class="card col"><label class="row between" for="rpe" style="font-weight:800"><span>Quanto è stata dura?</span><span style="color:var(--orange-ink)">RPE ${s.rpe}</span></label><input id="rpe" type="range" min="1" max="10" value="${s.rpe}">
         <label class="row between" for="dur" style="font-weight:800"><span>Durata</span><span class="muted">${s.durata} min</span></label><input id="dur" type="range" min="10" max="240" step="5" value="${s.durata}"></div>` : ""}
@@ -1167,13 +1205,13 @@ views.profilo = async (el) => {
       <label class="field">I tuoi obiettivi<textarea class="input" id="obiettivi" rows="2" style="padding:12px;min-height:64px" placeholder="Es. scendere al 12% di grasso, nuotare 2 km senza fermarmi">${esc(p.obiettivi || "")}</textarea></label>
       <label class="field">Chi sei e come ti alleni<textarea class="input" id="note" rows="3" style="padding:12px;min-height:84px" placeholder="Es. palestra 3 volte a settimana, nuoto 1-2 volte, bici nel weekend">${esc(p.note)}</textarea></label>
       <div class="grid2"><label class="field">Sveglia abituale<input class="input" id="sveglia" type="time" value="${esc(p.sveglia || "")}"></label>
-        <label class="field">Sonno che ti serve<select class="input" id="sonnomin">${sleepOpts.map(([v, l]) => `<option value="${v}" ${(p.sonno_min || 480) === v ? "selected" : ""}>${l}</option>`).join("")}</select></label></div>
-      <span class="hint" style="margin-top:-6px">La sveglia serve per dirti a che ora andare a letto.</span>
+        <label class="field">Sonno che ti serve<select class="input" id="sonnomin"><option value="" ${!p.sonno_min ? "selected" : ""}>Automatico</option>${sleepOpts.map(([v, l]) => `<option value="${v}" ${p.sonno_min === v ? "selected" : ""}>${l}</option>`).join("")}</select></label></div>
+      <span class="hint" style="margin-top:-6px">La sveglia serve per dirti a che ora andare a letto. «Automatico» impara quanto ti serve dalle notti dopo cui ti svegli recuperato.</span>
       <label class="field">FC massima (se la conosci)<input class="input" id="fcmax" type="number" inputmode="numeric" min="120" max="230" placeholder="${p.eta ? `stimata ${Math.round(208 - 0.7 * p.eta)} bpm` : "es. 195"}" value="${esc(p.fc_max || "")}"><span class="hint">Serve a calcolare il carico. Vuota = stima dall'età.</span></label>
       <button class="btn primary" id="saveProfilo">Salva</button></div>`;
   $("#saveProfilo").onclick = async () => {
     const body = { ...p, nome: $("#nome").value.trim(), eta: $("#eta").value.trim(), sesso: $("#sesso").value, note: $("#note").value.trim(), obiettivi: $("#obiettivi").value.trim(),
-      sveglia: $("#sveglia").value, sonno_min: Number($("#sonnomin").value), fc_max: $("#fcmax").value.trim(), tz: tz() };
+      sveglia: $("#sveglia").value, sonno_min: $("#sonnomin").value ? Number($("#sonnomin").value) : null, fc_max: $("#fcmax").value.trim(), tz: tz() };
     delete body.infortunio;
     try { const saved = await api("/api/profilo", { method: "POST", body }); store.set("profilo", saved); toast("Profilo salvato"); route("impostazioni"); }
     catch (e) { toast(e.message); }
@@ -1920,4 +1958,22 @@ async function router() {
 }
 window.addEventListener("hashchange", router);
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+// new version on the server → a small banner; tapping it loads the new app (no need to close and reopen)
+let updateShown = false;
+async function checkUpdate() {
+  if (updateShown || !cfg().code) return;
+  try {
+    const info = await api("/api/info");
+    if (!info.versione || info.versione === APP_VERSION) return;
+    updateShown = true;
+    const b = document.createElement("button");
+    b.className = "btn primary"; b.id = "updBanner";
+    b.style.cssText = "position:fixed;left:16px;right:16px;bottom:calc(84px + var(--safe-bottom, 0px));z-index:40;min-height:48px;border-radius:16px;box-shadow:0 6px 20px rgba(28,35,64,.25)";
+    b.textContent = `Aggiornamento pronto (${info.versione}) · tocca`;
+    b.onclick = async () => { b.textContent = "Aggiorno…"; try { const reg = await navigator.serviceWorker?.getRegistration(); await reg?.update(); } catch (_) {} location.reload(); };
+    document.body.appendChild(b);
+  } catch (_) {}
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkUpdate(); });
+setTimeout(checkUpdate, 4000);
 router();

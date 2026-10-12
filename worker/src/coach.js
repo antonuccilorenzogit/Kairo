@@ -28,6 +28,7 @@ export async function buildContext(db, today, days = 14) {
       s ? (s.manuale ? `sonno ${fmtMin(s.durata_min)} (dichiarato, senza Watch)` : `sonno ${fmtMin(s.durata_min)} (punteggio ${s.punteggio}, profondo ${s.fasi_min.profondo}m, REM ${s.fasi_min.rem}m)`) : "sonno non registrato",
       `carico ${d.carico?.oggi ?? "n/d"}`,
     ];
+    if (d.attivita.sessioni?.length) parts.push(`allenamenti rilevati dal battito: ${d.attivita.sessioni.map((x) => `${x.minuti} min${x.sport ? ` (${x.sport})` : ""} FC media ${x.fc_media}`).join(", ")}`);
     if (c) parts.push(`check-in: energia ${c.energia}/5, indolenzimento ${c.dolori}/5, umore ${c.umore}/5, attività del giorno prima ${c.attivita || "n/d"}${c.rpe ? `, fatica percepita ${c.rpe}/10` : ""}${c.durata_min ? ` per ${c.durata_min} min` : ""}`);
     return "- " + parts.join(" · ");
   });
@@ -211,10 +212,21 @@ export async function dailyAdvice(env, req, today, force, profile) {
   return { testo: r.text, provider: r.provider, model: r.model, quota: r.quota, avviso: r.avviso, cache: false };
 }
 
+// The chat's data context changes slowly: kept for 30 minutes, so a conversation does not recompute it at every message.
+async function chatContext(db, today) {
+  const key = "CTX:" + today;
+  const c = await db.prepare("SELECT text, created FROM advice WHERE day = ?").bind(key).first();
+  if (c && Date.now() - Date.parse(c.created) < 30 * 60e3) try { return JSON.parse(c.text); } catch (_) {}
+  const ctx = await buildContext(db, today, 14);
+  const v = { summary: ctx.summary, text: ctx.text };
+  await db.prepare("INSERT INTO advice(day,text,created) VALUES(?,?,?) ON CONFLICT(day) DO UPDATE SET text=excluded.text, created=excluded.created").bind(key, JSON.stringify(v), new Date().toISOString()).run();
+  return v;
+}
+
 export async function chat(env, req, today, history, profile) {
-  const ctx = await buildContext(env.DB, today, 21);
+  const ctx = await chatContext(env.DB, today);
   const messages = [
-    { role: "system", content: SYSTEM(profile) + MEMORY_RULES.replace("{OGGI}", today) + `\n\nQUADRO GENERALE\n${ctx.summary}\n\nULTIMI 21 GIORNI (l'ultima riga è oggi)\n${ctx.text}\n\nLunghezza: risposte brevi (max 90 parole) per domande semplici, fino a 200 parole per valutazioni generali o piani.` },
+    { role: "system", content: SYSTEM(profile) + MEMORY_RULES.replace("{OGGI}", today) + `\n\nQUADRO GENERALE\n${ctx.summary}\n\nULTIMI 14 GIORNI (l'ultima riga è oggi)\n${ctx.text}\n\nLunghezza: risposte brevi (max 90 parole) per domande semplici, fino a 200 parole per valutazioni generali o piani.` },
     ...history.slice(-10).map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: String(m.content).slice(0, 2000) })),
   ];
   const r = await ask(env, req, messages);

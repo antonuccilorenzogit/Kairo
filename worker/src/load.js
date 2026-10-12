@@ -21,6 +21,24 @@ export function edwardsTrimp(samples, hrmax) {
   return { trimp: Math.round(trimp), minuti_zona: zones.map((m) => Math.round(m)) };
 }
 
+// Training sessions from heart rate: blocks above 60% of max HR (pauses up to 5 minutes kept inside),
+// at least 10 minutes long. Works for any sport, without the workout being started on the Watch.
+export function detectSessions(samples, hrmax) {
+  const out = [];
+  let cur = null;
+  for (const s of samples) {
+    if (s.v < 0.6 * hrmax) continue;
+    if (cur && s.t - cur.last <= MAX_GAP_MIN * 60) { cur.last = s.t; cur.vals.push(s); }
+    else { if (cur) out.push(cur); cur = { first: s.t, last: s.t, vals: [s] }; }
+  }
+  if (cur) out.push(cur);
+  return out.filter((b) => b.last - b.first >= 10 * 60).map((b) => ({
+    start: b.first, end: b.last, minuti: Math.round((b.last - b.first) / 60),
+    fc_media: Math.round(b.vals.reduce((a, x) => a + x.v, 0) / b.vals.length),
+    trimp: edwardsTrimp(samples.filter((x) => x.t >= b.first && x.t <= b.last), hrmax).trimp,
+  }));
+}
+
 // Recomputes the daily TRIMP of the given (local) days from the stored heart-rate samples.
 export async function recomputeTrimp(db, days, hrmax) {
   const stmts = [];
@@ -30,6 +48,11 @@ export async function recomputeTrimp(db, days, hrmax) {
     const { trimp } = edwardsTrimp(r.results, hrmax);
     // computed from the raw samples: this value is authoritative for the day
     stmts.push(db.prepare("INSERT INTO daily(metric,day,value) VALUES('trimp',?,?) ON CONFLICT(metric,day) DO UPDATE SET value=excluded.value").bind(day, trimp));
+    stmts.push(db.prepare("DELETE FROM sessioni WHERE day = ?").bind(day));
+    for (const x of detectSessions(r.results, hrmax)) {
+      const iso = (t) => new Date(t * 1000).toISOString().slice(0, 19) + "Z";
+      stmts.push(db.prepare("INSERT OR REPLACE INTO sessioni(start,day,end,minuti,fc_media,trimp) VALUES(?,?,?,?,?,?)").bind(iso(x.start), day, iso(x.end), x.minuti, x.fc_media, x.trimp));
+    }
   }
   for (let i = 0; i < stmts.length; i += 100) await db.batch(stmts.slice(i, i + 100));
   return stmts.length;

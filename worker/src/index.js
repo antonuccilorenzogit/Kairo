@@ -3,7 +3,7 @@
 import { computeDay, computeHistory, mergeStages } from "./metrics.js";
 import { ensureSchema, SCHEMA_VERSION } from "./schema.js";
 import { dailyAdvice, chat, testAI, groqModels, weeklyCoach, DEFAULT_GROQ_MODEL, FALLBACK_MODEL } from "./coach.js";
-import { saveSets, strengthSummary, muscleFatigue } from "./strength.js";
+import { saveSets, strengthSummary, muscleFatigue, unknownExercises, setCustomMuscle, MUSCLES } from "./strength.js";
 import { weeklyReport } from "./report.js";
 import { recommendWorkout, getSchede, saveSchede, lastSets, schedeFromText } from "./workout.js";
 import { sha256, safeEqual, clientIp, lockedFor, recordFailure, clearFailures, pruneFailures, codeProblem } from "./security.js";
@@ -23,7 +23,7 @@ const dropTodayAdvice = (db, day) => db.prepare("DELETE FROM advice WHERE day IN
 import { recomputeTrimp, recomputeNightHr } from "./load.js";
 import { getVapid, sendPush, validEndpoint } from "./push.js";
 
-const VERSION = "1.11.0";
+const VERSION = "1.12.0";
 
 // No CORS headers: only the Kairo app (same origin) and the Shortcuts app (not a browser) talk to the API.
 const json = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), {
@@ -139,6 +139,13 @@ async function ingest(payload, env, origin) {
   for (let i = 0; i < stmts.length; i += 400) await db.batch(stmts.slice(i, i + 400));
   // new heart-rate samples → recompute the training load of those days
   const fcDays = rows.samples.filter((r) => r[0] === "fc").map((r) => r[1].slice(0, 10));
+  // the first time also the last 30 days, to find the training sessions already in the heart-rate data
+  const sessDone = await db.prepare("SELECT value FROM settings WHERE key = 'sessioni_storico'").first();
+  if (!sessDone) {
+    const r = await db.prepare("SELECT DISTINCT substr(ts,1,10) d FROM samples WHERE metric = 'fc' AND ts >= ?").bind(new Date(Date.now() - 30 * 86400e3).toISOString().slice(0, 10)).all();
+    fcDays.push(...r.results.map((x) => x.d));
+    await db.prepare("INSERT INTO settings(key,value) VALUES('sessioni_storico','1') ON CONFLICT(key) DO NOTHING").run();
+  }
   if (fcDays.length) await recomputeTrimp(db, fcDays, hrMax(await getProfile(db)));
   // resting heart rate while asleep: for the nights touched by new heart-rate or sleep data
   // (the first time also for the last 60 nights already stored)
@@ -359,8 +366,25 @@ async function api(req, env, url) {
       return json(await injuryPlan(env, req, { day, today: hist[hist.length - 1], profile, profileText: await coachProfile(env.DB, profile), force: !!b.forza }));
     }
     if (waitNight()) return json({ notte_in_attesa: true });
-    return json(await recommendWorkout(env, req, { hist, profile, profileText: await coachProfile(env.DB, profile), schede: await getSchede(env.DB),
-      force: !!b.forza || !!b.altro, exclude: b.altro && ["palestra", "nuoto", "bici", "corsa"].includes(b.escludi) ? b.escludi : null }));
+    const esito = await env.DB.prepare("SELECT stato, sport FROM esiti WHERE day = ?").bind(todayLocal(tz)).first();
+    return json({ ...(await recommendWorkout(env, req, { hist, profile, profileText: await coachProfile(env.DB, profile), schede: await getSchede(env.DB),
+      force: !!b.forza || !!b.altro, exclude: b.altro && ["palestra", "nuoto", "bici", "corsa"].includes(b.escludi) ? b.escludi : null })), esito: esito || null });
+  }
+  // the person links an exercise Kairo does not know to a muscle
+  if (p === "/api/muscoli" && req.method === "POST") {
+    const b = (await readJson(req)) || {};
+    const r = await setCustomMuscle(env.DB, b.esercizio, b.muscolo);
+    return json(r, r.errore ? 400 : 200);
+  }
+  // outcome of the day's workout: "fatto", "altro" (with the sport) or "saltato"
+  if (p === "/api/allenamento/esito" && req.method === "POST") {
+    const b = (await readJson(req)) || {};
+    const stato = ["fatto", "altro", "saltato"].includes(b.stato) ? b.stato : null;
+    const sport = ["palestra", "nuoto", "bici", "corsa", "calcio", "camminata"].includes(b.sport) ? b.sport : null;
+    if (!stato) return json({ errore: "Esito non valido" }, 400);
+    await env.DB.prepare("INSERT INTO esiti(day,stato,sport,created) VALUES(?,?,?,?) ON CONFLICT(day) DO UPDATE SET stato=excluded.stato, sport=excluded.sport, created=excluded.created")
+      .bind(todayLocal(tz), stato, stato === "saltato" ? null : sport, new Date().toISOString()).run();
+    return json({ ok: true, stato, sport });
   }
   if (p === "/api/schede") {
     if (req.method === "PUT" || req.method === "POST") {
@@ -382,7 +406,8 @@ async function api(req, env, url) {
       if (b.errore) return json({ errore: b.errore }, 400);
       return json({ ok: true, ...(await saveSets(env.DB, b.payload.serie)) });
     }
-    return json({ ...(await strengthSummary(env.DB, todayLocal(tz))), muscoli: await muscleFatigue(env.DB) });
+    return json({ ...(await strengthSummary(env.DB, todayLocal(tz))), muscoli: await muscleFatigue(env.DB),
+      non_riconosciuti: await unknownExercises(env.DB, await getSchede(env.DB)), elenco_muscoli: MUSCLES });
   }
   if (p === "/api/corpo") {
     // Body page: measurements grouped per day, VO2max history, resting and walking heart rate per day
@@ -415,7 +440,7 @@ async function api(req, env, url) {
         ON CONFLICT(day) DO UPDATE SET energia=excluded.energia, dolori=excluded.dolori, umore=excluded.umore, attivita=excluded.attivita,
         rpe=excluded.rpe, durata_min=excluded.durata_min, note=excluded.note, updated=excluded.updated, sonno_min=excluded.sonno_min`)
         .bind(day, c.energia ?? null, c.dolori ?? null, c.umore ?? null, c.attivita ?? null, c.rpe ?? null, c.durata_min ?? null, c.note ?? null, new Date().toISOString(), c.sonno_min ?? null).run();
-      await env.DB.prepare("DELETE FROM advice WHERE day = ?").bind(day).run(); // advice must take the check-in into account
+      await env.DB.prepare("DELETE FROM advice WHERE day IN (?, ?)").bind(day, "CTX:" + day).run(); // advice and chat context must take the check-in into account
       return json({ ok: true });
     }
     return json(await env.DB.prepare("SELECT * FROM checkin WHERE day = ?").bind(validDay(url.searchParams.get("d")) || todayLocal(tz)).first());

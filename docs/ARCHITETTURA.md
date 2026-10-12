@@ -37,6 +37,11 @@
 - **Prescrizioni = vincoli assoluti** (`infortunio.prescrizioni = {no_carico, fino, stampelle, gradi, altre}`; `null` = non indicato → ricavato dalla descrizione con espressioni regolari). Il piano dell'IA viene controllato sul testo (`violation`): con il divieto di carico niente parole che implicano appoggio sull'arto della zona (in piedi, camminare, squat, piegamenti…, ignorando le frasi negate), nessun angolo oltre il limite, niente braccia con le stampelle. Se viola, il piano è scartato (`scartato`) e si usa la seduta di regola, che i test verificano per ogni zona e modalità. `GET /api/infortunio` restituisce i vincoli riconosciuti.
 - Il testo dell'infortunio, i vincoli e l'andamento del dolore entrano in ogni prompt del coach.
 
+## Allenamenti rilevati ed esiti
+- Al ricalcolo del carico di un giorno, `detectSessions` (in `load.js`) cerca blocchi di frequenza cardiaca sopra il 60% della FC massima (pause fino a 5 minuti) lunghi almeno 10 minuti e li salva nella tabella `sessioni` (inizio, fine, minuti, FC media, TRIMP). Lo sport è dedotto dalle distanze di nuoto e bici del giorno.
+- `POST /api/allenamento/esito` (`{"stato":"fatto|altro|saltato","sport":"…"}`) salva nella tabella `esiti`; gli esiti entrano nella rotazione degli sport.
+- `POST /api/muscoli` (`{"esercizio":"…","muscolo":"petto|…|nessuno"}`) collega un esercizio non riconosciuto; `GET /api/forza` restituisce `non_riconosciuti`.
+
 ## Memoria del coach
 - Tabella `memoria` (testo unico, fonte `coach` o `utente`, data). Al massimo 60 ricordi: quando è piena escono prima i più vecchi scritti dal coach, mai quelli aggiunti a mano.
 - In chat il modello può chiudere la risposta con `[[RICORDA: …]]` o `[[DIMENTICA: parole chiave]]` (massimo 2-3 per risposta). Il server applica i tag e li toglie dal testo; `DIMENTICA` cancella al massimo 3 ricordi che contengono tutte le parole chiave.

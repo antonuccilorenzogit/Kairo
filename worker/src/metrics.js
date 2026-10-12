@@ -42,6 +42,7 @@ const std = (a) => {
   const m = mean(a);
   return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / (a.length - 1));
 };
+const median = (a) => { const v = a.filter((x) => x != null && Number.isFinite(x)).sort((x, y) => x - y); if (!v.length) return null; const m = Math.floor(v.length / 2); return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
 const r1 = (x, d = 1) => (x == null || !Number.isFinite(x) ? null : Math.round(x * 10 ** d) / 10 ** d);
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 
@@ -54,7 +55,10 @@ async function load(db, from, to) {
     db.prepare("SELECT * FROM checkin WHERE day >= ? AND day <= ?").bind(from, addDays(to, 1)),
     // sedute di forza: durata e RPE medio per il session-RPE
     db.prepare("SELECT start, max(end) end, avg(rpe) rpe, count(*) n FROM sets WHERE start >= ? AND start < ? GROUP BY start").bind(from, addDays(to, 1)),
+    db.prepare("SELECT day, start, end, minuti, fc_media, trimp FROM sessioni WHERE day >= ? AND day <= ? ORDER BY start").bind(from, to),
   ]);
+  const sessioni = {};
+  for (const x of r[5].results) (sessioni[x.day] ||= []).push({ inizio: x.start, fine: x.end, minuti: x.minuti, fc_media: x.fc_media, carico: x.trimp });
   const samples = {};
   for (const s of r[0].results) (samples[s.metric] ||= []).push({ ts: s.ts, ms: t(s.ts), v: s.value });
   const daily = {};
@@ -64,9 +68,11 @@ async function load(db, from, to) {
   const gym = {};
   for (const w of r[4].results) {
     const min = w.end ? (t(w.end) - t(w.start)) / 60e3 : null;
-    if (min > 0 && min < 300 && w.rpe) (gym[w.start.slice(0, 10)] ||= []).push(min * w.rpe);
+    // missing data (e.g. imported from Hevy/Strong): RPE 7 ("hard but not maximal"), about 3 minutes per set
+    const minutes = min > 0 && min < 300 ? min : Math.min(180, (w.n || 0) * 3);
+    if (minutes > 0) (gym[w.start.slice(0, 10)] ||= []).push(minutes * (w.rpe || 7));
   }
-  return { samples, sleepRows: r[1].results, daily, checkin, gym };
+  return { samples, sleepRows: r[1].results, daily, checkin, gym, sessioni };
 }
 
 // Le fasi possono arrivare da più fonti (Watch, iPhone, altre app) e sovrapporsi: le fondo in una
@@ -148,7 +154,8 @@ function rawDay(day, data, sessionsByDay) {
   const hrvDay = (data.samples.hrv || []).filter((s) => s.ts.startsWith(day)).map((s) => s.v);
   // senza misure notturne uso le 24 h precedenti a mezzogiorno (il Watch misura l'HRV in momenti casuali)
   const hrvFallback = inWindow(data.samples.hrv, t(day + "T12:00:00+02:00") - DAY_MS, t(day + "T12:00:00+02:00"));
-  const hrv = hrvNight.length ? mean(hrvNight) : hrvFallback.length ? mean(hrvFallback) : null;
+  // median, not mean: the Watch takes few readings per night and one odd value must not move the score
+  const hrv = hrvNight.length ? median(hrvNight) : hrvFallback.length ? median(hrvFallback) : null;
   const fcrList = (data.samples.fcr || []).filter((s) => s.ts.startsWith(day));
   const fcr = fcrList.length ? fcrList[fcrList.length - 1].v : null;
   const resp = main ? mean(inWindow(data.samples.resp, winFrom, winTo)) : null;
@@ -195,7 +202,9 @@ function rawDay(day, data, sessionsByDay) {
       resp_rpm: r1(resp), spo2_media: r1(mean(spo2)), spo2_min: spo2.length ? Math.min(...spo2) : null },
     sonno: sleep,
     attivita: { passi: d.passi ?? null, kcal_attive: r1(d.kcal_attive, 0), kcal_riposo: r1(d.kcal_riposo, 0),
-      dist_km: r1(d.dist_piedi, 2), piani: d.piani ?? null, trimp: d.trimp ?? null },
+      dist_km: r1(d.dist_piedi, 2), piani: d.piani ?? null, trimp: d.trimp ?? null,
+      // sessions detected from heart rate, with the likely sport (swim/bike distance of the day)
+      sessioni: (data.sessioni[day] || []).map((x) => ({ ...x, sport: d.dist_nuoto ? "nuoto" : d.dist_bici ? "bici" : null })) },
     checkin: data.checkin[day] || null,
   };
 }
@@ -282,7 +291,9 @@ function finalize(days, idx, maskOf) {
       }
       score = 0.6 * zScore(z) + 0.4 * zScore(zt);
     }
-    comp.hrv = { valore: v, unita: "ms", peso: 0.35, baseline: ok ? r1(Math.exp(bHrv.media)) : null, z: r1(z, 2), punteggio: score, giorni_baseline: bHrv.n,
+    // fewer readings → less weight: 3+ night readings 0.35, 2 → 0.28, 1 or daytime only → 0.20
+    const n = today.notte.hrv_fonte === "notte" ? today.notte.hrv_misure : 0;
+    comp.hrv = { valore: v, unita: "ms", peso: n >= 3 ? 0.35 : n === 2 ? 0.28 : 0.20, misure: today.notte.hrv_misure, fonte: today.notte.hrv_fonte, baseline: ok ? r1(Math.exp(bHrv.media)) : null, z: r1(z, 2), punteggio: score, giorni_baseline: bHrv.n,
       normale: ok ? [r1(Math.exp(bHrv.media - 0.5 * bHrv.dev)), r1(Math.exp(bHrv.media + 0.5 * bHrv.dev))] : null };
   }
   // FC a riposo: rispetto alla media a lungo termine (Oura: cala se 3-5 bpm sopra la media)
@@ -323,6 +334,11 @@ function finalize(days, idx, maskOf) {
     score,
     stato: score == null ? "calibrazione" : score >= 67 ? "recuperato" : score >= 34 ? "parziale" : "basso",
     calibrazione: giorniDati < 14,
+    // how much to trust today's score: HRV readings of the night and resting heart rate available
+    affidabilita: score == null ? null : (() => {
+      const n = today.notte.hrv_fonte === "notte" ? today.notte.hrv_misure : 0, hr = comp.fc_riposo.punteggio != null;
+      return n >= 3 && hr ? "alta" : n >= 2 || (n >= 1 && hr) ? "media" : "bassa";
+    })(),
     giorni_baseline: giorniDati,
     componenti: comp,
   };
@@ -349,7 +365,12 @@ function enrich(days, data, profile, from) {
   ratios.sort((a, b) => a - b);
   const k = ratios.length >= 3 ? clamp(ratios[Math.floor(ratios.length / 2)], 1, 6) : 2;
   const load = days.map((d, i) => (d.attivita.trimp == null && !srpe[i] ? null : Math.round(Math.max(d.attivita.trimp || 0, srpe[i] ? srpe[i] / k : 0))));
-  const need0 = profile.sonno_min || DEFAULT_SLEEP_NEED;
+  // personal sleep need: chosen in the profile, otherwise learned from the nights after which you woke up
+  // recovered (score 67+): median of at least 8 such nights, kept between 7 and 9.5 hours
+  const goodNights = days.filter((d) => d.sonno && !d.sonno.manuale && d.recupero?.score >= 67).map((d) => d.sonno.durata_min).sort((a, b) => a - b);
+  const learned = goodNights.length >= 8 ? clamp(Math.round(goodNights[Math.floor(goodNights.length / 2)] / 5) * 5, 420, 570) : null;
+  const need0 = profile.sonno_min || learned || DEFAULT_SLEEP_NEED;
+  const needSource = profile.sonno_min ? "profilo" : learned ? "imparato" : "predefinito";
 
   days.forEach((d, i) => {
     if (d.giorno < from) return;
@@ -392,7 +413,7 @@ function enrich(days, data, profile, from) {
       if (ends.length >= 3) wake = Math.round(mean(ends));
     }
     const bed = wake == null ? null : (wake - needTonight - 15 + 1440 * 2) % 1440; // 15 minuti per addormentarsi
-    d.sonno_stanotte = { fabbisogno_min: needTonight, base_min: need0, per_carico_min: Math.round(strainAdd), per_debito_min: Math.round(debtAdd), debito_7g_min: Math.round(debt),
+    d.sonno_stanotte = { fabbisogno_min: needTonight, base_min: need0, base_fonte: needSource, per_carico_min: Math.round(strainAdd), per_debito_min: Math.round(debtAdd), debito_7g_min: Math.round(debt),
       sveglia: wake == null ? null : `${String(Math.floor(wake / 60)).padStart(2, "0")}:${String(wake % 60).padStart(2, "0")}`,
       a_letto: bed == null ? null : `${String(Math.floor(bed / 60)).padStart(2, "0")}:${String(bed % 60).padStart(2, "0")}` };
   });

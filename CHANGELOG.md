@@ -2,6 +2,20 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.12.0] — 2026-10-12
+
+### Migliorato
+- **HRV più affidabile**: mediana delle misure notturne (un valore storto non sposta più il punteggio) e peso nel recupero in base a quante misure ha fatto il Watch (3+ → 0,35, 2 → 0,28, 1 o solo di giorno → 0,20). Il recupero mostra l'**affidabilità** (alta, media, bassa).
+- **Allenamenti rilevati dal battito**: periodi di almeno 10 minuti sopra il 60% della FC massima diventano sessioni con durata, FC media e carico, anche senza avviare l'allenamento sul Watch; lo sport è dedotto da distanze di nuoto e bici. Il check-in le mostra e precompila durata e sport; il coach le conosce.
+- **Carico della palestra senza RPE**: le sedute importate senza fatica percepita o durata contano con RPE 7 e circa 3 minuti per serie, invece di zero.
+- **Esito dell'allenamento del giorno**: «Fatto ✓», «Fatto altro» (con lo sport) o «Saltato»; entra nella rotazione degli sport.
+- **Zone di frequenza cardiaca in bpm** (dalla tua FC massima) nelle sedute di nuoto, bici e corsa, anche nelle indicazioni dell'IA.
+- **Progressione più furba**: dopo 3 sedute ferme allo stesso carico propone uno scarico del 10%; con il range chiuso ma RPE 9,5–10 non aumenta.
+- **Esercizi da collegare**: in Palestra gli esercizi che Kairo non riconosce si collegano a un muscolo una volta per tutte (o «nessuno» per cardio e stretching).
+- **Pagina Settimana chiara**: legenda completa (carico e colori del recupero), giorni toccabili con i numeri, freccia del carico neutra, «notti registrate su 7».
+- **Sonno necessario personale**: con «Automatico» nel profilo Kairo impara quanto ti serve dalle notti dopo cui ti svegli recuperato (mediana di almeno 8 notti, tra 7 e 9,5 ore).
+- **Avviso di aggiornamento** nell'app quando c'è una versione nuova; **chat più leggera**: contesto di 14 giorni tenuto pronto per 30 minuti.
+
 ## [1.11.0] — 2026-10-12
 
 ### Cambiato
