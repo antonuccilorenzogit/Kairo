@@ -2,7 +2,7 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
-## [Non pubblicato]
+## [1.11.0] — 2026-10-12
 
 ### Cambiato
 - **Prima il check-in**: finché non fai il check-in del mattino la pagina Oggi mostra solo l'invito a farlo (o «Oggi salto il check-in»). Messaggio del coach e allenamento del giorno vengono scritti una volta sola, dopo il check-in e con tutte le informazioni: niente più doppia generazione. Anche la notifica del mattino invita al check-in. I testi aspettano anche la **notte completa** (le fasi del sonno del Watch, che arrivano qualche minuto dopo la sveglia; dalle 10 vengono scritti comunque): finché manca, le schede dicono «Aspetto la notte completa · tocca per aggiornare» e lanciano HealthSync. Così vengono scritti una sola volta, con tutti i dati, e non serve più rifarli quando arriva la notte.
