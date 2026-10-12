@@ -229,7 +229,7 @@ views.oggi = async (el) => {
 let todayAdvice = "";
 function loadAdvice() {
   return api("/api/coach/oggi", { method: "POST", body: {} })
-    .then((a) => { todayAdvice = a.errore || a.testo || ""; const box = $("#advice"); if (box) box.innerHTML = md(todayAdvice); })
+    .then((a) => { todayAdvice = a.notte_in_attesa ? "Scrivo il messaggio di oggi appena arrivano i dati completi della notte: il Watch li elabora qualche minuto dopo la sveglia. Tocca **↻** in alto per aggiornare." : a.errore || a.testo || ""; const box = $("#advice"); if (box) box.innerHTML = md(todayAdvice); })
     .catch((e) => { const box = $("#advice"); if (box) box.textContent = e.message; });
 }
 function adviceSheet() {
@@ -260,8 +260,19 @@ async function loadWorkout(force, escludi, extra) {
   renderWorkoutCard(w);
 }
 
+// after the night is complete Kairo writes today's plan: until then, offer a new sync
+function syncAndReload() {
+  const back = () => { if (document.visibilityState !== "visible") return; document.removeEventListener("visibilitychange", back); setTimeout(() => router(), 1500); };
+  document.addEventListener("visibilitychange", back);
+  location.href = "shortcuts://run-shortcut?name=HealthSync";
+}
 function renderWorkoutCard(w) {
   const box = $("#workout"); if (!box) return;
+  if (w.notte_in_attesa) {
+    box.innerHTML = `<div class="label">${w.infortunio ? "Infortunio · cosa fare oggi" : "Allenamento di oggi"}</div><div class="row between" style="gap:10px"><div class="col" style="gap:4px;flex:1"><div class="h2">Aspetto la notte completa</div><div class="small" style="color:var(--orange-ink);font-weight:700">Il Watch sta elaborando il sonno · tocca per aggiornare</div></div>${ico.chevron}</div>`;
+    box.onclick = syncAndReload;
+    return;
+  }
   // title on up to two lines, then one line with sport · duration · intensity
   const line = (label, title, meta) => `<div class="label">${label}</div><div class="row between" style="gap:10px"><div class="col" style="gap:4px;min-width:0;flex:1">
       <div class="h2" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${title}</div><div class="small muted">${meta}</div></div>${ico.chevron}</div>`;

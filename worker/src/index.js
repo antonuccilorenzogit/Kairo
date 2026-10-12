@@ -93,6 +93,14 @@ async function morningPush(env, origin) {
   await sendPush(env, { title: `${label} · ${d.recupero.score}`, body, url: "/#/oggi" }, origin);
 }
 
+// Today's texts wait for the complete night (the Watch processes it a few minutes after waking up);
+// from 10:00 they are written anyway, for nights without the Watch's sleep stages.
+function localHour(tz) { return Number(new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", hourCycle: "h23" }).format(new Date())); }
+function nightReady(db, day, tz, d) {
+  if (localHour(tz) >= 10) return d ? true : Promise.resolve(true);
+  if (d) return nightComplete(d);
+  return computeDay(db, day).then(nightComplete);
+}
 const hasCheckin = async (db, day) => !!(await db.prepare("SELECT 1 FROM checkin WHERE day = ?").bind(day).first());
 
 // The night is complete when it has the Watch's sleep stages (or was declared by hand in the check-in).
@@ -128,24 +136,7 @@ async function ingest(payload, env, origin) {
   for (const [m, d, v] of rows.daily) stmts.push(db.prepare("INSERT INTO daily(metric,day,value) VALUES(?,?,?) ON CONFLICT(metric,day) DO UPDATE SET value=excluded.value WHERE excluded.value > daily.value").bind(m, d, v));
   for (const [m, h, v] of rows.hourly) stmts.push(db.prepare("INSERT INTO hourly(metric,hour,value) VALUES(?,?,?) ON CONFLICT(metric,hour) DO UPDATE SET value=excluded.value WHERE excluded.value > hourly.value").bind(m, h, v));
   for (const [s, e, st] of rows.sleep) stmts.push(db.prepare("INSERT OR IGNORE INTO sleep(start,end,stage) VALUES(?,?,?)").bind(s, e, st));
-  // The Watch finishes processing the night a few minutes after waking up, so last night's data can
-  // arrive in a later sync. Only data of the night just passed counts: the same window used for the recovery score,
-  // from 30 minutes before falling asleep to waking up (the Watch also measures HRV during the day).
-  const NIGHT = new Set(["hrv", "fcr", "resp", "spo2"]);
-  const today = todayLocal((await getProfile(db)).tz);
-  const yesterday = new Date(Date.parse(today + "T12:00:00Z") - 86400e3).toISOString().slice(0, 10);
-  const res = [];
-  for (let i = 0; i < stmts.length; i += 400) res.push(...(await db.batch(stmts.slice(i, i + 400))));
-  const night = await db.prepare("SELECT min(start) s, max(end) e FROM sleep WHERE stage IN ('core','deep','rem','asleep') AND end > ? AND end <= ?").bind(`${yesterday}T18:00`, `${today}T14:00`).first();
-  const from = night?.s ? Date.parse(night.s) - 30 * 60e3 : null, to = night?.e ? Date.parse(night.e) : null;
-  // no sleep yet: fall back to 18:00 yesterday → 12:00 today
-  const inNight = (ts) => (from != null ? Date.parse(ts) >= from && Date.parse(ts) <= to : String(ts).slice(0, 16) >= `${yesterday}T18:00` && String(ts).slice(0, 16) <= `${today}T12:00`);
-  const sleepFrom = rows.samples.length + rows.daily.length + rows.hourly.length;
-  let nightNew = 0;
-  rows.samples.forEach((x, i) => { if (NIGHT.has(x[0]) && res[i]?.meta?.changes && inNight(x[1])) nightNew++; });
-  rows.sleep.forEach((x, i) => { if (res[sleepFrom + i]?.meta?.changes && x[1].slice(0, 16) > `${yesterday}T18:00` && x[1].slice(0, 16) <= `${today}T14:00`) nightNew++; });
-  // the night changed → today's coach texts were written on an incomplete night: write them again
-  if (nightNew) await db.prepare("DELETE FROM advice WHERE day IN (?, ?)").bind(today, "A:" + today).run();
+  for (let i = 0; i < stmts.length; i += 400) await db.batch(stmts.slice(i, i + 400));
   // new heart-rate samples → recompute the training load of those days
   const fcDays = rows.samples.filter((r) => r[0] === "fc").map((r) => r[1].slice(0, 10));
   if (fcDays.length) await recomputeTrimp(db, fcDays, hrMax(await getProfile(db)));
@@ -355,6 +346,8 @@ async function api(req, env, url) {
     if (!(await hasCheckin(env.DB, todayLocal(tz)))) return json({ checkin_richiesto: true });
     const profile = await getProfile(env.DB);
     const hist = await computeHistory(env.DB, todayLocal(tz), 8);
+    const cachedW = await env.DB.prepare("SELECT 1 FROM advice WHERE day = ?").bind("A:" + todayLocal(tz)).first();
+    const waitNight = () => !cachedW && !nightReady(null, null, tz, hist[hist.length - 1]);
     if (profile.infortunio?.attivo) {
       const day = todayLocal(tz);
       if (b.dolore != null) {
@@ -362,8 +355,10 @@ async function api(req, env, url) {
         if (sp.errore) return json(sp, 400);
         await env.DB.prepare("DELETE FROM advice WHERE day = ?").bind(day).run(); // the coach's message follows the pain
       }
+      if (waitNight()) return json({ notte_in_attesa: true, infortunio: true });
       return json(await injuryPlan(env, req, { day, today: hist[hist.length - 1], profile, profileText: await coachProfile(env.DB, profile), force: !!b.forza }));
     }
+    if (waitNight()) return json({ notte_in_attesa: true });
     return json(await recommendWorkout(env, req, { hist, profile, profileText: await coachProfile(env.DB, profile), schede: await getSchede(env.DB),
       force: !!b.forza || !!b.altro, exclude: b.altro && ["palestra", "nuoto", "bici", "corsa"].includes(b.escludi) ? b.escludi : null }));
   }
@@ -429,6 +424,9 @@ async function api(req, env, url) {
     const b = (await readJson(req)) || {};
     // today's texts are written only after the morning check-in: one generation, with all the information
     if (!(await hasCheckin(env.DB, todayLocal(tz)))) return json({ checkin_richiesto: true });
+    // and only once the night is complete, so they are written once with all the data
+    const cached = await env.DB.prepare("SELECT 1 FROM advice WHERE day = ?").bind(todayLocal(tz)).first();
+    if (!cached && !b.forza && !(await nightReady(env.DB, todayLocal(tz), tz))) return json({ notte_in_attesa: true });
     return json(await dailyAdvice(env, req, todayLocal(tz), !!b.forza, await coachProfile(env.DB)));
   }
   if (p === "/api/coach/chat" && req.method === "POST") {

@@ -53,5 +53,13 @@ export async function setup(env) {
 export async function checkinToday(env) {
   const day = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Rome" }).format(new Date());
   await env.DB.prepare("INSERT OR IGNORE INTO checkin(day, energia) VALUES(?, 4)").bind(day).run();
+  await nightToday(env);
+}
+// last night with the Watch's sleep stages (today's texts wait for the complete night)
+export async function nightToday(env) {
+  const day = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Rome" }).format(new Date());
+  const prev = new Date(Date.parse(day + "T12:00:00Z") - 86400e3).toISOString().slice(0, 10);
+  const st = env.DB.prepare("INSERT OR IGNORE INTO sleep(start,end,stage) VALUES(?,?,?)");
+  await env.DB.batch([st.bind(`${prev}T23:00:00+02:00`, `${day}T02:00:00+02:00`, "core"), st.bind(`${day}T02:00:00+02:00`, `${day}T03:30:00+02:00`, "deep"), st.bind(`${day}T03:30:00+02:00`, `${day}T05:30:00+02:00`, "rem")]);
 }
 export const count = async (env, table, where = "1=1") => (await env.DB.prepare(`SELECT count(*) n FROM ${table} WHERE ${where}`).first()).n;
