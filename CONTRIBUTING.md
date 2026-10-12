@@ -20,7 +20,7 @@ curl -X POST http://localhost:8787/api/ingest -H 'authorization: Bearer codice-d
 ## Test
 ```bash
 cd worker
-npm test                # 67 test automatici: sicurezza, doppioni, sonno, carico, allarmi, forza, notifiche, backup, migrazioni, memoria del coach, infortuni
+npm test                # 72 test automatici: sicurezza, doppioni, sonno, carico, allarmi, forza, notifiche, backup, migrazioni, memoria del coach, infortuni
 ```
 I test usano un database SQLite in memoria con la stessa interfaccia di D1 e girano su GitHub a ogni push. Una modifica è pronta solo se passano tutti.
 

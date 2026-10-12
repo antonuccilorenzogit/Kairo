@@ -147,7 +147,8 @@ function rawDay(day, data, sessionsByDay) {
   const napsMin = sessions.filter((s) => s !== main).reduce((a, s) => a + s.asleepMin, 0);
 
   let winFrom, winTo;
-  if (main) { winFrom = main.startMs - 30 * 60e3; winTo = main.endMs; }
+  // until 60 minutes after waking up: a 1-minute Breathe session in bed counts as a morning reading
+  if (main) { winFrom = main.startMs - 30 * 60e3; winTo = main.endMs + 60 * 60e3; }
   else { winFrom = t(day + "T00:00:00+02:00"); winTo = t(day + "T09:00:00+02:00"); }
 
   const hrvNight = inWindow(data.samples.hrv, winFrom, winTo);
@@ -209,9 +210,34 @@ function rawDay(day, data, sessionsByDay) {
   };
 }
 
+// Personal baseline, robust to odd days: median and MAD (× 1.4826 ≈ standard deviation for normal data)
 function baseline(values, floor) {
   if (values.length < MIN_BASELINE) return { insufficiente: true, n: values.length };
-  return { media: mean(values), dev: Math.max(std(values) || 0, floor), n: values.length };
+  const med = median(values), mad = median(values.map((v) => Math.abs(v - med))) * 1.4826;
+  return { media: med, dev: Math.max(mad || std(values) || 0, floor), n: values.length };
+}
+// days tagged in the check-in as out of the ordinary (alcohol, illness, travel) stay out of the baseline
+const EXCLUDE_TAGS = /alcol|malanno|viaggio/;
+const tagged = (d) => EXCLUDE_TAGS.test(d.checkin?.tag || "");
+// 7-day coefficient of variation of ln HRV (Plews): rising = the body is struggling to adapt
+function hrvCv(days, idx) {
+  const ln = days.slice(Math.max(0, idx - 6), idx + 1).map((d) => d.notte.hrv_ms).filter((x) => x).map(Math.log);
+  return ln.length >= 5 ? (std(ln) / mean(ln)) * 100 : null;
+}
+// The score from its components: weighted mean, physiological cap, smoothing when the readings are few.
+function scoreFrom(today, comp, prevScore) {
+  const usable = Object.values(comp).filter((c) => c.punteggio != null);
+  const wSum = usable.reduce((s, c) => s + c.peso, 0);
+  if (!usable.length || (comp.hrv.punteggio == null && comp.fc_riposo.punteggio == null)) return { score: null, wSum };
+  let score = usable.reduce((s, c) => s + c.peso * c.punteggio, 0) / wSum;
+  // a good night or a good mood cannot hide a nervous system on alert: at most 20 points above HRV + resting HR
+  const phys = [comp.hrv, comp.fc_riposo].filter((c) => c.punteggio != null);
+  score = Math.min(score, phys.reduce((s, c) => s + c.peso * c.punteggio, 0) / phys.reduce((s, c) => s + c.peso, 0) + 20);
+  const n = today.notte.hrv_fonte === "notte" ? today.notte.hrv_misure : 0, hr = comp.fc_riposo.punteggio != null;
+  const affidabilita = n >= 3 && hr ? "alta" : n >= 2 || (n >= 1 && hr) ? "media" : "bassa";
+  // few readings: a big jump is more likely noise than a real change → at most ±15 from yesterday
+  if (affidabilita === "bassa" && prevScore != null) score = clamp(score, prevScore - 15, prevScore + 15);
+  return { score: Math.round(clamp(score, 0, 100)), wSum, affidabilita };
 }
 
 // Sleep Regularity Index (Phillips et al. 2017): probabilità che a 24 h di distanza lo stato
@@ -233,7 +259,7 @@ const zScore = (z) => clamp(60 + 20 * clamp(z, -3, 2), 0, 100);
 
 function finalize(days, idx, maskOf) {
   const today = days[idx];
-  const prev = days.slice(Math.max(0, idx - BASELINE_DAYS), idx);
+  const prev = days.slice(Math.max(0, idx - BASELINE_DAYS), idx).filter((d) => !tagged(d));
   const week = days.slice(Math.max(0, idx - 6), idx + 1);
 
   // ---- punteggio del sonno (contributi stile Oura, soglie AASM/NSF) ----
@@ -275,6 +301,9 @@ function finalize(days, idx, maskOf) {
   // heart rate while asleep (ready at wake-up, like Oura/Whoop), compared only with other nights
   const bFcN = baseline(vals((d) => d.notte.fc_notte_bpm), 2);
   const bResp = baseline(vals((d) => d.notte.resp_rpm), 0.4);
+  const bSpo2 = baseline(vals((d) => d.notte.spo2_media), 0.5);
+  const cvToday = hrvCv(days, idx);
+  const bCv = baseline(days.slice(Math.max(0, idx - BASELINE_DAYS), idx).map((_, j, arr) => hrvCv(days, idx - arr.length + j)).filter((x) => x != null), 0.3);
 
   const comp = {};
   // HRV: 60% valore di stanotte, 40% media mobile 7 giorni (cambi entro ±0,5 DS = variazione trascurabile)
@@ -293,7 +322,7 @@ function finalize(days, idx, maskOf) {
     }
     // fewer readings → less weight: 3+ night readings 0.35, 2 → 0.28, 1 or daytime only → 0.20
     const n = today.notte.hrv_fonte === "notte" ? today.notte.hrv_misure : 0;
-    comp.hrv = { valore: v, unita: "ms", peso: n >= 3 ? 0.35 : n === 2 ? 0.28 : 0.20, misure: today.notte.hrv_misure, fonte: today.notte.hrv_fonte, baseline: ok ? r1(Math.exp(bHrv.media)) : null, z: r1(z, 2), punteggio: score, giorni_baseline: bHrv.n,
+    comp.hrv = { valore: v, unita: "ms", peso: n >= 3 ? 0.30 : n === 2 ? 0.24 : 0.17, misure: today.notte.hrv_misure, fonte: today.notte.hrv_fonte, baseline: ok ? r1(Math.exp(bHrv.media)) : null, z: r1(z, 2), punteggio: score, giorni_baseline: bHrv.n,
       normale: ok ? [r1(Math.exp(bHrv.media - 0.5 * bHrv.dev)), r1(Math.exp(bHrv.media + 0.5 * bHrv.dev))] : null };
   }
   // FC a riposo: rispetto alla media a lungo termine (Oura: cala se 3-5 bpm sopra la media)
@@ -301,33 +330,44 @@ function finalize(days, idx, maskOf) {
     const night = today.notte.fc_notte_bpm != null && !bFcN.insufficiente;
     const b = night ? bFcN : bFcr, v = night ? today.notte.fc_notte_bpm : today.notte.fcr_bpm, ok = !b.insufficiente;
     const z = v != null && ok ? -(v - b.media) / b.dev : null;
-    comp.fc_riposo = { valore: v, unita: "bpm", peso: 0.20, baseline: ok ? r1(b.media) : null, z: r1(z, 2), punteggio: z == null ? null : zScore(z), giorni_baseline: b.n,
+    comp.fc_riposo = { valore: v, unita: "bpm", peso: 0.15, baseline: ok ? r1(b.media) : null, z: r1(z, 2), punteggio: z == null ? null : zScore(z), giorni_baseline: b.n,
       fonte: v == null ? null : night ? "notte" : "apple" };
   }
   // sonno della notte: il suo punteggio è già 0-100
-  comp.sonno = { valore: today.sonno ? today.sonno.punteggio : null, unita: "punti", peso: 0.25, baseline: null, z: null, punteggio: today.sonno ? today.sonno.punteggio : null };
+  comp.sonno = { valore: today.sonno ? today.sonno.punteggio : null, unita: "punti", peso: 0.20, baseline: null, z: null, punteggio: today.sonno ? today.sonno.punteggio : null };
   // bilancio di sonno a 14 giorni
-  comp.bilancio_sonno = { valore: balance == null ? null : Math.round(balance), unita: "min/notte", peso: 0.10, baseline: SLEEP_NEED_MIN,
+  comp.bilancio_sonno = { valore: balance == null ? null : Math.round(balance), unita: "min/notte", peso: 0.05, baseline: SLEEP_NEED_MIN,
     punteggio: balance == null ? null : pw(balance, [[-150, 0], [-120, 20], [-60, 65], [-30, 85], [0, 100]]) };
   // respirazione: conta solo l'aumento rispetto alla media (segnale precoce di stanchezza o malanno)
   {
     const v = today.notte.resp_rpm, ok = !bResp.insufficiente;
     const up = v != null && ok ? Math.max(0, (v - bResp.media) / bResp.dev) : null;
-    comp.respirazione = { valore: v, unita: "resp/min", peso: 0.10, baseline: ok ? r1(bResp.media) : null, z: v != null && ok ? r1((v - bResp.media) / bResp.dev, 2) : null,
+    comp.respirazione = { valore: v, unita: "resp/min", peso: 0.05, baseline: ok ? r1(bResp.media) : null, z: v != null && ok ? r1((v - bResp.media) / bResp.dev, 2) : null,
       punteggio: up == null ? null : clamp(70 - 25 * up, 0, 100), giorni_baseline: bResp.n };
   }
 
-  const usable = Object.values(comp).filter((c) => c.punteggio != null);
-  const wSum = usable.reduce((s, c) => s + c.peso, 0);
-  let score = null;
-  if (usable.length && (comp.hrv.punteggio != null || comp.fc_riposo.punteggio != null)) {
-    score = usable.reduce((s, c) => s + c.peso * c.punteggio, 0) / wSum;
-    // un buon sonno non può compensare un sistema nervoso in allarme: il recupero non supera
-    // di oltre 20 punti il segnale fisiologico (HRV e FC a riposo), che per Whoop e Oura è l'indicatore principale
-    const phys = [comp.hrv, comp.fc_riposo].filter((c) => c.punteggio != null);
-    if (phys.length) score = Math.min(score, phys.reduce((s, c) => s + c.peso * c.punteggio, 0) / phys.reduce((s, c) => s + c.peso, 0) + 20);
-    score = Math.round(clamp(score, 0, 100));
+  // HRV stability: 7-day coefficient of variation compared with yours (higher = worse)
+  {
+    const ok = cvToday != null && !bCv.insufficiente;
+    const z = ok ? -(cvToday - bCv.media) / bCv.dev : null;
+    comp.stabilita_hrv = { valore: r1(cvToday, 1), unita: "% CV", peso: 0.05, baseline: ok ? r1(bCv.media, 1) : null, z: r1(z, 2), punteggio: z == null ? null : zScore(z) };
   }
+  // how you feel (check-in): energy, soreness, mood — subjective measures react early (Saw et al. 2016)
+  {
+    const c = today.checkin, parts = [];
+    if (c?.energia) parts.push((c.energia - 1) * 25);
+    if (c?.umore) parts.push((c.umore - 1) * 25);
+    if (c?.dolori) parts.push((5 - c.dolori) * 25);
+    comp.soggettivo = { valore: parts.length ? Math.round(mean(parts)) : null, unita: "punti", peso: 0.10, baseline: null, z: null, punteggio: parts.length ? mean(parts) : null };
+  }
+  // night oxygen saturation: only a drop below your usual counts (early sign of illness)
+  {
+    const v = today.notte.spo2_media, ok = !bSpo2.insufficiente;
+    const down = v != null && ok ? Math.max(0, (bSpo2.media - v) / bSpo2.dev) : null;
+    comp.ossigeno = { valore: v, unita: "%", peso: 0.03, baseline: ok ? r1(bSpo2.media) : null, z: v != null && ok ? r1((v - bSpo2.media) / bSpo2.dev, 2) : null, punteggio: down == null ? null : clamp(75 - 25 * down, 0, 100) };
+  }
+  const prevScore = days[idx - 1]?.recupero?.score ?? null;
+  const { score, affidabilita } = scoreFrom(today, comp, prevScore);
   const giorniDati = Math.min(bHrv.n, bFcr.n);
   for (const c of Object.values(comp)) if (c.punteggio != null) c.punteggio = Math.round(c.punteggio);
   today.recupero = {
@@ -335,10 +375,7 @@ function finalize(days, idx, maskOf) {
     stato: score == null ? "calibrazione" : score >= 67 ? "recuperato" : score >= 34 ? "parziale" : "basso",
     calibrazione: giorniDati < 14,
     // how much to trust today's score: HRV readings of the night and resting heart rate available
-    affidabilita: score == null ? null : (() => {
-      const n = today.notte.hrv_fonte === "notte" ? today.notte.hrv_misure : 0, hr = comp.fc_riposo.punteggio != null;
-      return n >= 3 && hr ? "alta" : n >= 2 || (n >= 1 && hr) ? "media" : "bassa";
-    })(),
+    affidabilita: score == null ? null : affidabilita,
     giorni_baseline: giorniDati,
     componenti: comp,
   };
@@ -380,6 +417,40 @@ function enrich(days, data, profile, from) {
     const acute = a7.length >= 4 ? mean(a7) : null, chronic = c28.length >= 14 ? mean(c28) : null;
     const ratio = acute != null && chronic ? acute / chronic : null;
     const stato = ratio == null ? "calibrazione" : ratio < 0.8 ? "scarico" : ratio <= 1.0 ? "mantenimento" : ratio <= 1.3 ? "costruzione" : ratio <= 1.5 ? "attenzione" : "eccesso";
+    // ---- recovery, second step: activity contributors (like Oura's Readiness) and reading of the score ----
+    {
+      const comp = d.recupero.componenti;
+      // yesterday's load vs your usual day: a very hard day lowers today's readiness
+      const yRatio = chronic && load[i - 1] != null ? load[i - 1] / chronic : null;
+      comp.attivita_ieri = { valore: load[i - 1] ?? null, unita: "carico", peso: 0.04, baseline: chronic ? Math.round(chronic) : null, z: null,
+        punteggio: yRatio == null ? null : pw(yRatio, [[0, 85], [1, 85], [1.5, 70], [2, 50], [3, 25]]) };
+      // activity balance: last 7 days vs last 28 (too little or too much both lower it)
+      comp.bilancio_attivita = { valore: r1(ratio, 2), unita: "7/28 gg", peso: 0.03, baseline: null, z: null,
+        punteggio: ratio == null ? null : pw(ratio, [[0.4, 60], [0.8, 90], [1.3, 90], [1.5, 65], [2, 35]]) };
+      for (const k of ["attivita_ieri", "bilancio_attivita"]) if (comp[k].punteggio != null) comp[k].punteggio = Math.round(comp[k].punteggio);
+      const prevScore = days[i - 1]?.recupero?.score ?? null;
+      const sc = scoreFrom(d, comp, prevScore);
+      const rec = d.recupero;
+      if (sc.score != null) {
+        rec.score = sc.score;
+        rec.stato = sc.score >= 67 ? "recuperato" : sc.score >= 34 ? "parziale" : "basso";
+        rec.affidabilita = sc.affidabilita;
+        // uncertainty band and 3-day trend: one day is not a trend
+        rec.incertezza = sc.affidabilita === "alta" ? 5 : sc.affidabilita === "media" ? 8 : 12;
+        const last3 = [days[i - 2], days[i - 1], d].map((x) => x?.recupero?.score).filter((x) => x != null);
+        rec.trend_3g = last3.length >= 2 ? Math.round(mean(last3)) : null;
+        // what weighed most today: points above/below "as usual" (60) for each component
+        const impacts = Object.entries(comp).filter(([, c]) => c.punteggio != null).map(([k, c]) => [k, (c.peso * (c.punteggio - 60)) / sc.wSum]);
+        rec.spiegazione = impacts.sort((a, b) => a[1] - b[1]).filter(([, v]) => Math.abs(v) >= 1.5).slice(0, 3).map(([k, v]) => ({ componente: k, punti: Math.round(v) }));
+        const tags = (d.checkin?.tag || "").split(",").filter(Boolean);
+        if (tags.length) rec.etichette = tags;
+        // estimate for tomorrow if tonight you sleep what you need (sleep score ~85): HRV and the rest unknown
+        if (comp.sonno.punteggio != null && comp.sonno.punteggio < 85) {
+          const gain = (comp.sonno.peso * (85 - comp.sonno.punteggio)) / sc.wSum;
+          rec.domani_se_dormi = Math.round(clamp(sc.score + gain, 0, 100));
+        }
+      }
+    }
     // fascia consigliata per oggi: recupero (verde/giallo/rosso) e rapporto acuto:cronico
     let target = null;
     if (chronic) {
@@ -398,6 +469,9 @@ function enrich(days, data, profile, from) {
       ((x.recupero.componenti.fc_riposo.z != null && x.recupero.componenti.fc_riposo.z <= -1) || (x.recupero.componenti.respirazione.z != null && x.recupero.componenti.respirazione.z >= 1));
     const hrvLow = d.recupero.componenti.hrv.normale && days.slice(Math.max(0, i - 2), i + 1).every((x) => x.notte.hrv_ms != null && x.notte.hrv_ms < d.recupero.componenti.hrv.normale[0]);
     if (bad(d) && bad(days[i - 1])) d.allarme = { tipo: "malanno", titolo: "Segnali di stanchezza o di un malanno", testo: "Da due giorni HRV bassa e frequenza cardiaca (o respirazione) alta rispetto al tuo solito. Due giorni leggeri, sonno abbondante e idratazione; se ti senti male, fermati." };
+    // HRV swinging much more than usual while its weekly mean drops: adaptation is not keeping up (Plews)
+    else if (d.recupero.componenti.stabilita_hrv?.z != null && d.recupero.componenti.stabilita_hrv.z <= -1.5 && d.recupero.componenti.hrv.z != null && d.recupero.componenti.hrv.z < 0)
+      d.allarme = { tipo: "instabile", titolo: "HRV instabile", testo: "Questa settimana la tua HRV oscilla molto più del solito e la media cala: il corpo fa fatica ad assorbire il carico. Un paio di giorni facili e sonno regolare." };
     else if (hrvLow && ratio != null && ratio > 1.3) d.allarme = { tipo: "sovraccarico", titolo: "Stai accumulando fatica", testo: "Da tre giorni l'HRV è sotto il tuo intervallo normale e il carico è sopra il solito. Inserisci 2-3 giorni leggeri prima della prossima seduta dura." };
 
     // fabbisogno di sonno per stanotte (come Whoop: base + carico del giorno + recupero del debito)

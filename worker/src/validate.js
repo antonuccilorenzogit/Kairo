@@ -83,6 +83,7 @@ export function parsePayload(payload) {
 
 // Check-in: every field is optional, but when present it must be in range.
 const ACTIVITIES = new Set(["palestra", "nuoto", "bici", "calcio", "corsa", "camminata", "altro", "riposo"]);
+export const TAGS = ["alcol", "malanno", "viaggio", "stress", "cena tardi", "allenamento serale"];
 export function cleanCheckin(c, fallbackDay) {
   const int = (v, lo, hi) => (v == null || v === "" ? null : Number.isInteger(Number(v)) && Number(v) >= lo && Number(v) <= hi ? Number(v) : undefined);
   const day = c && typeof c.day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(c.day) ? c.day : fallbackDay;
@@ -92,6 +93,7 @@ export function cleanCheckin(c, fallbackDay) {
     rpe: int(c?.rpe, 1, 10), durata_min: int(c?.durata_min, 0, 900), sonno_min: int(c?.sonno_min, 60, 900),
     attivita: c?.attivita == null ? null : String(c.attivita).split(",").map((x) => x.trim()).filter((x) => ACTIVITIES.has(x)).join(",") || null,
     note: c?.note == null ? null : String(c.note).slice(0, 1000),
+    tag: c?.tag == null ? null : (Array.isArray(c.tag) ? c.tag : String(c.tag).split(",")).map((x) => String(x).trim()).filter((x) => TAGS.includes(x)).join(",") || null,
   };
   const bad = Object.entries(out).filter(([, v]) => v === undefined).map(([k]) => k);
   return bad.length ? { errore: `Valori non validi: ${bad.join(", ")}` } : out;

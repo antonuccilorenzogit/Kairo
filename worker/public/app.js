@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.12.0";
+const APP_VERSION = "1.13.0";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -196,7 +196,7 @@ views.oggi = async (el) => {
       <div class="col" style="gap:2px;flex:1">${r.score == null
         ? `<div class="h2">In calibrazione</div><div class="muted small">Servono 5 notti con il Watch (ne ho ${r.giorni_baseline}).</div>`
         : `<div class="row" style="gap:8px;align-items:baseline"><span style="font-size:34px;font-weight:900;line-height:1">${r.score}</span><span class="h2 ${st.cls}">${st.label}</span></div>
-           <div class="muted small">Recupero${delta != null ? ` · ${delta >= 0 ? "▲" : "▼"} ${Math.abs(delta)} da ieri` : ""}${r.calibrazione ? " · stima provvisoria" : r.affidabilita === "bassa" ? ` · <span class="mid">poche misure stanotte</span>` : ""}</div>`}</div>${ico.chevron}</a>
+           <div class="muted small">Recupero${r.incertezza ? ` ±${r.incertezza}` : ""}${r.trend_3g != null ? ` · tendenza ${r.trend_3g}` : ""}${delta != null ? ` · ${delta >= 0 ? "▲" : "▼"} ${Math.abs(delta)} da ieri` : ""}${r.calibrazione ? " · stima provvisoria" : r.affidabilita === "bassa" ? ` · <span class="mid">poche misure stanotte</span>` : ""}</div>`}</div>${ico.chevron}</a>
     <button class="card col" id="workout" style="gap:6px;border:0;text-align:left;cursor:pointer;width:100%;font:inherit;color:inherit"><div class="label">${p.infortunio?.attivo ? "Infortunio · cosa fare oggi" : "Allenamento di oggi"}</div>
       <div class="skeleton" style="height:22px;width:60%"></div><div class="skeleton" style="height:16px;width:85%"></div></button>
     <a class="card row between" href="${nightPending ? "shortcuts://run-shortcut?name=HealthSync" : "#/sonno"}" style="gap:12px">
@@ -475,11 +475,11 @@ function infoSheet(kind, d) {
       + tip("Il debito di sonno non si azzera con una sola dormita lunga: servono più notti di fila un po' più lunghe del solito.");
   } else if (kind === "metodo") {
     const w = Object.entries(c).map(([k, x]) => [k, x.peso, x.punteggio]);
-    const names = { hrv: "HRV", fc_riposo: "FC a riposo", sonno: "Sonno della notte", bilancio_sonno: "Bilancio di sonno (14 giorni)", respirazione: "Respirazione notturna" };
+    const names = REC_NAMES;
     html = sheetHead("Come si calcola il Recupero")
-      + body("Ogni ingrediente riceve un punteggio da 0 a 100, dove 60 significa «come al solito per te». Il Recupero è la loro media pesata; se un dato manca, gli altri si ridistribuiscono il peso. Un buon sonno però non può compensare HRV e FC a riposo in allarme: il Recupero non supera di oltre 20 punti il loro segnale. Le fasce sono quelle di Whoop: 67–100 verde, 34–66 giallo, 0–33 rosso.")
+      + body("Ogni ingrediente riceve un punteggio da 0 a 100, dove 60 significa «come al solito per te». Il Recupero è la loro media pesata; se un dato manca, gli altri si ridistribuiscono il peso. Un buon sonno o un buon umore però non possono compensare HRV e FC a riposo in allarme: il Recupero non supera di oltre 20 punti il loro segnale. Le tue medie usano mediana e deviazione robusta degli ultimi 60 giorni, senza i giorni con alcol, malanno o viaggio. Con poche misure di HRV il punteggio non cambia più di 15 punti da ieri. Le fasce sono quelle di Whoop: 67–100 verde, 34–66 giallo, 0–33 rosso.")
       + `<div class="card list">${w.map(([k, p, sc]) => `<div class="item"><span>${names[k]} <span class="small muted">${Math.round(p * 100)}%</span></span><b>${sc ?? "–"}</b></div>`).join("")}</div>`
-      + body("La struttura segue la Readiness di Oura (FC a riposo e HRV confrontate con le tue medie, sonno e bilancio di sonno); l'HRV usa il metodo di Plews e HRV4Training; la respirazione notturna è un segnale usato da Whoop. Nessuna di queste app pubblica la formula esatta: i pesi sono di Kairo e il codice è pubblico su GitHub.");
+      + body("La struttura segue la Readiness di Oura (FC a riposo e HRV confrontate con le tue medie, sonno, bilancio di sonno, attività di ieri e bilancio di attività); l'HRV e la sua stabilità (coefficiente di variazione a 7 giorni) seguono Plews e HRV4Training; come ti senti segue i questionari di benessere (Saw et al. 2016); respirazione e ossigeno notturni sono segnali precoci di malanno. Nessuna di queste app pubblica la formula esatta: i pesi sono di Kairo e il codice è pubblico su GitHub.");
   } else {
     html = sheetHead("Respirazione notturna")
       + body("Quanti respiri fai al minuto mentre dormi. È molto stabile: un aumento di 1–2 respiri al minuto per più notti può segnalare affaticamento o un malanno in arrivo.")
@@ -490,6 +490,8 @@ function infoSheet(kind, d) {
   openSheet(html, "Spiegazione");
 }
 
+const REC_NAMES = { hrv: "HRV", fc_riposo: "FC a riposo", sonno: "Sonno della notte", bilancio_sonno: "Bilancio di sonno (14 giorni)", respirazione: "Respirazione notturna", stabilita_hrv: "Stabilità dell'HRV (7 giorni)", soggettivo: "Come ti senti (check-in)", ossigeno: "Ossigeno notturno", attivita_ieri: "Attività di ieri", bilancio_attivita: "Bilancio di attività (7/28 giorni)" };
+const TAG_LABEL = { alcol: "alcol", malanno: "malanno", viaggio: "viaggio", stress: "stress", "cena tardi": "cena tardi", "allenamento serale": "allenamento serale" };
 views.recupero = async (el) => {
   el.innerHTML = header("Recupero") + loading(3);
   const [hist, mesi] = await Promise.all([api("/api/history?days=14"), api("/api/hrv-mensile")]);
@@ -500,14 +502,19 @@ views.recupero = async (el) => {
     ["sonno", "Sonno", d.sonno ? `${d.sonno.punteggio} pt` : "–", r.componenti.sonno],
     ["bilancio_sonno", "Bilancio sonno 14 gg", r.componenti.bilancio_sonno.valore != null ? (r.componenti.bilancio_sonno.valore >= 0 ? "in pari" : `−${fmtMin(-r.componenti.bilancio_sonno.valore)}/notte`) : "–", r.componenti.bilancio_sonno],
     ["respirazione", "Respirazione", d.notte.resp_rpm != null ? fmtNum(d.notte.resp_rpm, 1) : "–", r.componenti.respirazione],
-  ].filter(([k, , , c]) => k !== "respirazione" || (c.punteggio != null && c.punteggio < 60)); // shown only when it pulls the score down
+    ["stabilita_hrv", "Stabilità HRV 7 gg", r.componenti.stabilita_hrv?.valore != null ? `CV ${fmtNum(r.componenti.stabilita_hrv.valore, 1)}%` : "–", r.componenti.stabilita_hrv],
+    ["soggettivo", "Come ti senti", d.checkin?.energia != null ? `energia ${d.checkin.energia}/5${d.checkin.dolori != null ? ` · indolenzim. ${d.checkin.dolori}/5` : ""}` : "–", r.componenti.soggettivo],
+    ["ossigeno", "Ossigeno notturno", d.notte.spo2_media != null ? `${fmtNum(d.notte.spo2_media, 1)}%` : "–", r.componenti.ossigeno],
+    ["attivita_ieri", "Attività di ieri", r.componenti.attivita_ieri?.valore != null ? `carico ${r.componenti.attivita_ieri.valore}` : "–", r.componenti.attivita_ieri],
+    ["bilancio_attivita", "Bilancio di attività", r.componenti.bilancio_attivita?.valore != null ? fmtNum(r.componenti.bilancio_attivita.valore, 2) : "–", r.componenti.bilancio_attivita],
+  ].filter(([k, , , c]) => c && (["hrv", "fc_riposo", "sonno", "bilancio_sonno"].includes(k) ? true : k === "respirazione" || k === "ossigeno" ? c.punteggio != null && c.punteggio < 60 : c.punteggio != null)); // the secondary ones only when they count
   const compRow = ([k, name, val, c]) => {
     // ogni contributo vale 0-100; 60 = come al solito: la barra mostra quanto si discosta
     const z = c.punteggio == null ? 0 : (c.punteggio - 60) / 20;
     const w = Math.min(Math.abs(z), 3) / 3 * 50;
     const color = z > 0.05 ? "var(--green)" : z < -0.05 ? "var(--red)" : "#C9CEDB";
     const media = c.punteggio != null ? `${c.punteggio}/100` : c.valore == null ? "nessun dato" : "in calibrazione";
-    return `<button class="comp" data-info="${k === "respirazione" ? "resp" : k === "bilancio_sonno" ? "bilancio" : k}" aria-label="Cosa significa ${name}">
+    return `<button class="comp" data-info="${k === "respirazione" ? "resp" : k === "bilancio_sonno" ? "bilancio" : ["hrv", "fc_riposo", "sonno"].includes(k) ? k : "metodo"}" aria-label="Cosa significa ${name}">
       <div class="row between" style="width:100%"><div class="row" style="gap:6px;font-weight:800">${name} ${ico.info} <span class="small muted" style="font-weight:600">${Math.round(c.peso * 100)}%</span></div>
       <div style="font-weight:800">${val} <span class="small muted" style="font-weight:600">${media}</span></div></div>
       <div class="track"><div class="zero"></div><div class="bar" style="left:${z >= 0 ? 50 : 50 - w}%;width:${Math.max(w, 1.5)}%;background:${color}"></div></div></button>`;
@@ -519,11 +526,24 @@ views.recupero = async (el) => {
   }).join("");
   el.innerHTML = `${header("Recupero", { sub: fmtDate(d.giorno, { weekday: "short", day: "numeric", month: "short" }) })}
     <div class="card row" style="gap:14px">${bean(r.score, 46)}<div class="col" style="gap:2px"><div style="font-size:30px;font-weight:900;line-height:1">${r.score ?? "–"} <span class="${st.cls}" style="font-size:16px">${st.label}</span></div><div class="small muted">Rispetto ai tuoi ultimi 60 giorni${r.calibrazione ? ` · baseline ${r.giorni_baseline} gg` : ""}${r.affidabilita ? ` · affidabilità <b class="${r.affidabilita === "alta" ? "good" : r.affidabilita === "media" ? "mid" : "bad"}">${r.affidabilita}</b>` : ""}</div>${r.affidabilita === "bassa" ? `<div class="small" style="line-height:1.4;color:var(--text)">Stanotte il Watch ha fatto poche misure di HRV: pesano meno e il punteggio è una stima. Dormire con il Watch ben stretto aiuta.</div>` : ""}<button class="small" id="howScore" style="background:none;border:0;padding:0;color:var(--orange-ink);text-align:left;cursor:pointer;font-weight:700">Come si calcola?</button></div></div>
+    ${r.score != null ? `<div class="card col" style="gap:6px">
+      <div class="row" style="gap:14px;flex-wrap:wrap"><span class="small">Incertezza <b>±${r.incertezza ?? "–"}</b></span>${r.trend_3g != null ? `<span class="small">Tendenza 3 giorni <b>${r.trend_3g}</b></span>` : ""}${r.etichette?.length ? `<span class="small">Etichette: <b>${r.etichette.map((t) => esc(TAG_LABEL[t] || t)).join(", ")}</b></span>` : ""}</div>
+      ${r.spiegazione?.length ? `<div class="small" style="line-height:1.5">${r.spiegazione.map((x) => `${x.punti < 0 ? "▼" : "▲"} <b>${esc(REC_NAMES[x.componente] || x.componente)}</b> ${x.punti > 0 ? "+" : ""}${x.punti}`).join(" · ")}${r.etichette?.some((t) => /alcol|malanno|viaggio/.test(t)) ? `<br><span class="muted">Giornata segnata come fuori dal solito: non entra nelle tue medie.</span>` : ""}</div>` : ""}
+      ${r.domani_se_dormi != null ? `<div class="small" style="color:var(--orange-ink);font-weight:700">Se stanotte dormi quello che ti serve, domani intorno a ${r.domani_se_dormi} (stima).</div>` : ""}</div>` : ""}
     <div class="card" style="padding:16px 16px 10px"><div class="row between" style="padding:0 2px 6px"><div class="label">Cosa ha pesato oggi</div><div class="small muted">tocca per capire</div></div>
       ${comps.map(compRow).join("")}
       <div class="row between small muted" style="padding:8px 2px 4px"><div>← peggiora</div><div>migliora →</div></div></div>
     <div class="card"><div class="label" style="margin-bottom:8px">Ultimi 14 giorni</div><div class="row" style="gap:2px;align-items:flex-end">${bars}</div></div>
     ${mesi.length > 1 ? `<button class="card col" data-info="hrv" style="border:0;text-align:left;cursor:pointer;gap:8px"><div class="row between" style="width:100%"><div class="label">HRV · media mensile</div><div class="small muted">${mesi.length} mesi</div></div>${lineChart(mesi.map((m) => m.media), mesi.map((m) => m.mese.slice(5)))}</button>` : ""}`;
+  el.insertAdjacentHTML("beforeend", `<div class="card col" style="gap:8px"><div class="label">Lo score funziona per te?</div>
+      <div class="small" style="line-height:1.5;color:var(--text)">Kairo confronta le tue sedute in palestra nei giorni verdi e negli altri: se nei giorni verdi rendi di più, lo score sta leggendo bene il tuo corpo.</div>
+      <button class="btn ghost" id="verify">Verifica</button><div id="verifyOut" class="small" style="line-height:1.5"></div></div>
+    <div class="card soft small" style="line-height:1.5">💡 <b>Misura più precisa:</b> appena sveglio, ancora a letto, fai 1 minuto di <b>Respira</b> (app Mindfulness sul Watch). Kairo la usa come misura del mattino: è sempre nelle stesse condizioni e rende l'HRV molto più affidabile.</div>`);
+  $("#verify").onclick = async () => {
+    const out = $("#verifyOut"); out.textContent = "Calcolo…";
+    try { const v = await api("/api/recupero/verifica"); out.innerHTML = `${esc(v.messaggio)}${v.pronto && v.correlazione != null ? `<br><span class="muted">${v.sedute} sedute · correlazione ${fmtNum(v.correlazione, 2)}${v.differenza_pct != null ? ` · giorni verdi ${v.giorni_verdi}, altri ${v.altri_giorni}` : ""}</span>` : ""}`; }
+    catch (e) { out.textContent = e.message; }
+  };
   el.querySelectorAll("[data-info]").forEach((b) => b.addEventListener("click", () => infoSheet(b.dataset.info, d)));
   $("#howScore").onclick = () => infoSheet("metodo", d);
 };
@@ -1112,7 +1132,8 @@ function checkinSheet(existing, askSleep = false, detected = []) {
   const detMin = detected.reduce((a, x) => a + x.minuti, 0), detSport = detected.map((x) => x.sport).find(Boolean);
   const s = { energia: existing?.energia ?? 3, dolori: existing?.dolori ?? 2, umore: existing?.umore ?? 3,
     act: new Set((existing?.attivita || (!existing && detSport ? detSport : "")).split(",").filter(Boolean)), rpe: existing?.rpe ?? 6,
-    durata: existing?.durata_min ?? (detMin ? Math.min(240, Math.round(detMin / 5) * 5) : 60), sonno: existing?.sonno_min ?? 450 };
+    durata: existing?.durata_min ?? (detMin ? Math.min(240, Math.round(detMin / 5) * 5) : 60), sonno: existing?.sonno_min ?? 450,
+    tag: new Set((existing?.tag || "").split(",").filter(Boolean)) };
   const ACTS = [["palestra", "Palestra"], ["nuoto", "Nuoto"], ["bici", "Bici"], ["calcio", "Calcio"], ["corsa", "Corsa"], ["camminata", "Camminata"], ["altro", "Altro"], ["riposo", "Riposo"]];
   const scale = (k, label, hint) => `<div class="col"><div class="row between"><div style="font-weight:800">${label}</div><div class="small muted">${hint}</div></div>
     <div class="scale" role="group" aria-label="${label}">${[1, 2, 3, 4, 5].map((n) => `<button class="choice" data-k="${k}" data-v="${n}" aria-pressed="${s[k] === n}">${n}</button>`).join("")}</div></div>`;
@@ -1126,8 +1147,10 @@ function checkinSheet(existing, askSleep = false, detected = []) {
       <div class="col"><div style="font-weight:800">Cosa hai fatto ieri</div><div class="acts" style="grid-template-columns:repeat(4,minmax(0,1fr))">${ACTS.map(([k, l]) => `<button class="choice" data-a="${k}" aria-pressed="${s.act.has(k)}">${l}</button>`).join("")}</div></div>
       ${sport ? `<div class="card col"><label class="row between" for="rpe" style="font-weight:800"><span>Quanto è stata dura?</span><span style="color:var(--orange-ink)">RPE ${s.rpe}</span></label><input id="rpe" type="range" min="1" max="10" value="${s.rpe}">
         <label class="row between" for="dur" style="font-weight:800"><span>Durata</span><span class="muted">${s.durata} min</span></label><input id="dur" type="range" min="10" max="240" step="5" value="${s.durata}"></div>` : ""}
+      <div class="col"><div style="font-weight:800">Ieri sera o stanotte <span class="small muted" style="font-weight:600">(facoltativo)</span></div><div class="acts" style="grid-template-columns:repeat(3,minmax(0,1fr))">${["alcol", "malanno", "viaggio", "stress", "cena tardi", "allenamento serale"].map((k) => `<button class="choice" data-tag="${k}" aria-pressed="${s.tag.has(k)}" style="font-size:13px">${k[0].toUpperCase() + k.slice(1)}</button>`).join("")}</div><span class="hint">Spiegano un recupero diverso dal solito; alcol, malanno e viaggio non entrano nelle tue medie.</span></div>
       <button class="btn primary block" id="save">Salva check-in</button>`;
     w.querySelectorAll("[data-k]").forEach((b) => b.addEventListener("click", () => { s[b.dataset.k] = Number(b.dataset.v); draw(); }));
+    w.querySelectorAll("[data-tag]").forEach((b) => b.addEventListener("click", () => { s.tag.has(b.dataset.tag) ? s.tag.delete(b.dataset.tag) : s.tag.add(b.dataset.tag); draw(); }));
     w.querySelectorAll("[data-a]").forEach((b) => b.addEventListener("click", () => {
       const k = b.dataset.a;
       if (k === "riposo") { s.act = s.act.has("riposo") ? new Set() : new Set(["riposo"]); }
@@ -1141,7 +1164,7 @@ function checkinSheet(existing, askSleep = false, detected = []) {
       e.target.disabled = true;
       try {
         const sportNow = [...s.act].some((a) => a !== "riposo");
-        await api("/api/checkin", { method: "POST", body: { day: todayStr(), energia: s.energia, dolori: s.dolori, umore: s.umore, attivita: [...s.act].join(","), rpe: sportNow ? s.rpe : null, durata_min: sportNow ? s.durata : null, sonno_min: askSleep ? s.sonno : existing?.sonno_min ?? null } });
+        await api("/api/checkin", { method: "POST", body: { day: todayStr(), energia: s.energia, dolori: s.dolori, umore: s.umore, attivita: [...s.act].join(","), rpe: sportNow ? s.rpe : null, durata_min: sportNow ? s.durata : null, sonno_min: askSleep ? s.sonno : existing?.sonno_min ?? null, tag: [...s.tag].join(",") } });
         closeSheet(); toast("Check-in salvato"); router();
       } catch (err) { e.target.disabled = false; toast(err.message); }
     });

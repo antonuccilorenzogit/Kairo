@@ -3,7 +3,7 @@
 import { computeDay, computeHistory, mergeStages } from "./metrics.js";
 import { ensureSchema, SCHEMA_VERSION } from "./schema.js";
 import { dailyAdvice, chat, testAI, groqModels, weeklyCoach, DEFAULT_GROQ_MODEL, FALLBACK_MODEL } from "./coach.js";
-import { saveSets, strengthSummary, muscleFatigue, unknownExercises, setCustomMuscle, MUSCLES } from "./strength.js";
+import { saveSets, strengthSummary, muscleFatigue, unknownExercises, setCustomMuscle, MUSCLES, recoveryCheck } from "./strength.js";
 import { weeklyReport } from "./report.js";
 import { recommendWorkout, getSchede, saveSchede, lastSets, schedeFromText } from "./workout.js";
 import { sha256, safeEqual, clientIp, lockedFor, recordFailure, clearFailures, pruneFailures, codeProblem } from "./security.js";
@@ -23,7 +23,7 @@ const dropTodayAdvice = (db, day) => db.prepare("DELETE FROM advice WHERE day IN
 import { recomputeTrimp, recomputeNightHr } from "./load.js";
 import { getVapid, sendPush, validEndpoint } from "./push.js";
 
-const VERSION = "1.12.0";
+const VERSION = "1.13.0";
 
 // No CORS headers: only the Kairo app (same origin) and the Shortcuts app (not a browser) talk to the API.
 const json = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), {
@@ -409,6 +409,11 @@ async function api(req, env, url) {
     return json({ ...(await strengthSummary(env.DB, todayLocal(tz))), muscoli: await muscleFatigue(env.DB),
       non_riconosciuti: await unknownExercises(env.DB, await getSchede(env.DB)), elenco_muscoli: MUSCLES });
   }
+  // does the recovery score predict your gym performance? (last 150 days)
+  if (p === "/api/recupero/verifica") {
+    const hist = await computeHistory(env.DB, todayLocal(tz), 150);
+    return json(await recoveryCheck(env.DB, Object.fromEntries(hist.map((d) => [d.giorno, d.recupero.score]))));
+  }
   if (p === "/api/corpo") {
     // Body page: measurements grouped per day, VO2max history, resting and walking heart rate per day
     const since = new Date(Date.now() - 400 * 86400e3).toISOString().slice(0, 10);
@@ -436,10 +441,10 @@ async function api(req, env, url) {
       const c = cleanCheckin(await readJson(req), todayLocal(tz));
       if (c.errore) return json({ errore: c.errore }, 400);
       const day = c.day;
-      await env.DB.prepare(`INSERT INTO checkin(day,energia,dolori,umore,attivita,rpe,durata_min,note,updated,sonno_min) VALUES(?,?,?,?,?,?,?,?,?,?)
+      await env.DB.prepare(`INSERT INTO checkin(day,energia,dolori,umore,attivita,rpe,durata_min,note,updated,sonno_min,tag) VALUES(?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(day) DO UPDATE SET energia=excluded.energia, dolori=excluded.dolori, umore=excluded.umore, attivita=excluded.attivita,
-        rpe=excluded.rpe, durata_min=excluded.durata_min, note=excluded.note, updated=excluded.updated, sonno_min=excluded.sonno_min`)
-        .bind(day, c.energia ?? null, c.dolori ?? null, c.umore ?? null, c.attivita ?? null, c.rpe ?? null, c.durata_min ?? null, c.note ?? null, new Date().toISOString(), c.sonno_min ?? null).run();
+        rpe=excluded.rpe, durata_min=excluded.durata_min, note=excluded.note, updated=excluded.updated, sonno_min=excluded.sonno_min, tag=excluded.tag`)
+        .bind(day, c.energia ?? null, c.dolori ?? null, c.umore ?? null, c.attivita ?? null, c.rpe ?? null, c.durata_min ?? null, c.note ?? null, new Date().toISOString(), c.sonno_min ?? null, c.tag ?? null).run();
       await env.DB.prepare("DELETE FROM advice WHERE day IN (?, ?)").bind(day, "CTX:" + day).run(); // advice and chat context must take the check-in into account
       return json({ ok: true });
     }

@@ -128,3 +128,35 @@ export const routineFatigue = (scheda, fat) => {
   const ms = [...new Set(scheda.esercizi.flatMap((e) => musclesOf(e.nome, fat.custom).slice(0, 1)))];
   return ms.length ? ms.reduce((a, m) => a + (by[m] || 0), 0) / ms.length : 0;
 };
+
+// ---------- does the recovery score work for you? ----------
+// For each gym day: best estimated 1RM of each exercise / your best of the previous 8 weeks.
+// Then compare the days with recovery 67+ with the others (and the correlation over all days).
+export async function recoveryCheck(db, scoresByDay) {
+  const since = new Date(Date.now() - 150 * 86400e3).toISOString().slice(0, 10);
+  const r = await db.prepare("SELECT substr(start,1,10) d, exercise, max(weight * (1 + reps / 30.0)) e FROM sets WHERE start >= ? AND weight > 0 AND reps BETWEEN 1 AND 12 AND (set_type IS NULL OR set_type != 'warmup') GROUP BY d, exercise ORDER BY d").bind(since).all();
+  const hist = {}, perf = {};
+  for (const x of r.results) {
+    const prev = (hist[x.exercise] ||= []).filter((h) => (Date.parse(x.d) - Date.parse(h.d)) / 864e5 <= 56);
+    const best = prev.length ? Math.max(...prev.map((h) => h.e)) : null;
+    if (best) (perf[x.d] ||= []).push(x.e / best);
+    hist[x.exercise] = [...prev, { d: x.d, e: x.e }];
+  }
+  const pts = Object.entries(perf).filter(([d]) => scoresByDay[d] != null).map(([d, v]) => ({ score: scoresByDay[d], perf: v.reduce((a, b) => a + b, 0) / v.length }));
+  if (pts.length < 10) return { sedute: pts.length, pronto: false, messaggio: `Servono almeno 10 sedute di palestra con il recupero calcolato (ne ho ${pts.length}).` };
+  const avg = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+  const green = pts.filter((p) => p.score >= 67), other = pts.filter((p) => p.score < 67);
+  const mx = avg(pts.map((p) => p.score)), my = avg(pts.map((p) => p.perf));
+  const cov = pts.reduce((a, p) => a + (p.score - mx) * (p.perf - my), 0);
+  const sx = Math.sqrt(pts.reduce((a, p) => a + (p.score - mx) ** 2, 0)), sy = Math.sqrt(pts.reduce((a, p) => a + (p.perf - my) ** 2, 0));
+  const corr = sx && sy ? cov / (sx * sy) : null;
+  const diff = green.length >= 4 && other.length >= 4 ? (avg(green.map((p) => p.perf)) / avg(other.map((p) => p.perf)) - 1) * 100 : null;
+  return {
+    sedute: pts.length, pronto: true, correlazione: corr == null ? null : Math.round(corr * 100) / 100,
+    differenza_pct: diff == null ? null : Math.round(diff * 10) / 10, giorni_verdi: green.length, altri_giorni: other.length,
+    messaggio: diff == null ? "Servono almeno 4 sedute in giorni verdi e 4 negli altri per il confronto."
+      : diff >= 1 ? `Nei giorni verdi in palestra rendi in media il ${Math.round(diff * 10) / 10}% in più: per te lo score funziona.`
+      : diff > -1 ? "Per ora i giorni verdi e gli altri si somigliano in palestra: lo score conta di più per sonno e fatica che per la forza."
+      : "Per ora nei giorni verdi non rendi di più: guarda le componenti, forse per te pesa altro (sonno, come ti senti).",
+  };
+}

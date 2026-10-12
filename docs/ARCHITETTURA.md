@@ -37,6 +37,12 @@
 - **Prescrizioni = vincoli assoluti** (`infortunio.prescrizioni = {no_carico, fino, stampelle, gradi, altre}`; `null` = non indicato → ricavato dalla descrizione con espressioni regolari). Il piano dell'IA viene controllato sul testo (`violation`): con il divieto di carico niente parole che implicano appoggio sull'arto della zona (in piedi, camminare, squat, piegamenti…, ignorando le frasi negate), nessun angolo oltre il limite, niente braccia con le stampelle. Se viola, il piano è scartato (`scartato`) e si usa la seduta di regola, che i test verificano per ogni zona e modalità. `GET /api/infortunio` restituisce i vincoli riconosciuti.
 - Il testo dell'infortunio, i vincoli e l'andamento del dolore entrano in ogni prompt del coach.
 
+## Recupero (dalla 1.13)
+- Medie personali: mediana e MAD × 1,4826 degli ultimi 60 giorni, esclusi i giorni con etichetta alcol/malanno/viaggio.
+- Componenti e pesi: HRV 0,30 (0,24 con 2 misure, 0,17 con 1 o solo diurne; finestra da 30 min prima del sonno a 60 min dopo il risveglio), sonno 0,20, FC a riposo 0,15, come ti senti 0,10, bilancio di sonno 0,05, respirazione 0,05, stabilità HRV (CV del ln HRV a 7 giorni) 0,05, attività di ieri 0,04, bilancio di attività 0,03, ossigeno 0,03. Tetto: HRV+FC + 20.
+- Con affidabilità bassa lo score resta entro ±15 da ieri. Restituisce anche `incertezza`, `trend_3g`, `spiegazione` (punti per componente), `etichette`, `domani_se_dormi`.
+- `GET /api/recupero/verifica`: rendimento in palestra (1RM stimato / migliore delle 8 settimane precedenti) nei giorni verdi contro gli altri, e correlazione.
+
 ## Allenamenti rilevati ed esiti
 - Al ricalcolo del carico di un giorno, `detectSessions` (in `load.js`) cerca blocchi di frequenza cardiaca sopra il 60% della FC massima (pause fino a 5 minuti) lunghi almeno 10 minuti e li salva nella tabella `sessioni` (inizio, fine, minuti, FC media, TRIMP). Lo sport è dedotto dalle distanze di nuoto e bici del giorno.
 - `POST /api/allenamento/esito` (`{"stato":"fatto|altro|saltato","sport":"…"}`) salva nella tabella `esiti`; gli esiti entrano nella rotazione degli sport.

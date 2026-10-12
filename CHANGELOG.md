@@ -2,6 +2,21 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.13.0] — 2026-10-12
+
+### Recupero più serio e più resistente
+- **Stabilità dell'HRV**: coefficiente di variazione a 7 giorni confrontato con il tuo (Plews); nuovo allarme «HRV instabile» quando oscilla molto più del solito mentre la media cala.
+- **Medie personali robuste**: mediana e deviazione robusta (MAD), senza i giorni segnati con alcol, malanno o viaggio.
+- **Come ti senti** (energia, indolenzimento, umore del check-in) entra nello score con peso 10% (Saw et al. 2016).
+- **Misura del mattino**: valgono anche le misure HRV fino a 60 minuti dopo il risveglio, così un Respira di 1 minuto a letto rende il dato più affidabile.
+- **Etichette nel check-in**: alcol, malanno, viaggio, stress, cena tardi, allenamento serale; spiegano il punteggio e le prime tre escono dalle medie.
+- **Attività di ieri e bilancio di attività** (7/28 giorni) come contributi, come nella Readiness di Oura.
+- **Ossigeno notturno**: un calo rispetto al tuo solito abbassa lo score.
+- **Meno salti**: con poche misure lo score cambia al massimo di 15 punti da ieri; incertezza (±) e tendenza a 3 giorni accanto al valore.
+- **Verifica personale**: «Lo score funziona per te?» confronta il tuo rendimento in palestra nei giorni verdi e negli altri.
+- **Spiegazione**: cosa ha pesato di più oggi (in punti) e stima di domani se stanotte dormi quello che ti serve.
+- Pesi: HRV 30% (24% con 2 misure, 17% con 1), sonno 20%, FC a riposo 15%, come ti senti 10%, bilancio di sonno, respirazione e stabilità HRV 5%, attività di ieri 4%, bilancio di attività e ossigeno 3%.
+
 ## [1.12.0] — 2026-10-12
 
 ### Migliorato

@@ -1,6 +1,6 @@
 // Database schema. Applied automatically on the first request (idempotent),
 // so a fresh deployment needs no manual migration step.
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 export const SCHEMA = [
   // Point samples (HRV, resting HR, SpO2, respiration, weight, heart rate…).
@@ -29,7 +29,7 @@ export const SCHEMA = [
   // Daily check-in
   `CREATE TABLE IF NOT EXISTS checkin (
      day TEXT PRIMARY KEY, energia INTEGER, dolori INTEGER, umore INTEGER,
-     attivita TEXT, rpe INTEGER, durata_min INTEGER, note TEXT, updated TEXT, sonno_min INTEGER)`,
+     attivita TEXT, rpe INTEGER, durata_min INTEGER, note TEXT, updated TEXT, sonno_min INTEGER, tag TEXT)`,
   // Import log
   `CREATE TABLE IF NOT EXISTS imports (
      id INTEGER PRIMARY KEY AUTOINCREMENT, received TEXT NOT NULL,
@@ -84,6 +84,8 @@ const MIGRATIONS = {
   ],
   // v2 -> v3: hours slept declared in the check-in (nights without the Watch)
   3: ["ALTER TABLE checkin ADD COLUMN sonno_min INTEGER"],
+  // v4 -> v5: tags of the check-in (alcohol, illness, travel…), they explain the score and leave the baseline
+  5: ["ALTER TABLE checkin ADD COLUMN tag TEXT"],
 };
 
 const ready = new WeakSet();
