@@ -56,7 +56,7 @@ test("i pisolini sotto i 10 minuti non contano", async () => {
   assert.equal(d.pisolini, null); assert.equal(d.sonno_stanotte.fabbisogno_min, 480);
 });
 
-test("il pisolino di ieri riduce il debito e conta nel bilancio di oggi; quello di oggi no", async () => {
+test("il pisolino conta una volta sola, con la notte dopo: ieri riduce il debito, oggi solo il fabbisogno di stanotte", async () => {
   const env = makeEnv(); await setup(env); await seed(env);
   // three short nights (6 h: 01:00 → 07:00) → a debt
   for (const i of [0, 1, 2]) await env.DB.prepare("DELETE FROM sleep WHERE start = ?").bind(ts(day(i + 1), "23:00")).run();
@@ -66,23 +66,22 @@ test("il pisolino di ieri riduce il debito e conta nel bilancio di oggi; quello 
   const balanceBefore = before.recupero.componenti.sonno.bilancio_min;
   await watchNap(env, day(1), "14:00", "15:00");
   const after = await dayData(env);
-  assert.equal(after.sonno_stanotte.debito_7g_min, 300, "il pisolino di ieri ha ridotto il debito");
+  assert.equal(after.sonno_stanotte.debito_7g_min, 300, "il pisolino di ieri fa parte della notte di stanotte: debito −1 h");
   assert.ok(after.recupero.componenti.sonno.bilancio_min > balanceBefore, "e conta nel bilancio di 14 notti");
   // today's nap: off tonight's need, not in today's balance (the recovery is the morning's picture)
   await watchNap(env, day(0), "14:00", "14:30");
   const today = await dayData(env);
   assert.equal(today.recupero.componenti.sonno.bilancio_min, after.recupero.componenti.sonno.bilancio_min);
   assert.equal(today.sonno_stanotte.fabbisogno_min, after.sonno_stanotte.fabbisogno_min - 30);
-  // ...and it pays back the week's debt minute for minute
-  assert.equal(today.sonno_stanotte.debito_7g_min, 270);
-  assert.equal(today.sonno_stanotte.debito_pagato_min, 30);
+  // ...but it is not taken off the debt as well: it is part of tonight's sleep, checked tomorrow morning
+  assert.equal(today.sonno_stanotte.debito_7g_min, 300);
 });
 
-test("senza debito il pisolino non crea un credito, ma abbassa comunque il fabbisogno", async () => {
+test("senza debito il pisolino abbassa comunque il fabbisogno di stanotte", async () => {
   const env = makeEnv(); await setup(env); await seed(env);
   await watchNap(env, day(0), "14:00", "15:00");
   const d = await dayData(env);
-  assert.equal(d.sonno_stanotte.debito_7g_min, 0); assert.equal(d.sonno_stanotte.debito_pagato_min, 0);
+  assert.equal(d.sonno_stanotte.debito_7g_min, 0);
   assert.equal(d.sonno_stanotte.fabbisogno_min, 420);
 });
 
@@ -172,4 +171,17 @@ test("infortunio: segno se ho fatto gli esercizi, il coach lo sa", async () => {
   await call(env, "/api/infortunio", { method: "POST", code: CODE, body: { attivo: false } });
   await call(env, "/api/infortunio", { method: "POST", code: CODE, body: { attivo: true, descrizione: "spalla" } });
   assert.equal((await plan()).data.esito, null);
+});
+
+test("debito come saldo: le notti più lunghe lo ripagano, al massimo un'ora l'una", async () => {
+  const env = makeEnv(); await setup(env); await seed(env);
+  // 2 nights of 6 h four and five days ago → 4 h of debt
+  for (const i of [4, 5]) {
+    await env.DB.prepare("DELETE FROM sleep WHERE start = ?").bind(ts(day(i + 1), "23:00")).run();
+    await env.DB.prepare("INSERT INTO sleep(start,end,stage) VALUES(?,?,'core')").bind(ts(day(i), "01:00"), ts(day(i), "02:00")).run();
+  }
+  assert.equal((await dayData(env)).sonno_stanotte.debito_7g_min, 240);
+  // then two long nights (10 h: 21:00 → 07:00): each repays at most 1 h
+  for (const i of [1, 2]) await env.DB.prepare("INSERT INTO sleep(start,end,stage) VALUES(?,?,'core')").bind(ts(day(i + 1), "21:00"), ts(day(i + 1), "23:00")).run();
+  assert.equal((await dayData(env)).sonno_stanotte.debito_7g_min, 120);
 });

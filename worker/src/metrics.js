@@ -26,8 +26,12 @@ const CALC_VERSION = 2;     // bump when the recovery formula changes: frozen da
 const GAP_MS = 2 * 3600e3;  // pausa oltre la quale due blocchi di sonno sono sessioni diverse
 const NAP_MIN_MIN = 10;     // a nap counts from 10 minutes asleep
 const NIGHT_FLOOR_MIN = 360; // a nap lowers tonight's need, never below 6 h: deep and REM sleep come mostly at night
-// sleep of a day: the main night plus that day's naps (naps of today are handled apart, see enrich)
+const SURPLUS_MAX_MIN = 60;  // a long night repays the debt, but counts at most 1 h more than your need
+// naps taken during a day (they belong to the sleep of the night that follows)
 const napMin = (d) => d?.pisolini?.totale_min || 0;
+// one "sleep" = the night plus the naps of the day before it, counted once (the same rule as sleepneed.js):
+// a nap today is part of tonight's sleep, so it lowers tonight's need and is checked tomorrow morning
+const sleepTotal = (days, j) => (days[j]?.sonno ? days[j].sonno.durata_min + napMin(days[j - 1]) : null);
 
 const DAY_MS = 86400e3;
 const SLEEP_NEED_MIN = 480;  // fabbisogno di riferimento: 8 h (centro dell'intervallo AASM 7-9 h)
@@ -334,9 +338,10 @@ function finalize(days, idx, maskOf, baseFrom = null) {
   }
 
   // ---- bilancio di sonno: media delle ultime 14 notti rispetto al fabbisogno (Oura "Sleep balance") ----
-  // naps count in the balance (Oura and Whoop do the same), except today's: today's recovery is the morning's picture
-  const last14 = days.slice(Math.max(0, idx - 13), idx + 1).filter((d) => d.sonno);
-  const balance = last14.length >= 3 ? mean(last14.map((d) => d.sonno.durata_min + (d === today ? 0 : napMin(d)))) - SLEEP_NEED_MIN : null;
+  // each night with the naps of the day before it; today's naps belong to tonight (today's recovery is the morning's picture)
+  const last14 = [];
+  for (let j = Math.max(0, idx - 13); j <= idx; j++) if (days[j].sonno) last14.push(sleepTotal(days, j));
+  const balance = last14.length >= 3 ? mean(last14) - SLEEP_NEED_MIN : null;
 
   // ---- baseline personali (60 giorni, solo giorni precedenti) ----
   const vals = (f) => prev.map(f).filter((x) => x != null && Number.isFinite(x));
@@ -565,17 +570,22 @@ function enrich(days, data, profile, from) {
     else if (hrvLow && ratio != null && ratio > 1.3) d.allarme = { tipo: "sovraccarico", titolo: "Stai accumulando fatica", testo: "Da tre giorni l'HRV è sotto il tuo intervallo normale e il carico è sopra il solito. Inserisci 2-3 giorni leggeri prima della prossima seduta dura." };
 
     // fabbisogno di sonno per stanotte (come Whoop: base + carico del giorno + recupero del debito)
-    // past days count their naps too; today's naps are taken off tonight's need directly (Whoop: "recent naps")
-    const last7 = days.slice(Math.max(0, i - 6), i + 1).filter((x) => x.sonno);
-    const debt = last7.reduce((a, x) => a + Math.max(0, need0 - x.sonno.durata_min - (x === d ? 0 : napMin(x))), 0);
+    // debt = net balance of the last 7 sleeps against your need (Oura: total sleep of each day vs need):
+    // short sleeps add, longer ones repay (at most 1 h each); never below zero. Every nap counts once,
+    // with the night after it: today's naps are not in the debt yet, they lower tonight's need instead.
+    let net = 0;
+    for (let j = Math.max(0, i - 6); j <= i; j++) {
+      const tot = sleepTotal(days, j);
+      if (tot != null) net += Math.max(-SURPLUS_MAX_MIN, need0 - tot);
+    }
+    const debt = Math.max(0, net);
     const strainAdd = chronic && load[i] != null ? clamp((load[i] / chronic - 1) * 30, 0, 45) : 0;
     const debtAdd = clamp(debt / 7, 0, 60);
     const before = need0 + strainAdd + debtAdd;
-    // today's naps, minute for minute (Whoop, Oura and Rise count naps in the day's total sleep):
-    // they pay back the week's debt and take the same minutes off tonight's need (never below 6 h)
+    // today's naps are already part of tonight's sleep: minute for minute off tonight's need (Whoop, "recent naps"),
+    // never below 6 h. If tonight you sleep the rest, tomorrow the debt drops by tonight's instalment.
     const napToday = napMin(d);
     const needTonight = Math.round(napToday ? Math.max(before - napToday, Math.min(before, NIGHT_FLOOR_MIN)) : before);
-    const debtNow = Math.max(0, debt - napToday);
     // sveglia: dal profilo, altrimenti l'orario medio di risveglio delle ultime 14 notti registrate
     let wake = profile.sveglia ? Number(profile.sveglia.slice(0, 2)) * 60 + Number(profile.sveglia.slice(3)) : null;
     if (wake == null) {
@@ -584,8 +594,8 @@ function enrich(days, data, profile, from) {
     }
     const bed = wake == null ? null : (wake - needTonight - 15 + 1440 * 2) % 1440; // 15 minuti per addormentarsi
     d.sonno_stanotte = { fabbisogno_min: needTonight, base_min: need0, base_fonte: needSource,
-      base_stima: profile.sonno_min ? null : { margine: est.margine, notti: est.notti, metodi: est.metodi, mancano: est.mancano }, per_carico_min: Math.round(strainAdd), per_debito_min: Math.round(debtAdd), debito_7g_min: Math.round(debtNow),
-      pisolino_min: napToday ? Math.round(before) - needTonight : 0, debito_pagato_min: Math.round(debt - debtNow),
+      base_stima: profile.sonno_min ? null : { margine: est.margine, notti: est.notti, metodi: est.metodi, mancano: est.mancano }, per_carico_min: Math.round(strainAdd), per_debito_min: Math.round(debtAdd), debito_7g_min: Math.round(debt),
+      pisolino_min: napToday ? Math.round(before) - needTonight : 0,
       sveglia: wake == null ? null : `${String(Math.floor(wake / 60)).padStart(2, "0")}:${String(wake % 60).padStart(2, "0")}`,
       a_letto: bed == null ? null : `${String(Math.floor(bed / 60)).padStart(2, "0")}:${String(bed % 60).padStart(2, "0")}` };
   });

@@ -2,6 +2,12 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.22.1] — 2026-10-12
+
+### Corretto
+- **Il pisolino contava due volte**: toglieva i suoi minuti sia dal debito di sonno sia dal sonno di stanotte. Ora conta una volta sola, insieme alla notte che lo segue (la stessa regola della stima del fabbisogno): stanotte ti serve meno sonno e vai a letto più tardi, ma il debito non cala subito. Domani mattina pisolino e notte vengono contati insieme: se hai dormito quanto serviva, il debito scende della rata di stanotte.
+- **Debito di sonno come saldo**: prima contava solo le notti corte degli ultimi 7 giorni e le notti più lunghe non lo ripagavano. Ora è il saldo dei 7 sonni rispetto al tuo fabbisogno: le notti corte lo aumentano, quelle più lunghe lo riducono (al massimo un'ora per notte). Pagina Sonno e notifica della sera usano lo stesso numero.
+
 ## [1.22.0] — 2026-10-12
 
 ### Cambiato
