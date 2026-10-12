@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { makeEnv, call, setup, CODE } from "./helpers.js";
+import { makeEnv, call, setup, CODE, checkinToday } from "./helpers.js";
 import { parseSchedeText } from "../src/workout.js";
 
 const day = (n) => new Date(Date.now() - n * 86400e3).toISOString().slice(0, 10);
@@ -21,7 +21,7 @@ const ai = (obj) => ({ run: async () => ({ response: typeof obj === "string" ? o
 const rec = (env, body = {}) => call(env, "/api/allenamento/oggi", { method: "POST", code: CODE, body }).then((r) => r.data);
 
 test("allenamento del giorno: solo tra gli sport scelti, con seduta completa (regole senza IA)", async () => {
-  const env = makeEnv(); await setup(env); await seed(env);
+  const env = makeEnv(); await setup(env); await checkinToday(env); await seed(env);
   await call(env, "/api/profilo", { method: "POST", code: CODE, body: { sport: ["nuoto", "bici"] } });
   const r = await rec(env);
   assert.ok(["nuoto", "bici"].includes(r.sport), r.sport);
@@ -34,7 +34,7 @@ test("allenamento del giorno: solo tra gli sport scelti, con seduta completa (re
 });
 
 test("allenamento del giorno: con un allarme solo intensità leggera e niente pesi", async () => {
-  const env = makeEnv(); await setup(env); await seed(env, { hrv: (i) => (i <= 1 ? 40 : 70 + (i % 3)), fcr: (i) => (i <= 1 ? 58 : 50 + (i % 2)) });
+  const env = makeEnv(); await setup(env); await checkinToday(env); await seed(env, { hrv: (i) => (i <= 1 ? 40 : 70 + (i % 3)), fcr: (i) => (i <= 1 ? 58 : 50 + (i % 2)) });
   await call(env, "/api/profilo", { method: "POST", code: CODE, body: { sport: ["palestra", "nuoto"] } });
   const r = await rec(env);
   assert.equal(r.intensita, "leggero");
@@ -43,19 +43,19 @@ test("allenamento del giorno: con un allarme solo intensità leggera e niente pe
 
 test("allenamento del giorno dall'IA: l'intensità non può superare il limite, sport non scelti rifiutati", async () => {
   const env = makeEnv({ AI: ai({ sport: "bici", intensita: "intenso", titolo: "Ripetute", durata_min: 60, struttura: [{ fase: "Riscaldamento", dettaglio: "15'" }, { fase: "Parte centrale", dettaglio: "5x4'" }], scheda: null, perche: "test" }) });
-  await setup(env); await seed(env, { hrv: (i) => (i <= 1 ? 40 : 70 + (i % 3)), fcr: (i) => (i <= 1 ? 58 : 50 + (i % 2)) });
+  await setup(env); await checkinToday(env); await seed(env, { hrv: (i) => (i <= 1 ? 40 : 70 + (i % 3)), fcr: (i) => (i <= 1 ? 58 : 50 + (i % 2)) });
   await call(env, "/api/profilo", { method: "POST", code: CODE, body: { sport: ["bici", "nuoto"] } });
   const r = await rec(env);
   assert.equal(r.fonte, "ia"); assert.equal(r.sport, "bici"); assert.equal(r.intensita, "leggero", "tagliata dal limite");
   const env2 = makeEnv({ AI: ai({ sport: "corsa", intensita: "medio", titolo: "x", durata_min: 30, struttura: [{ fase: "a", dettaglio: "b" }] }) });
-  await setup(env2); await seed(env2);
+  await setup(env2); await checkinToday(env2); await seed(env2);
   await call(env2, "/api/profilo", { method: "POST", code: CODE, body: { sport: ["nuoto"] } });
   const r2 = await rec(env2);
   assert.equal(r2.sport, "nuoto"); assert.equal(r2.fonte, "regole");
 });
 
 test("palestra: proposta la prossima scheda in rotazione", async () => {
-  const env = makeEnv(); await setup(env); await seed(env);
+  const env = makeEnv(); await setup(env); await checkinToday(env); await seed(env);
   await call(env, "/api/profilo", { method: "POST", code: CODE, body: { sport: ["palestra"] } });
   await call(env, "/api/schede", { method: "PUT", code: CODE, body: { schede: [{ nome: "A", esercizi: [{ nome: "Panca", serie: 3, min: 8, max: 10 }] }, { nome: "B", esercizi: [{ nome: "Squat", serie: 3, min: 5, max: 5 }] }] } });
   await call(env, "/api/forza", { method: "POST", code: CODE, body: { serie: [{ start: ts(day(2), "18:00"), end: ts(day(2), "19:00"), workout: "A", exercise: "Panca", set_index: 0, weight: 80, reps: 10, rpe: 7 }] } });
@@ -64,7 +64,7 @@ test("palestra: proposta la prossima scheda in rotazione", async () => {
 });
 
 test("schede: validazione, salvataggio e ultima seduta per precompilare", async () => {
-  const env = makeEnv(); await setup(env);
+  const env = makeEnv(); await setup(env); await checkinToday(env);
   const r = await call(env, "/api/schede", { method: "PUT", code: CODE, body: { schede: [{ nome: "Push", esercizi: [{ nome: "Panca piana", serie: 4, min: 8, max: 10 }, { nome: "", serie: 3, min: 8, max: 10 }, { nome: "Dip", serie: 99, min: 8, max: 10 }, { nome: "Croci", serie: 3, min: 12, max: 8 }] }] } });
   assert.equal(r.data.schede.length, 1);
   assert.deepEqual(r.data.schede[0].esercizi.map((e) => e.nome), ["Panca piana"]);
@@ -79,7 +79,7 @@ test("schede dal testo: con l'IA e, se non c'è, con le regole", async () => {
   const rules = parseSchedeText(text);
   assert.equal(rules.schede.length, 2);
   assert.deepEqual(rules.schede[1].esercizi.map((e) => [e.nome, e.serie, e.min, e.max]), [["squat", 5, 5, 5], ["leg press", 3, 10, 12]]);
-  const env = makeEnv(); await setup(env);
+  const env = makeEnv(); await setup(env); await checkinToday(env);
   const r = (await call(env, "/api/schede/ia", { method: "POST", code: CODE, body: { testo: text } })).data;
   assert.equal(r.fonte, "regole"); assert.equal(r.schede.length, 2);
   const env2 = makeEnv({ AI: ai('Ecco: {"schede":[{"nome":"Scheda A – Petto","esercizi":[{"nome":"Panca piana con bilanciere","serie":4,"min":8,"max":10,"note":""}]}]}') });

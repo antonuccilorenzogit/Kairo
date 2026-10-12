@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { makeEnv, call, setup, CODE } from "./helpers.js";
+import { makeEnv, call, setup, CODE, checkinToday } from "./helpers.js";
 import { extractTags, MAX_ITEMS } from "../src/memory.js";
 
 // Fake Workers AI: answers with `reply`, records the prompts it received.
@@ -21,7 +21,7 @@ test("il coach ricorda tra una conversazione e l'altra e dimentica su richiesta"
     "Bene, ci lavoriamo. [[RICORDA: ha dolore alla spalla destra in panca piana]]",
     "Ok, lo tolgo. [[DIMENTICA: dolore spalla]]",
   ]);
-  const env = makeEnv({ AI }); await setup(env);
+  const env = makeEnv({ AI }); await setup(env); await checkinToday(env);
   const r = await call(env, "/api/coach/chat", { method: "POST", code: CODE, body: { domanda: "Mi fa male la spalla in panca" } });
   assert.equal(r.data.testo, "Bene, ci lavoriamo.");
   assert.match(r.data.meta, /📌 Me lo segno: ha dolore alla spalla destra/);
@@ -37,7 +37,7 @@ test("il coach ricorda tra una conversazione e l'altra e dimentica su richiesta"
 });
 
 test("memoria dalle Impostazioni: aggiungi, niente doppioni, elimina, limite", async () => {
-  const env = makeEnv(); await setup(env);
+  const env = makeEnv(); await setup(env); await checkinToday(env);
   const add = (testo) => call(env, "/api/memoria", { method: "POST", code: CODE, body: { testo } });
   await add("Gara di 10 km il 2026-11-15");
   await add("Gara di 10 km il 2026-11-15");
@@ -55,7 +55,7 @@ test("memoria dalle Impostazioni: aggiungi, niente doppioni, elimina, limite", a
 });
 
 test("la memoria finisce nel backup e si ripristina", async () => {
-  const env = makeEnv(); await setup(env);
+  const env = makeEnv(); await setup(env); await checkinToday(env);
   await call(env, "/api/memoria", { method: "POST", code: CODE, body: { testo: "Preferisce allenarsi la sera" } });
   const exp = (await call(env, "/api/export", { code: CODE })).data;
   assert.equal(exp.memoria.length, 1);

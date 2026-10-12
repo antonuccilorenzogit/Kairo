@@ -2,6 +2,11 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [Non pubblicato]
+
+### Cambiato
+- **Prima il check-in**: finché non fai il check-in del mattino la pagina Oggi mostra solo l'invito a farlo (o «Oggi salto il check-in»). Messaggio del coach e allenamento del giorno vengono scritti una volta sola, dopo il check-in e con tutte le informazioni: niente più doppia generazione. Anche la notifica del mattino invita al check-in.
+
 ## [1.10.2] — 2026-10-12
 
 ### Migliorato

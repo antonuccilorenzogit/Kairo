@@ -86,11 +86,14 @@ async function morningPush(env, origin) {
   // claim today's slot atomically, so two syncs at the same time do not send two notifications
   const r = await env.DB.prepare("INSERT INTO settings(key,value) VALUES('push_mattina',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE settings.value != excluded.value").bind(day).run();
   if (!r.meta?.changes) return;
+  if (!(await hasCheckin(env.DB, day))) return sendPush(env, { title: "Buongiorno", body: prof.infortunio?.attivo ? "Il recupero di stanotte è pronto: fai il check-in e segna il dolore per il piano di oggi." : "Il recupero di stanotte è pronto: fai il check-in di 10 secondi per vedere com'è andata e cosa fare oggi.", url: "/#/oggi" }, origin);
   if (prof.infortunio?.attivo) return sendPush(env, { title: "Modalità infortunio", body: "Segna quanto ti fa male oggi: il coach ti dice se riposare o quali esercizi fare.", url: "/#/oggi" }, origin);
   const label = d.recupero.score >= 67 ? "Recuperato" : d.recupero.score >= 34 ? "Recupero parziale" : "Recupero basso";
   const body = d.allarme ? `${d.allarme.titolo}: oggi vai leggero.` : d.carico?.consiglio ? `Oggi: ${d.carico.consiglio.titolo.toLowerCase()} — ${d.carico.consiglio.testo}.` : "Apri Kairo per il consiglio di oggi.";
   await sendPush(env, { title: `${label} · ${d.recupero.score}`, body, url: "/#/oggi" }, origin);
 }
+
+const hasCheckin = async (db, day) => !!(await db.prepare("SELECT 1 FROM checkin WHERE day = ?").bind(day).first());
 
 // The night is complete when it has the Watch's sleep stages (or was declared by hand in the check-in).
 const nightComplete = (d) => !!d.sonno && (d.sonno.manuale || (d.sonno.fasi_min && (d.sonno.fasi_min.profondo || 0) + (d.sonno.fasi_min.rem || 0) > 0));
@@ -349,6 +352,7 @@ async function api(req, env, url) {
   }
   if (p === "/api/allenamento/oggi" && req.method === "POST") {
     const b = (await readJson(req)) || {};
+    if (!(await hasCheckin(env.DB, todayLocal(tz)))) return json({ checkin_richiesto: true });
     const profile = await getProfile(env.DB);
     const hist = await computeHistory(env.DB, todayLocal(tz), 8);
     if (profile.infortunio?.attivo) {
@@ -423,6 +427,8 @@ async function api(req, env, url) {
   }
   if (p === "/api/coach/oggi" && req.method === "POST") {
     const b = (await readJson(req)) || {};
+    // today's texts are written only after the morning check-in: one generation, with all the information
+    if (!(await hasCheckin(env.DB, todayLocal(tz)))) return json({ checkin_richiesto: true });
     return json(await dailyAdvice(env, req, todayLocal(tz), !!b.forza, await coachProfile(env.DB)));
   }
   if (p === "/api/coach/chat" && req.method === "POST") {

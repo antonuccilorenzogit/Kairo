@@ -26,3 +26,15 @@ test("notte completata dopo la sveglia: i testi del giorno si rifanno solo se ar
   await call(env, "/api/ingest", { method: "POST", code: CODE, body: { hrv_valori: "64", hrv_date: `${today}T03:30:00+02:00` } });
   assert.equal(await count(), 0, "HRV durante il sonno: testi da rifare");
 });
+
+test("senza check-in di oggi niente testi del coach né allenamento: nessuna chiamata all'IA", async () => {
+  let calls = 0;
+  const env = makeEnv({ AI: { run: async () => { calls++; return { response: "ok" }; } } }); await setup(env);
+  assert.equal((await call(env, "/api/coach/oggi", { method: "POST", code: CODE, body: {} })).data.checkin_richiesto, true);
+  assert.equal((await call(env, "/api/allenamento/oggi", { method: "POST", code: CODE, body: {} })).data.checkin_richiesto, true);
+  assert.equal(calls, 0);
+  const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Rome" }).format(new Date());
+  await call(env, "/api/checkin", { method: "POST", code: CODE, body: { day: today } }); // "oggi salto il check-in"
+  const r = await call(env, "/api/coach/oggi", { method: "POST", code: CODE, body: {} });
+  assert.equal(r.data.checkin_richiesto, undefined); assert.equal(calls, 1);
+});

@@ -164,6 +164,22 @@ views.oggi = async (el) => {
   const [stLabel, stCls] = STATO[c.stato] || STATO.calibrazione;
   const sleepNow = d.sonno ? `${fmtMin(d.sonno.durata_min)}${d.sonno.manuale ? " (dichiarate)" : ` · ${d.sonno.punteggio} punti`}` : null;
   const monday = new Date().getDay() === 1;
+  // no check-in yet today: only the invitation. The coach writes today's texts once, after the check-in.
+  if (!d.checkin) {
+    el.innerHTML = `${header(`Ciao${p.nome ? ",<br>" + esc(p.nome) : ""}`, { sub: fmtDate(d.giorno), sync: true })}
+      <div class="col today">
+      <div class="card col center" style="gap:12px;padding:26px 20px">${bean(null, 70)}
+        <div class="h2">Prima il check-in</div>
+        <div class="small" style="line-height:1.5;color:var(--text);max-width:300px">Com'è andata ieri e come ti senti: 10 secondi. Poi vedi recupero, sonno e cosa fare oggi, con il consiglio del coach scritto su misura.</div>
+        <button class="btn orange block" data-checkin style="min-height:52px;border-radius:18px;justify-content:center"><b>Fai il check-in</b>${ico.arrow}</button>
+        <button class="small muted" id="skipCk" style="background:none;border:0;cursor:pointer;text-decoration:underline">Oggi salto il check-in</button></div>
+      <a class="card row between" href="#/settimana"><span style="font-weight:800">La tua settimana</span>${ico.chevron}</a>
+      </div>`;
+    el.querySelectorAll("[data-checkin]").forEach((b) => b.addEventListener("click", () => checkinSheet(null, !d.sonno || d.sonno.manuale)));
+    $("#skipCk").onclick = async () => { try { await api("/api/checkin", { method: "POST", body: { day: todayStr() } }); router(); } catch (e) { toast(e.message); } };
+    $("#syncNow").onclick = () => { const back = () => { if (document.visibilityState !== "visible") return; document.removeEventListener("visibilitychange", back); setTimeout(() => router(), 1500); }; document.addEventListener("visibilitychange", back); };
+    return;
+  }
   // right after waking up the Watch has not processed the sleep stages yet: offer a new sync (runs HealthSync)
   const nightPending = hour < 12 && (!d.sonno || (!d.sonno.manuale && d.sonno.fasi_min && (d.sonno.fasi_min.profondo || 0) + (d.sonno.fasi_min.rem || 0) === 0));
   watchSyncReturn = false;
@@ -190,7 +206,7 @@ views.oggi = async (el) => {
     <button class="card soft row" id="coachCard" style="gap:12px;border:0;text-align:left;cursor:pointer;width:100%;font:inherit;color:inherit">
       <div class="col" style="gap:4px;flex:1;min-width:0"><div class="label">Il coach</div><div id="advice" class="small" style="color:var(--text);line-height:1.45;${clamp(3)}"><div class="skeleton" style="width:90%"></div></div></div>${ico.chevron}</button>
     ${d.checkin
-      ? `<button class="card row between" data-checkin style="border:0;text-align:left;cursor:pointer;font:inherit;color:inherit;width:100%"><span style="font-weight:800">Check-in fatto <span class="good">✓</span></span><span class="small muted">modifica</span></button>`
+      ? `<button class="card row between" data-checkin style="border:0;text-align:left;cursor:pointer;font:inherit;color:inherit;width:100%"><span style="font-weight:800">${d.checkin.energia == null && d.checkin.attivita == null ? "Check-in saltato" : `Check-in fatto <span class="good">✓</span>`}</span><span class="small muted">${d.checkin.energia == null && d.checkin.attivita == null ? "fallo ora" : "modifica"}</span></button>`
       : `<button class="btn orange block" data-checkin style="justify-content:space-between;min-height:52px;border-radius:18px"><span><b>Check-in del mattino</b> <span class="small" style="font-weight:600">· 10 secondi</span></span>${ico.arrow}</button>`}
     <a class="card row between" href="#/settimana" style="${monday ? "background:var(--soft)" : ""}"><span style="font-weight:800">La tua settimana${monday ? ` <span class="small" style="color:var(--orange-ink)">· resoconto pronto</span>` : ""}</span>${ico.chevron}</a>
     </div>`;

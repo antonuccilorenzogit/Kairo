@@ -49,4 +49,9 @@ export async function setup(env) {
   const r = await call(env, "/api/setup", { method: "POST", body: { codice: CODE } });
   if (r.status !== 200) throw new Error("setup failed: " + JSON.stringify(r.data));
 }
+// today's morning check-in (the coach writes today's texts only after it)
+export async function checkinToday(env) {
+  const day = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Rome" }).format(new Date());
+  await env.DB.prepare("INSERT OR IGNORE INTO checkin(day, energia) VALUES(?, 4)").bind(day).run();
+}
 export const count = async (env, table, where = "1=1") => (await env.DB.prepare(`SELECT count(*) n FROM ${table} WHERE ${where}`).first()).n;
