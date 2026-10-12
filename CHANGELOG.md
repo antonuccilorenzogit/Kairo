@@ -2,6 +2,12 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.19.1] — 2026-10-12
+
+### Corretto
+- **Scaricare HealthSync dall'app sulla schermata Home**: il link si apriva in un browser interno che non sa salvare file (pagina bianca). Ora si apre direttamente in Safari, dove il download funziona; in più c'è «Copia il link e aprilo in Safari».
+- **Collegamento iPhone** ha il pulsante «Scarica HealthSync» con i passi per sostituire il comando vecchio e ricollegare le automazioni.
+
 ## [1.19.0] — 2026-10-12
 
 ### Aggiunto

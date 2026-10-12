@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.19.0";
+const APP_VERSION = "1.19.1";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -1670,13 +1670,26 @@ async function migrateGroqKey() {
 }
 
 // ---- Collegamento iPhone ----
+// From the app on the home screen a download opens in an in-app browser that cannot save files (blank page):
+// "x-safari-https://…" hands the link to Safari (iOS 17+), where the download works.
+const standalone = () => window.navigator.standalone === true || window.matchMedia?.("(display-mode: standalone)").matches;
+const shortcutHref = (f) => { const u = new URL("shortcuts/" + f, location.href).href; return standalone() ? "x-safari-" + u : u; };
 views.collegamento = async (el) => {
   el.innerHTML = `${subHeader("Collegamento iPhone")}
     <div class="card col" style="gap:12px">
       <div class="small" style="line-height:1.5;color:var(--text)">Il comando <b>HealthSync</b> usa questo link per mandare i dati del Watch. Serve solo a inviare dati: non apre l'app.</div>
       <div class="card soft code" id="linkBox" style="word-break:break-all">…</div>
       <div class="row"><button class="btn primary" id="copyLink" style="flex:2">Copia link</button><button class="btn ghost" id="newLink" style="flex:1">Rigenera</button></div>
-      <a class="btn ghost" href="#/guida">Guida passo passo</a></div>`;
+      <a class="btn ghost" href="#/guida">Guida passo passo</a></div>
+    <div class="card col" style="gap:10px"><div class="h2">Aggiorna HealthSync</div>
+      <div class="small" style="line-height:1.5;color:var(--text)">Serve la versione 1.3.0 per riconoscere nuoto, corsa e bici delle tue sedute.</div>
+      <a class="btn orange block" href="${shortcutHref("HealthSync.shortcut")}">Scarica HealthSync</a>
+      <button class="btn ghost" id="copySc">Non si scarica? Copia il link e aprilo in Safari</button>
+      <ol class="steps small" style="line-height:1.5"><li>Si apre Safari → <b>Scarica</b> → icona download ↓ → <b>HealthSync.shortcut</b>.</li>
+        <li>In Comandi: <b>Configura comando</b> → incolla il link qui sopra (tocca prima «Copia link») → <b>Aggiungi</b>. Si chiamerà «HealthSync 1».</li>
+        <li>Elimina il vecchio <b>HealthSync</b> e rinomina il nuovo in <b>HealthSync</b>.</li>
+        <li>In <b>Automazione</b> apri ogni automazione di HealthSync e riscegli il comando, se Comandi lo chiede.</li></ol></div>`;
+  $("#copySc").onclick = () => copyText(new URL("shortcuts/HealthSync.shortcut", location.href).href, "Link copiato: incollalo nella barra di Safari");
   let link = "";
   api("/api/collegamento").then((r) => { link = r.link; $("#linkBox").textContent = link; }).catch((e) => { $("#linkBox").textContent = e.message; });
   $("#copyLink").onclick = () => link && copyText(link, "Link copiato");
@@ -1929,7 +1942,7 @@ const GUIDE = [
   { t: "Installa il comando", body: () => `
     <div style="line-height:1.55;color:var(--text)">Due pulsanti, in quest'ordine:</div>
     <button class="btn primary block" id="copyLink">① Copia il link di collegamento</button>
-    <a class="btn orange block" href="shortcuts/HealthSync.shortcut" target="_blank" rel="noopener">② Scarica HealthSync</a>
+    <a class="btn orange block" href="${shortcutHref("HealthSync.shortcut")}">② Scarica HealthSync</a>
     <ol class="steps"><li>Safari chiede <b>«Scaricare HealthSync.shortcut?»</b> → tocca <b>Scarica</b>.</li>
       <li>Tocca l'icona <b>download</b> (cerchio con la freccia ↓, nella barra di Safari) → tocca <b>HealthSync.shortcut</b>. Si apre l'app Comandi.</li>
       <li>Tocca <b>Configura comando</b>. Nel riquadro tieni premuto → <b>Incolla</b> (è il link copiato al punto ①).</li>
