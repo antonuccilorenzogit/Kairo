@@ -2,7 +2,7 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
-## [Non pubblicato]
+## [1.9.1] — 2026-10-12
 
 ### Corretto
 - **Notte incompleta al risveglio**: il Watch elabora le fasi del sonno qualche minuto dopo la sveglia, quindi il primo invio poteva avere la notte a metà. Ora quando arrivano dati nuovi della notte (fasi, HRV, FC a riposo, respirazione) consiglio del coach e allenamento del giorno vengono rifatti; la notifica del mattino aspetta la notte completa (dopo le 10 parte comunque); nella pagina Oggi la riga del sonno dice «Il Watch sta elaborando la notte · tocca per aggiornare», che lancia HealthSync, e al ritorno la pagina si aggiorna. Nella guida c'è una terza automazione consigliata: *Ora del giorno*, 30 minuti dopo la sveglia.
