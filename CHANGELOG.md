@@ -2,6 +2,14 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.21.0] — 2026-10-12
+
+### Migliorato
+- **Il sonno che ti serve, stimato davvero** (con «Sonno che ti serve: Automatico» nel profilo). Prima era la mediana delle notti dopo cui il Recupero era verde: un calcolo circolare (il Recupero contiene già il sonno) che misurava le abitudini più che il bisogno e scambiava per «corte ma sufficienti» le notti dopo un pisolino. Ora Kairo usa i due metodi della ricerca sul sonno:
+  - **come ti svegli dopo ogni notte**: sonno delle 24 ore (notte + pisolini del giorno prima) contro la mattina dopo (HRV rispetto alla tua media ed energia del check-in, mai lo score di Recupero), corretto per l'allenamento del giorno prima. Cerca il punto oltre cui dormire di più non migliora più la mattina;
+  - **i risvegli senza sveglia** dopo notti senza debito: in quelle notti dormi circa quello che ti serve.
+- Servono almeno 30 notti con il Watch e un segnale del mattino; le notti con alcol, malanno o viaggio restano fuori. Se i dati non mostrano un punto chiaro, Kairo tiene il riferimento di 8 ore e lo dice: mai un numero inventato. La pagina Sonno mostra da dove viene la base («la tua, stimata da 42 notti, ±15 min»).
+
 ## [1.20.1] — 2026-10-12
 
 ### Migliorato

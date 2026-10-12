@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.20.1";
+const APP_VERSION = "1.21.0";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -756,6 +756,14 @@ function lineChart(vals, labels) {
   </svg>`;
 }
 
+// where tonight's base comes from: the profile, your nights, or the 8-hour reference while data are too few
+function baseNote(sn) {
+  const b = sn.base_stima;
+  if (sn.base_fonte === "profilo") return " (scelta nel profilo)";
+  if (sn.base_fonte === "imparato" && b) return ` (la tua, stimata da ${b.notti} notti${b.margine ? `, ±${b.margine} min` : ""})`;
+  if (b && b.mancano) return ` (riferimento: per stimare la tua servono ancora ${b.mancano} notti con il Watch e il check-in)`;
+  return " (riferimento: i tuoi dati non mostrano ancora un punto chiaro)";
+}
 views.sonno = async (el) => {
   el.innerHTML = header("Sonno") + loading(3);
   const today = todayStr();
@@ -764,7 +772,7 @@ views.sonno = async (el) => {
   const tonight = sn ? `<div class="card col" style="gap:8px"><div class="label">Stanotte</div>
       <div class="row between"><div class="col" style="gap:2px"><div style="font-size:30px;font-weight:900;line-height:1">${fmtMin(sn.fabbisogno_min)}</div><div class="small muted">di sonno ti servono</div></div>
         ${sn.a_letto ? `<div class="col" style="gap:2px;text-align:right"><div style="font-size:30px;font-weight:900;line-height:1;color:var(--orange-ink)">${sn.a_letto}</div><div class="small muted">a letto entro${sn.sveglia ? ` · sveglia ${sn.sveglia}` : ""}</div></div>` : ""}</div>
-      <div class="small" style="color:var(--text);line-height:1.5">Base ${fmtMin(sn.base_min)}${sn.per_carico_min ? ` + ${sn.per_carico_min} min per il carico di oggi` : ""}${sn.per_debito_min ? ` + ${sn.per_debito_min} min per recuperare il debito della settimana` : ""}${sn.pisolino_min ? ` − ${sn.pisolino_min} min per il pisolino di oggi` : ""}.${sn.a_letto ? "" : " Imposta la sveglia nel profilo per l'orario consigliato."}</div>
+      <div class="small" style="color:var(--text);line-height:1.5">Base ${fmtMin(sn.base_min)}${baseNote(sn)}${sn.per_carico_min ? ` + ${sn.per_carico_min} min per il carico di oggi` : ""}${sn.per_debito_min ? ` + ${sn.per_debito_min} min per recuperare il debito della settimana` : ""}${sn.pisolino_min ? ` − ${sn.pisolino_min} min per il pisolino di oggi` : ""}.${sn.a_letto ? "" : " Imposta la sveglia nel profilo per l'orario consigliato."}</div>
       <div class="small muted" style="line-height:1.5">Debito di sonno della settimana: <b style="color:var(--text)">${sn.debito_7g_min ? fmtShort(sn.debito_7g_min) : "nessuno"}</b>${sn.debito_pagato_min ? ` (il pisolino ne ha tolti ${fmtShort(sn.debito_pagato_min)})` : ""}.</div></div>` : "";
   // today's naps (from the Watch or entered by hand): they lower tonight's need, not today's recovery
   const naps = d.pisolini?.sessioni || [];

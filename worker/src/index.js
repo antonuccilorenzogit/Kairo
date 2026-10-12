@@ -25,7 +25,7 @@ import { getPlan, savePlan, restartPlan, planToday, planOverview, saveOutcome, b
 import { propose } from "./progression.js";
 import { getVapid, sendPush, validEndpoint } from "./push.js";
 
-const VERSION = "1.20.1";
+const VERSION = "1.21.0";
 
 // No CORS headers: only the Kairo app (same origin) and the Shortcuts app (not a browser) talk to the API.
 const json = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), {

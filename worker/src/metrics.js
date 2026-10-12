@@ -1,6 +1,7 @@
 // Calcolo delle metriche: sonno, valori notturni, baseline personali, Score di Recupero,
 // carico di allenamento, allenamento consigliato, allarmi e fabbisogno di sonno.
 import { getProfile, hrMax, DEFAULT_SLEEP_NEED } from "./profile.js";
+import { estimateSleepNeed } from "./sleepneed.js";
 //
 // Metodi e fonti (nessuna app pubblica la formula esatta dei suoi punteggi: qui si usano i metodi
 // pubblicati e validati che quelle app dichiarano di usare, con soglie tratte dalla letteratura):
@@ -498,12 +499,10 @@ function enrich(days, data, profile, from) {
   ratios.sort((a, b) => a - b);
   const k = ratios.length >= 3 ? clamp(ratios[Math.floor(ratios.length / 2)], 1, 6) : 2;
   const load = days.map((d, i) => (d.attivita.trimp == null && !srpe[i] ? null : Math.round(Math.max(d.attivita.trimp || 0, srpe[i] ? srpe[i] / k : 0))));
-  // personal sleep need: chosen in the profile, otherwise learned from the nights after which you woke up
-  // recovered (score 67+): median of at least 8 such nights, kept between 7 and 9.5 hours
-  const goodNights = days.filter((d) => d.sonno && !d.sonno.manuale && d.recupero?.score >= 67).map((d) => d.sonno.durata_min).sort((a, b) => a - b);
-  const learned = goodNights.length >= 8 ? clamp(Math.round(goodNights[Math.floor(goodNights.length / 2)] / 5) * 5, 420, 570) : null;
-  const need0 = profile.sonno_min || learned || DEFAULT_SLEEP_NEED;
-  const needSource = profile.sonno_min ? "profilo" : learned ? "imparato" : "predefinito";
+  // personal sleep need: chosen in the profile, otherwise learned from your nights (see sleepneed.js)
+  const est = estimateSleepNeed(days, load, profile);
+  const need0 = profile.sonno_min || est.min || DEFAULT_SLEEP_NEED;
+  const needSource = profile.sonno_min ? "profilo" : est.min ? "imparato" : "predefinito";
 
   days.forEach((d, i) => {
     if (d.giorno < from) return;
@@ -584,7 +583,8 @@ function enrich(days, data, profile, from) {
       if (ends.length >= 3) wake = Math.round(mean(ends));
     }
     const bed = wake == null ? null : (wake - needTonight - 15 + 1440 * 2) % 1440; // 15 minuti per addormentarsi
-    d.sonno_stanotte = { fabbisogno_min: needTonight, base_min: need0, base_fonte: needSource, per_carico_min: Math.round(strainAdd), per_debito_min: Math.round(debtAdd), debito_7g_min: Math.round(debtNow),
+    d.sonno_stanotte = { fabbisogno_min: needTonight, base_min: need0, base_fonte: needSource,
+      base_stima: profile.sonno_min ? null : { margine: est.margine, notti: est.notti, metodi: est.metodi, mancano: est.mancano }, per_carico_min: Math.round(strainAdd), per_debito_min: Math.round(debtAdd), debito_7g_min: Math.round(debtNow),
       pisolino_min: napToday ? Math.round(before) - needTonight : 0, debito_pagato_min: Math.round(debt - debtNow),
       sveglia: wake == null ? null : `${String(Math.floor(wake / 60)).padStart(2, "0")}:${String(wake % 60).padStart(2, "0")}`,
       a_letto: bed == null ? null : `${String(Math.floor(bed / 60)).padStart(2, "0")}:${String(bed % 60).padStart(2, "0")}` };
