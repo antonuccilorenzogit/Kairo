@@ -35,7 +35,7 @@ test("allenamento del giorno: solo tra gli sport scelti, con seduta completa (re
 
 test("allenamento del giorno: con un allarme solo intensità leggera e niente pesi", async () => {
   const env = makeEnv(); await setup(env); await checkinToday(env); await seed(env, { hrv: (i) => (i <= 1 ? 40 : 70 + (i % 3)), fcr: (i) => (i <= 1 ? 58 : 50 + (i % 2)) });
-  await call(env, "/api/profilo", { method: "POST", code: CODE, body: { sport: ["palestra", "nuoto"] } });
+  await call(env, "/api/profilo", { method: "POST", code: CODE, body: { eta: 30, sport: ["palestra", "nuoto"] } });
   const r = await rec(env);
   assert.equal(r.intensita, "leggero");
   assert.equal(r.sport, "nuoto");
@@ -44,7 +44,7 @@ test("allenamento del giorno: con un allarme solo intensità leggera e niente pe
 test("allenamento del giorno dall'IA: l'intensità non può superare il limite, sport non scelti rifiutati", async () => {
   const env = makeEnv({ AI: ai({ sport: "bici", intensita: "intenso", titolo: "Ripetute", durata_min: 60, struttura: [{ fase: "Riscaldamento", dettaglio: "15'" }, { fase: "Parte centrale", dettaglio: "5x4'" }], scheda: null, perche: "test" }) });
   await setup(env); await checkinToday(env); await seed(env, { hrv: (i) => (i <= 1 ? 40 : 70 + (i % 3)), fcr: (i) => (i <= 1 ? 58 : 50 + (i % 2)) });
-  await call(env, "/api/profilo", { method: "POST", code: CODE, body: { sport: ["bici", "nuoto"] } });
+  await call(env, "/api/profilo", { method: "POST", code: CODE, body: { eta: 30, sport: ["bici", "nuoto"] } });
   const r = await rec(env);
   assert.equal(r.fonte, "ia"); assert.equal(r.sport, "bici"); assert.equal(r.intensita, "leggero", "tagliata dal limite");
   const env2 = makeEnv({ AI: ai({ sport: "corsa", intensita: "medio", titolo: "x", durata_min: 30, struttura: [{ fase: "a", dettaglio: "b" }] }) });

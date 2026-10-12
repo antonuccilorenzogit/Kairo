@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.16.0";
+const APP_VERSION = "1.17.0";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -170,7 +170,7 @@ views.oggi = async (el) => {
       <div class="col today">
       <div class="card col center" style="gap:12px;padding:26px 20px">${bean(null, 70)}
         <div class="h2">Prima il check-in</div>
-        <div class="small" style="line-height:1.5;color:var(--text);max-width:300px">Com'è andata ieri e come ti senti: 10 secondi. Poi vedi recupero, sonno e cosa fare oggi, con il consiglio del coach scritto su misura.</div>
+        <div class="small" style="line-height:1.5;color:var(--text);max-width:300px">${d.settaggio && !d.settaggio.pronto ? `Com'è andata ieri e come ti senti: 10 secondi. Kairo è in settaggio (giorno ${d.settaggio.giorno}): ogni check-in lo aiuta a conoscerti.` : "Com'è andata ieri e come ti senti: 10 secondi. Poi vedi recupero, sonno e cosa fare oggi, con il consiglio del coach scritto su misura."}</div>
         ${d.notte.hrv_mattino == null ? `<div class="card soft small" style="line-height:1.45;text-align:left">⌚ <b>Prima: 1 minuto di Respira</b> sul Watch, ancora a letto. È la misura di HRV più precisa della giornata.</div>` : `<div class="small good" style="font-weight:700">HRV del mattino ✓</div>`}
         <button class="btn orange block" data-checkin style="min-height:52px;border-radius:18px;justify-content:center"><b>Fai il check-in</b>${ico.arrow}</button>
         <button class="small muted" id="skipCk" style="background:none;border:0;cursor:pointer;text-decoration:underline">Oggi salto il check-in</button></div>
@@ -189,6 +189,29 @@ views.oggi = async (el) => {
     document.addEventListener("visibilitychange", back);
   }
   const clamp = (n) => `display:-webkit-box;-webkit-line-clamp:${n};-webkit-box-orient:vertical;overflow:hidden`;
+  const sleepCard = `<a class="card row between" href="${nightPending ? "shortcuts://run-shortcut?name=HealthSync" : "#/sonno"}" style="gap:12px">
+      <div class="col" style="gap:2px;min-width:0"><div style="font-weight:800">${nightPending ? "Il Watch sta elaborando la notte" : sleepNow ? `Sonno · ${sleepNow}` : "Sonno non registrato"}</div>
+        ${nightPending ? `<div class="small" style="color:var(--orange-ink);font-weight:700">Tocca per aggiornare i dati${sleepNow ? ` (ora: ${sleepNow})` : ""}</div>`
+          : sn && sn.a_letto && hour >= 15 ? `<div class="small" style="color:var(--orange-ink);font-weight:700">${bedPassed(sn.a_letto) ? `È ora di andare a letto: stanotte ti servono ${fmtMin(sn.fabbisogno_min)}` : `Stasera a letto entro le ${sn.a_letto} (${fmtMin(sn.fabbisogno_min)})`}</div>` : !d.sonno ? `<div class="small muted">Senza Watch? Segna le ore nel check-in</div>` : ""}</div>${ico.chevron}</a>`;
+  const checkinBtn = d.checkin
+      ? `<button class="card row between" data-checkin style="border:0;text-align:left;cursor:pointer;font:inherit;color:inherit;width:100%"><span style="font-weight:800">${d.checkin.energia == null && d.checkin.attivita == null ? "Check-in saltato" : `Check-in fatto <span class="good">✓</span>`}</span><span class="small muted">${d.checkin.energia == null && d.checkin.attivita == null ? "fallo ora" : "modifica"}</span></button>`
+      : `<button class="btn orange block" data-checkin style="justify-content:space-between;min-height:52px;border-radius:18px"><span><b>Check-in del mattino</b> <span class="small" style="font-weight:600">· 10 secondi</span></span>${ico.arrow}</button>`;
+  // set-up period: only what is already reliable (sleep, gym, injury rules); score and advice come when the data are enough
+  const su = d.settaggio;
+  if (su && !su.pronto) {
+    el.innerHTML = `${header(`Ciao${p.nome ? ",<br>" + esc(p.nome) : ""}`, { sub: fmtDate(d.giorno), sync: true })}
+      <div class="col today">
+      ${setupCard(su)}
+      ${p.infortunio?.attivo ? `<button class="card col" id="workout" style="gap:6px;border:0;text-align:left;cursor:pointer;width:100%;font:inherit;color:inherit"><div class="label">Infortunio · cosa fare oggi</div><div class="skeleton" style="height:22px;width:60%"></div><div class="skeleton" style="height:16px;width:85%"></div></button>` : ""}
+      ${sleepCard}
+      <a class="card row between" href="#/palestra" style="gap:12px"><div class="col" style="gap:2px"><div style="font-weight:800">Palestra</div><div class="small muted">Allenati con le tue schede: carichi e serie si salvano</div></div>${ico.chevron}</a>
+      ${checkinBtn}
+      </div>`;
+    $("#syncNow").onclick = () => { const back = () => { if (document.visibilityState !== "visible") return; document.removeEventListener("visibilitychange", back); setTimeout(() => router(), 1500); }; document.addEventListener("visibilitychange", back); };
+    el.querySelectorAll("[data-checkin]").forEach((b) => b.addEventListener("click", () => checkinSheet(d.checkin, !d.sonno || d.sonno.manuale, y.attivita.sessioni || [])));
+    if (p.infortunio?.attivo) loadWorkout(false);
+    return;
+  }
   el.innerHTML = `${header(`Ciao${p.nome ? ",<br>" + esc(p.nome) : ""}`, { sub: fmtDate(d.giorno), sync: true })}
     <div class="col today">
     ${d.allarme ? `<div class="card col" style="background:#FDE2DF;gap:4px"><div style="font-weight:900;color:var(--red-ink)">⚠︎ ${esc(d.allarme.titolo)}</div><div class="small" style="line-height:1.45">${esc(d.allarme.testo)}</div></div>` : ""}
@@ -200,15 +223,10 @@ views.oggi = async (el) => {
            <div class="muted small">Recupero${delta != null ? ` · ${delta >= 0 ? "▲" : "▼"} ${Math.abs(delta)} da ieri` : ""}${r.affidabilita === "bassa" ? ` · <span class="mid">precisione bassa</span>` : ""}</div>`}</div>${ico.chevron}</a>
     <button class="card col" id="workout" style="gap:6px;border:0;text-align:left;cursor:pointer;width:100%;font:inherit;color:inherit"><div class="label">${p.infortunio?.attivo ? "Infortunio · cosa fare oggi" : "Allenamento di oggi"}</div>
       <div class="skeleton" style="height:22px;width:60%"></div><div class="skeleton" style="height:16px;width:85%"></div></button>
-    <a class="card row between" href="${nightPending ? "shortcuts://run-shortcut?name=HealthSync" : "#/sonno"}" style="gap:12px">
-      <div class="col" style="gap:2px;min-width:0"><div style="font-weight:800">${nightPending ? "Il Watch sta elaborando la notte" : sleepNow ? `Sonno · ${sleepNow}` : "Sonno non registrato"}</div>
-        ${nightPending ? `<div class="small" style="color:var(--orange-ink);font-weight:700">Tocca per aggiornare i dati${sleepNow ? ` (ora: ${sleepNow})` : ""}</div>`
-          : sn && sn.a_letto && hour >= 15 ? `<div class="small" style="color:var(--orange-ink);font-weight:700">${bedPassed(sn.a_letto) ? `È ora di andare a letto: stanotte ti servono ${fmtMin(sn.fabbisogno_min)}` : `Stasera a letto entro le ${sn.a_letto} (${fmtMin(sn.fabbisogno_min)})`}</div>` : !d.sonno ? `<div class="small muted">Senza Watch? Segna le ore nel check-in</div>` : ""}</div>${ico.chevron}</a>
+    ${sleepCard}
     <button class="card soft row" id="coachCard" style="gap:12px;border:0;text-align:left;cursor:pointer;width:100%;font:inherit;color:inherit">
       <div class="col" style="gap:4px;flex:1;min-width:0"><div class="label">Il coach</div><div id="advice" class="small" style="color:var(--text);line-height:1.45;${clamp(3)}"><div class="skeleton" style="width:90%"></div></div></div>${ico.chevron}</button>
-    ${d.checkin
-      ? `<button class="card row between" data-checkin style="border:0;text-align:left;cursor:pointer;font:inherit;color:inherit;width:100%"><span style="font-weight:800">${d.checkin.energia == null && d.checkin.attivita == null ? "Check-in saltato" : `Check-in fatto <span class="good">✓</span>`}</span><span class="small muted">${d.checkin.energia == null && d.checkin.attivita == null ? "fallo ora" : "modifica"}</span></button>`
-      : `<button class="btn orange block" data-checkin style="justify-content:space-between;min-height:52px;border-radius:18px"><span><b>Check-in del mattino</b> <span class="small" style="font-weight:600">· 10 secondi</span></span>${ico.arrow}</button>`}
+    ${checkinBtn}
     <a class="card row between" href="#/settimana" style="${monday ? "background:var(--soft)" : ""}"><span style="font-weight:800">La tua settimana${monday ? ` <span class="small" style="color:var(--orange-ink)">· resoconto pronto</span>` : ""}</span>${ico.chevron}</a>
     </div>`;
   // ↻ runs HealthSync in Comandi; back in Kairo, reload the page with the new data
@@ -224,6 +242,47 @@ views.oggi = async (el) => {
   todayAdvice = "";
   $("#coachCard").onclick = () => adviceSheet();
   loadAdvice();
+};
+
+// Set-up period: progress towards reliable data (nights with HRV, with the Watch, resting HR)
+const SETUP_TOT = 14;
+function setupCard(su) {
+  const done = SETUP_TOT - Math.min(SETUP_TOT, su.mancano ?? SETUP_TOT);
+  return `<a class="card col" href="#/settaggio" style="gap:10px">
+    <div class="row between"><div class="label">Settaggio · giorno ${su.giorno}</div>${ico.chevron}</div>
+    <div class="h2" style="line-height:1.25">${su.mancano > 0 ? `Ancora ${su.mancano} ${su.mancano === 1 ? "notte" : "notti"} con il Watch` : "Completa il profilo"}</div>
+    <div class="track" style="height:8px"><div class="bar" style="left:0;width:${Math.round((done / SETUP_TOT) * 100)}%;height:8px;background:var(--orange)"></div></div>
+    <div class="small" style="line-height:1.45;color:var(--text)">Kairo sta imparando come funzioni tu. Recupero e consigli del giorno compaiono solo quando i dati sono sicuri.</div></a>`;
+}
+views.settaggio = async (el) => {
+  el.innerHTML = header("Settaggio", { back: "oggi", gear: false }) + loading(2);
+  const s = await api("/api/settaggio"), k = s.controlli || {};
+  const item = (ok, title, text, href) => `<${href ? `a href="${href}"` : "div"} class="item" style="gap:12px;align-items:flex-start"><span style="font-size:18px;line-height:1.2">${ok ? "✅" : "⬜️"}</span><div class="col" style="gap:2px;flex:1"><b>${title}</b><span class="small muted" style="line-height:1.45">${text}</span></div>${href ? ico.chevron : ""}</${href ? "a" : "div"}>`;
+  const o = s.obiettivo || { notti_hrv: 14, notti_sonno: 10, giorni_fc: 10 };
+  const prog = (n, t) => `${Math.min(n, t)}/${t}`;
+  el.innerHTML = `${header("Settaggio", { back: "oggi", gear: false })}
+    <div class="card col" style="gap:8px">${s.pronto
+      ? `<div class="h2 good">Settaggio completato</div><div class="small" style="line-height:1.5;color:var(--text)">Le tue medie personali sono pronte: recupero, carico e consigli sono calcolati su dati sufficienti.</div>`
+      : `<div class="h2">Giorno ${s.giorno} · ancora ${s.mancano} ${s.mancano === 1 ? "notte" : "notti"}</div><div class="small" style="line-height:1.5;color:var(--text)">Per circa due settimane Kairo raccoglie i tuoi dati senza giudicarli: niente score né consigli basati su medie ancora incomplete. Intanto vedi il sonno e ti alleni con le tue schede.</div>`}</div>
+    <div class="card list">
+      ${item(s.pronto || s.notti_hrv >= o.notti_hrv, `HRV di notte · ${s.pronto ? "ok" : prog(s.notti_hrv, o.notti_hrv)}`, "Dormi con il Watch al polso, ben aderente, con la modalità Sonno attiva.")}
+      ${item(s.pronto || s.notti_sonno >= o.notti_sonno, `Sonno con il Watch · ${s.pronto ? "ok" : prog(s.notti_sonno, o.notti_sonno)}`, "Le fasi del sonno arrivano solo se il Watch resta al polso tutta la notte.")}
+      ${item(s.pronto || s.giorni_fc >= o.giorni_fc, `FC a riposo · ${s.pronto ? "ok" : prog(s.giorni_fc, o.giorni_fc)}`, "Arriva da sola, di notte o durante il giorno.")}
+      ${item(k.profilo, "Età o FC massima", "Servono per le zone di frequenza cardiaca e il carico.", "#/profilo")}
+      ${item(k.sync, "Invio automatico dei dati", k.ultimo_invio ? `Ultimo invio ${ago(k.ultimo_invio)}.` : "Nessun invio ancora: imposta l'automazione di HealthSync.", "#/collegamento")}
+      ${item(k.sport, "I tuoi sport", "Quelli che Kairo pianifica e quelli che fai a parte (calcio, padel…).", "#/sport")}
+      ${item(k.schede, "Schede di palestra", "Per proporti la scheda giusta e misurare la fatica di ogni muscolo.", "#/palestra")}
+      ${item(k.sveglia, "Sveglia abituale", "Per dirti a che ora andare a letto.", "#/profilo")}
+    </div>
+    <div class="card col" style="gap:6px"><div class="label">Consigliati, non obbligatori</div>
+      <div class="small" style="line-height:1.5;color:var(--text)">⌚ <b>1 minuto di Respira</b> appena sveglio: ${s.mattine ? `${s.mattine} ${s.mattine === 1 ? "mattina" : "mattine"} finora` : "nessuna mattina ancora"}. Dopo 5 diventa la tua misura principale di HRV.<br>📝 <b>Check-in ogni mattina</b>: ${s.checkin ?? 0} finora. Servirà per verificare che lo score ci azzecchi.</div></div>
+    <div class="card col" style="gap:8px"><div class="label">Ricomincia il settaggio</div>
+      <div class="small muted" style="line-height:1.5">Se cambi Watch o cambia molto la tua vita (nuovo sport, lungo stop): le medie ripartono da oggi e per due settimane lo score non si vede.</div>
+      <button class="btn ghost" id="setupRestart">Ricomincia da oggi</button></div>`;
+  $("#setupRestart").onclick = async () => {
+    if (!confirm("Ricominciare il settaggio da oggi? Per circa due settimane lo score di recupero non si vedrà.")) return;
+    try { await api("/api/settaggio", { method: "POST", body: { ricomincia: true } }); toast("Settaggio ricominciato"); router(); } catch (e) { toast(e.message); }
+  };
 };
 
 // Coach's message of the day: 3 lines on Oggi, the whole message in a sheet
@@ -247,6 +306,9 @@ function bedPassed(hhmm) {
 
 // Today's workout: a compact card on Oggi (what, how long, how hard), details in a sheet on tap
 const SPORT = { palestra: "Palestra", nuoto: "Nuoto", bici: "Bici", corsa: "Corsa" };
+// sports Kairo does not plan but counts (load from the Watch's heart rate, check-in, coach)
+const ALTRI_SPORT = { calcio: "Calcio", padel: "Padel", tennis: "Tennis", basket: "Basket", pallavolo: "Pallavolo", arrampicata: "Arrampicata", sci: "Sci", "arti marziali": "Arti marziali" };
+const cap = (k) => ALTRI_SPORT[k] || SPORT[k] || k[0].toUpperCase() + k.slice(1);
 const INT_LABEL = { leggero: ["Leggero", "good"], medio: ["Medio", "mid"], intenso: ["Intenso", "bad"] };
 const MOD_LABEL = { riposo: ["Riposo", "bad"], "resto del corpo": ["Resto del corpo", "mid"], riabilitazione: ["Riabilitazione", "good"] };
 let todayLoad = ["", "muted"], todayWorkout = null;
@@ -302,7 +364,7 @@ function workoutDetail(w) {
     <div class="small muted" style="line-height:1.5">${esc(w.perche)}</div>
     <div class="col" style="gap:6px"><div class="small" style="font-weight:800">${w.esito ? (w.esito.stato === "saltato" ? "Oggi: saltato" : `Oggi: fatto ✓${w.esito.sport ? ` · ${esc(w.esito.sport)}` : ""}`) + ` <span class="muted" style="font-weight:600">· puoi cambiarlo</span>` : "Com'è andata?"}</div>
       <div class="acts" style="grid-template-columns:repeat(3,minmax(0,1fr))"><button class="choice" data-esito="fatto">Fatto ✓</button><button class="choice" data-esito="altro">Fatto altro</button><button class="choice" data-esito="saltato">Saltato</button></div>
-      <div class="acts" id="altroBox" style="grid-template-columns:repeat(3,minmax(0,1fr));display:none">${["palestra", "nuoto", "bici", "corsa", "calcio", "camminata"].map((k) => `<button class="choice" data-altro="${k}">${k[0].toUpperCase() + k.slice(1)}</button>`).join("")}</div></div>
+      <div class="acts" id="altroBox" style="grid-template-columns:repeat(3,minmax(0,1fr));display:none">${["palestra", "nuoto", "bici", "corsa", ...(cfg().profilo.altri_sport || []), "camminata"].map((k) => `<button class="choice" data-altro="${esc(k)}">${esc(cap(k))}</button>`).join("")}</div></div>
     ${todayLoad[0] ? `<button id="wLoad" class="row between" style="background:none;border:0;border-top:1px solid var(--line);padding:12px 0 0;cursor:pointer;font:inherit;color:inherit;width:100%"><span class="small">Carico di allenamento: <b class="${todayLoad[1]}">${todayLoad[0]}</b></span>${ico.chevron}</button>` : ""}
     <div class="row" style="gap:8px">${w.sport === "palestra" && w.scheda ? `<button class="btn primary" id="wStart" style="flex:2;min-height:48px">Inizia ${esc(w.scheda)}</button>` : ""}<button class="btn ghost" id="wOther" style="flex:1;min-height:48px">Altra proposta</button></div>
     <button class="small muted" id="wHurt" style="background:none;border:0;cursor:pointer;padding:0;text-decoration:underline">Ti sei fatto male? Attiva la modalità infortunio</button>`, "Allenamento di oggi");
@@ -507,6 +569,7 @@ views.recupero = async (el) => {
   el.innerHTML = header("Recupero") + loading(3);
   const [hist, mesi] = await Promise.all([api("/api/history?days=14"), api("/api/hrv-mensile")]);
   const d = hist[hist.length - 1], r = d.recupero, st = state(r.score);
+  if (d.settaggio && !d.settaggio.pronto) { route("settaggio"); return; }
   const C = r.componenti, S = r.segnali || {};
   const bal = C.sonno?.bilancio_min;
   const comps = [
@@ -1173,7 +1236,8 @@ function checkinSheet(existing, askSleep = false, detected = [], askRespira = fa
     act: new Set((existing?.attivita || (!existing && detSport ? detSport : "")).split(",").filter(Boolean)), rpe: existing?.rpe ?? 6,
     durata: existing?.durata_min ?? (detMin ? Math.min(240, Math.round(detMin / 5) * 5) : 60), sonno: existing?.sonno_min ?? 450,
     tag: new Set((existing?.tag || "").split(",").filter(Boolean)) };
-  const ACTS = [["palestra", "Palestra"], ["nuoto", "Nuoto"], ["bici", "Bici"], ["calcio", "Calcio"], ["corsa", "Corsa"], ["camminata", "Camminata"], ["altro", "Altro"], ["riposo", "Riposo"]];
+  const altri = cfg().profilo.altri_sport?.length ? cfg().profilo.altri_sport : ["calcio"];
+  const ACTS = [...["palestra", "nuoto", "bici", "corsa", ...altri].map((k) => [k, cap(k)]), ["camminata", "Camminata"], ["altro", "Altro"], ["riposo", "Riposo"]];
   const scale = (k, label, hint) => `<div class="col"><div class="row between"><div style="font-weight:800">${label}</div><div class="small muted">${hint}</div></div>
     <div class="scale" role="group" aria-label="${label}">${[1, 2, 3, 4, 5].map((n) => `<button class="choice" data-k="${k}" data-v="${n}" aria-pressed="${s[k] === n}">${n}</button>`).join("")}</div></div>`;
   const draw = () => {
@@ -1184,7 +1248,7 @@ function checkinSheet(existing, askSleep = false, detected = [], askRespira = fa
       ${askSleep ? `<div class="card col"><label class="row between" for="slp" style="font-weight:800"><span>Quanto hai dormito? <span class="small muted" style="font-weight:600">(senza Watch)</span></span><span style="color:var(--orange-ink)">${fmtMin(s.sonno)}</span></label><input id="slp" type="range" min="180" max="720" step="15" value="${s.sonno}"></div>` : ""}
       ${scale("energia", "Energia", "1 a terra · 5 al top")}${scale("dolori", "Indolenzimento", "1 niente · 5 tanto")}${scale("umore", "Umore", "1 giù · 5 alle stelle")}
       ${detMin ? `<div class="card soft small" style="line-height:1.45">⌚ Il Watch ha rilevato ieri <b>${detMin} min</b> di allenamento${detected.length > 1 ? ` in ${detected.length} sessioni` : ""} · FC media ${Math.round(detected.reduce((a, x) => a + x.fc_media * x.minuti, 0) / detMin)}${detSport ? ` · probabilmente <b>${esc(detSport)}</b>` : ""}. Dimmi cos'era.</div>` : ""}
-      <div class="col"><div style="font-weight:800">Cosa hai fatto ieri</div><div class="acts" style="grid-template-columns:repeat(4,minmax(0,1fr))">${ACTS.map(([k, l]) => `<button class="choice" data-a="${k}" aria-pressed="${s.act.has(k)}">${l}</button>`).join("")}</div></div>
+      <div class="col"><div style="font-weight:800">Cosa hai fatto ieri</div><div class="acts" style="grid-template-columns:repeat(4,minmax(0,1fr))">${ACTS.map(([k, l]) => `<button class="choice" data-a="${esc(k)}" aria-pressed="${s.act.has(k)}">${esc(l)}</button>`).join("")}</div></div>
       ${sport ? `<div class="card col"><label class="row between" for="rpe" style="font-weight:800"><span>Quanto è stata dura?</span><span style="color:var(--orange-ink)">RPE ${s.rpe}</span></label><input id="rpe" type="range" min="1" max="10" value="${s.rpe}">
         <label class="row between" for="dur" style="font-weight:800"><span>Durata</span><span class="muted">${s.durata} min</span></label><input id="dur" type="range" min="10" max="240" step="5" value="${s.durata}"></div>` : ""}
       <div class="col"><div style="font-weight:800">Ieri sera o stanotte <span class="small muted" style="font-weight:600">(facoltativo)</span></div><div class="acts" style="grid-template-columns:repeat(3,minmax(0,1fr))">${["alcol", "malanno", "viaggio", "stress", "cena tardi", "allenamento serale"].map((k) => `<button class="choice" data-tag="${k}" aria-pressed="${s.tag.has(k)}" style="font-size:13px">${k[0].toUpperCase() + k.slice(1)}</button>`).join("")}</div><span class="hint">Spiegano un recupero diverso dal solito; alcol, malanno e viaggio non entrano nelle tue medie.</span></div>
@@ -1224,10 +1288,11 @@ const group = (title, rows) => `<div class="col" style="gap:6px"><div class="lab
 views.impostazioni = async (el) => {
   await loadProfile();
   const c = cfg(), p = c.profilo, inj = p.infortunio?.attivo;
-  const sports = (p.sport || []).map((s) => SPORT[s]).join(", ");
+  const sports = [...(p.sport || []), ...(p.altri_sport || [])].map(cap).join(", ");
   el.innerHTML = `${header("Impostazioni", { back: "oggi", gear: false })}
     ${group("Tu", row("profilo", "👤", "Profilo", esc([p.nome, p.eta ? `${p.eta} anni` : ""].filter(Boolean).join(" · ") || "da completare"))
       + row("sport", inj ? "🩹" : "🏅", "Sport e infortunio", inj ? `<span class="bad">infortunio attivo</span>` : esc(sports || "nessuno"))
+      + row("settaggio", "🎯", "Settaggio", "", "rowSet")
       + row("memoria", "🧠", "Cosa ricorda il coach", "", "rowMem"))}
     ${group("App", row("notifiche", "🔔", "Notifiche", "", "rowPush")
       + row("ia", "✨", "Coach IA", "", "rowIa")
@@ -1241,6 +1306,7 @@ views.impostazioni = async (el) => {
     <div class="small muted center" style="display:flex;justify-content:center">Kairo ${APP_VERSION}</div>`;
   const set = (id, html) => { const v = $(`#${id} [data-val]`); if (v) v.innerHTML = html; };
   api("/api/ia/chiave").then((r) => set("rowIa", r.sul_server || r.segreto_cloudflare || cfg().groqKey ? "Groq" : "modello di riserva")).catch(() => {});
+  api("/api/settaggio").then((r) => set("rowSet", r.pronto ? `<span class="good">completato</span>` : `<span class="mid">giorno ${r.giorno}</span>`)).catch(() => {});
   api("/api/memoria").then((r) => set("rowMem", r.memoria.length ? `${r.memoria.length} ricordi` : "niente")).catch(() => {});
   if (pushSupported()) navigator.serviceWorker.ready.then((reg) => reg.pushManager.getSubscription()).then((s) => set("rowPush", s ? "attive" : "spente")).catch(() => {});
   else set("rowPush", "non disponibili");
@@ -1289,15 +1355,19 @@ views.sport = async (el) => {
     <div class="card col" style="gap:10px"><div class="h2">I tuoi sport</div>
       <div class="small muted">L'allenamento del giorno sceglie solo tra questi.</div>
       <div class="acts" style="grid-template-columns:repeat(2,minmax(0,1fr))">${Object.entries(SPORT).map(([k, l]) => `<button type="button" class="choice" data-sport="${k}" aria-pressed="${(p.sport || []).includes(k)}">${l}</button>`).join("")}</div>
+      <div class="h2" style="margin-top:6px">Altri sport che fai</div>
+      <div class="small muted" style="line-height:1.45">Partite e allenamenti di squadra: Kairo non li pianifica, ma li conta. Il Watch registra il battito di qualsiasi sport, quindi il carico entra comunque; qui dici cos'era, così compare nel check-in e il coach ne tiene conto (dopo una partita niente seduta dura sulle gambe).</div>
+      <div class="acts" style="grid-template-columns:repeat(2,minmax(0,1fr))">${Object.entries(ALTRI_SPORT).map(([k, l]) => `<button type="button" class="choice" data-altri="${esc(k)}" aria-pressed="${(p.altri_sport || []).includes(k)}">${l}</button>`).join("")}</div>
       <button class="btn primary" id="saveSport">Salva</button></div>
     <div class="card col" style="gap:10px"><div class="row between"><div class="h2">Infortunio</div>${inj.attivo ? `<span class="pill bad">attivo</span>` : ""}</div>
       <div class="small muted" style="line-height:1.45">${inj.attivo ? esc(inj.descrizione) : "Se ti fai male, il coach smette di proporti allenamenti normali e ti dice ogni giorno se riposare, quali esercizi riabilitativi fare o come allenare il resto del corpo, rispettando le indicazioni del medico."}</div>
       ${inj.attivo ? `<button class="btn ghost" id="injEditS">Modifica infortunio e indicazioni del medico</button><button class="btn primary" id="injOffS">Sono guarito</button>` : `<button class="btn ghost" id="injOnS">🩹 Attiva la modalità infortunio</button>`}</div>`;
-  el.querySelectorAll("[data-sport]").forEach((b) => (b.onclick = () => b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") !== "true")));
+  el.querySelectorAll("[data-sport], [data-altri]").forEach((b) => (b.onclick = () => b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") !== "true")));
   $("#saveSport").onclick = async () => {
     const sport = [...el.querySelectorAll("[data-sport]")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.dataset.sport);
     if (!sport.length) { toast("Scegli almeno uno sport"); return; }
-    const body = { ...p, sport, tz: tz() }; delete body.infortunio;
+    const altri_sport = [...el.querySelectorAll("[data-altri]")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.dataset.altri);
+    const body = { ...p, sport, altri_sport, tz: tz() }; delete body.infortunio;
     try { const saved = await api("/api/profilo", { method: "POST", body }); store.set("profilo", saved); toast("Sport salvati"); } catch (e) { toast(e.message); }
   };
   const on = $("#injOnS"), ed = $("#injEditS"), off = $("#injOffS");

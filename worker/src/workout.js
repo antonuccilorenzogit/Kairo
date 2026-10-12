@@ -2,7 +2,7 @@
 // The AI proposes the session; recovery, training load and alarms set the limits; fixed rules are the fallback.
 import { ask } from "./coach.js";
 import { muscleFatigue, routineFatigue } from "./strength.js";
-import { hrMax } from "./profile.js";
+import { hrMax, ALTRI_SPORT } from "./profile.js";
 
 // Heart-rate zones as % of max HR (same as the training load): Z1 50-60 … Z5 90-100.
 export function hrZones(hrmax) {
@@ -111,12 +111,12 @@ async function recentSports(db, hist) {
   for (const d of hist) days[d.giorno] = new Set();
   for (let i = 0; i < hist.length; i++) {
     const ck = hist[i + 1]?.checkin;
-    if (ck?.attivita) for (const a of ck.attivita.split(",")) if (NOMI[a]) days[hist[i].giorno].add(a);
+    if (ck?.attivita) for (const a of ck.attivita.split(",")) if (NOMI[a] || ALTRI_SPORT.includes(a)) days[hist[i].giorno].add(a);
   }
   const from = hist[0].giorno, to = addDay(hist[hist.length - 1].giorno, 1);
   // what you said you did with the day's workout ("Fatto", "Fatto altro")
   const es = await db.prepare("SELECT day, sport FROM esiti WHERE day >= ? AND day < ? AND stato != 'saltato' AND sport IS NOT NULL").bind(from, to).all();
-  for (const x of es.results) if (NOMI[x.sport]) days[x.day]?.add(x.sport);
+  for (const x of es.results) if (NOMI[x.sport] || ALTRI_SPORT.includes(x.sport)) days[x.day]?.add(x.sport);
   const gym = await db.prepare("SELECT DISTINCT substr(start,1,10) d FROM sets WHERE start >= ? AND start < ?").bind(from, to).all();
   for (const g of gym.results) days[g.d]?.add("palestra");
   const dist = await db.prepare("SELECT metric, day FROM daily WHERE metric IN ('dist_nuoto','dist_bici') AND value > 0 AND day >= ? AND day < ?").bind(from, to).all();
@@ -156,9 +156,14 @@ function ruleBased(ctx) {
 
 // Picks sport and intensity from the data; the AI then designs the session within these limits.
 function choose(today, recent, sports, exclude) {
-  const r = today.recupero.score, alarm = today.allarme, lvl = today.carico?.consiglio?.livello;
+  // during the set-up period the score is not reliable yet: medium intensity, by feel
+  const setup = today.settaggio && !today.settaggio.pronto;
+  const r = setup ? null : today.recupero.score, alarm = setup ? null : today.allarme, lvl = setup ? null : today.carico?.consiglio?.livello;
   let intensita = lvl === "dura" ? "intenso" : lvl === "normale" ? "medio" : lvl ? "leggero" : r == null ? "medio" : r >= 67 ? "intenso" : r >= 34 ? "medio" : "leggero";
   if (alarm) intensita = "leggero";
+  // a match or team training yesterday (football, padel…) already loaded the legs: no hard session today
+  const ieri = recent[recent.length - 2]?.sport || [];
+  if (intensita === "intenso" && ieri.some((s) => ALTRI_SPORT.includes(s))) intensita = "medio";
   let pool = sports.filter((s) => s !== exclude);
   if (!pool.length) pool = sports;
   // with low recovery or an alarm prefer low-impact endurance (swim, bike) over heavy lifting
@@ -167,7 +172,7 @@ function choose(today, recent, sports, exclude) {
   const yesterday = recent[recent.length - 2]?.sport || [];
   pool.sort((a, b) => (yesterday.includes(a) ? 1 : 0) - (yesterday.includes(b) ? 1 : 0) || lastDone(b) - lastDone(a));
   const sport = pool[0] || "nuoto";
-  const perche = alarm ? `${alarm.titolo}: oggi solo qualcosa di leggero.` : r == null ? "Recupero non ancora disponibile: seduta di media intensità." :
+  const perche = alarm ? `${alarm.titolo}: oggi solo qualcosa di leggero.` : setup ? "Kairo è in settaggio: seduta di media intensità, regolati sulle sensazioni." : r == null ? "Recupero non ancora disponibile: seduta di media intensità." :
     `Recupero ${r}${today.carico?.stato && today.carico.stato !== "calibrazione" ? `, carico ${today.carico.stato}` : ""}; ${lastDone(sport) === 99 ? `${NOMI[sport].toLowerCase()} non lo fai da un po'` : `ultima volta ${lastDone(sport) === 1 ? "ieri" : `${lastDone(sport)} giorni fa`}`}.`;
   return { sport, intensita, perche, lastDone: Object.fromEntries(sports.map((s) => [s, lastDone(s)])) };
 }
@@ -196,10 +201,10 @@ export async function recommendWorkout(env, req, { hist, profile, profileText, s
   const c = today.carico || {};
   const giorni = recent.map((d) => `${d.giorno}: ${d.sport.join(", ") || "riposo o nessun dato"}`).join("\n");
   const prompt = `Dati di oggi (${today.giorno}):
-- Recupero: ${today.recupero.score ?? "n/d"} (${today.recupero.stato}).
+- Recupero: ${today.settaggio && !today.settaggio.pronto ? "non ancora affidabile (Kairo è in settaggio): non citarlo" : `${today.recupero.score ?? "n/d"} (${today.recupero.stato})`}.
 - Carico: stato ${c.stato || "n/d"}, rapporto 7/28 giorni ${c.rapporto ?? "n/d"}${c.consiglio ? `, fascia consigliata oggi ${c.consiglio.min}-${c.consiglio.max} (${c.consiglio.titolo})` : ""}.
 - ${today.allarme ? `ALLARME: ${today.allarme.titolo}.` : "Nessun allarme."}
-- Sport che pratica (puoi proporre SOLO questi): ${sports.join(", ")}.
+- Sport che pratica (puoi proporre SOLO questi): ${sports.join(", ")}.${profile.altri_sport?.length ? `\n- Pratica anche ${profile.altri_sport.join(", ")} (partite o allenamenti di squadra: non li proponi tu, ma se li ha fatti ieri o li farà presto tienine conto e non caricare le gambe).` : ""}
 - Ultimi giorni:\n${giorni}
 - Zone di frequenza cardiaca di questa persona (bpm): ${zonesText(zone)}. Per nuoto, bici e corsa scrivi l'intensità anche in bpm con queste zone.
 - Muscoli ancora affaticati dalle ultime sedute: ${stanchi || "nessuno"}${stanchi ? " (non proporre sedute che li caricano di nuovo)" : ""}.

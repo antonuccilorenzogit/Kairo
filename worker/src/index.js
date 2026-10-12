@@ -9,7 +9,7 @@ import { recommendWorkout, getSchede, saveSchede, lastSets, schedeFromText } fro
 import { sha256, safeEqual, clientIp, lockedFor, recordFailure, clearFailures, pruneFailures, codeProblem } from "./security.js";
 import { parsePayload, cleanCheckin, MAX_BODY_BYTES } from "./validate.js";
 import { exportData, createBackup, listBackups, readBackup, restoreData } from "./backup.js";
-import { getProfile, saveProfile, hrMax, profileText } from "./profile.js";
+import { getProfile, saveProfile, hrMax, profileText, SPORTS, ALTRI_SPORT } from "./profile.js";
 import { listMemory, addMemory, deleteMemory, memoryText } from "./memory.js";
 import { injuryPlan, injuryText, savePain, clearPain, constraints, constraintList } from "./injury.js";
 
@@ -23,7 +23,7 @@ const dropTodayAdvice = (db, day) => db.prepare("DELETE FROM advice WHERE day IN
 import { recomputeTrimp, recomputeNightHr } from "./load.js";
 import { getVapid, sendPush, validEndpoint } from "./push.js";
 
-const VERSION = "1.16.0";
+const VERSION = "1.17.0";
 
 // No CORS headers: only the Kairo app (same origin) and the Shortcuts app (not a browser) talk to the API.
 const json = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), {
@@ -86,7 +86,8 @@ async function morningPush(env, origin) {
   // claim today's slot atomically, so two syncs at the same time do not send two notifications
   const r = await env.DB.prepare("INSERT INTO settings(key,value) VALUES('push_mattina',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE settings.value != excluded.value").bind(day).run();
   if (!r.meta?.changes) return;
-  if (!(await hasCheckin(env.DB, day))) return sendPush(env, { title: "Buongiorno", body: prof.infortunio?.attivo ? "Il recupero di stanotte è pronto: fai il check-in e segna il dolore per il piano di oggi." : "Il recupero di stanotte è pronto: fai il check-in di 10 secondi per vedere com'è andata e cosa fare oggi.", url: "/#/oggi" }, origin);
+  if (!(await hasCheckin(env.DB, day))) return sendPush(env, { title: "Buongiorno", body: d.settaggio && !d.settaggio.pronto ? "Fai il check-in di 10 secondi: Kairo sta completando il settaggio." : prof.infortunio?.attivo ? "Il recupero di stanotte è pronto: fai il check-in e segna il dolore per il piano di oggi." : "Il recupero di stanotte è pronto: fai il check-in di 10 secondi per vedere com'è andata e cosa fare oggi.", url: "/#/oggi" }, origin);
+  if (d.settaggio && !d.settaggio.pronto) return; // no score to announce during the set-up period
   if (prof.infortunio?.attivo) return sendPush(env, { title: "Modalità infortunio", body: "Segna quanto ti fa male oggi: il coach ti dice se riposare o quali esercizi fare.", url: "/#/oggi" }, origin);
   const label = d.recupero.score >= 67 ? "Recuperato" : d.recupero.score >= 34 ? "Recupero parziale" : "Recupero basso";
   const body = d.allarme ? `${d.allarme.titolo}: oggi vai leggero.` : d.carico?.consiglio ? `Oggi: ${d.carico.consiglio.titolo.toLowerCase()} — ${d.carico.consiglio.testo}.` : "Apri Kairo per il consiglio di oggi.";
@@ -329,6 +330,26 @@ async function api(req, env, url) {
     if (b.errore) return json({ errore: b.errore }, 400);
     return json({ ok: true, ...(await ingest(b.payload, env, url.origin)) });
   }
+  // set-up period: progress, what is still to set, restart (new Watch, big change)
+  if (p === "/api/settaggio") {
+    const day = todayLocal(tz);
+    if (req.method === "POST") {
+      const b = (await readJson(req)) || {};
+      if (!b.ricomincia) return json({ errore: "Richiesta non valida" }, 400);
+      await env.DB.batch([
+        env.DB.prepare("INSERT INTO settings(key,value) VALUES('settaggio_dal',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(day),
+        env.DB.prepare("DELETE FROM settings WHERE key = 'settaggio_finito'"),
+        env.DB.prepare("DELETE FROM recupero_giorno WHERE day = ?").bind(day),
+        env.DB.prepare("DELETE FROM advice WHERE day IN (?, ?, ?)").bind(day, "A:" + day, "CTX:" + day),
+      ]);
+    }
+    const [d, profile, schede, last] = await Promise.all([computeDay(env.DB, day), getProfile(env.DB), getSchede(env.DB),
+      env.DB.prepare("SELECT max(received) r FROM imports").first()]);
+    const sync = last?.r ? (Date.now() - Date.parse(last.r)) / 36e5 < 36 : false;
+    return json({ ...d.settaggio, controlli: {
+      profilo: !!(profile.eta || profile.fc_max), sport: (profile.sport || []).length > 0,
+      schede: !(profile.sport || []).includes("palestra") || schede.length > 0, sveglia: !!profile.sveglia, sync, ultimo_invio: last?.r || null } });
+  }
   if (p === "/api/day") return json(await computeDay(env.DB, validDay(url.searchParams.get("d")) || todayLocal(tz)));
   if (p === "/api/history") {
     const days = Math.min(Math.max(Number(url.searchParams.get("days")) || 30, 1), 400);
@@ -380,7 +401,7 @@ async function api(req, env, url) {
   if (p === "/api/allenamento/esito" && req.method === "POST") {
     const b = (await readJson(req)) || {};
     const stato = ["fatto", "altro", "saltato"].includes(b.stato) ? b.stato : null;
-    const sport = ["palestra", "nuoto", "bici", "corsa", "calcio", "camminata"].includes(b.sport) ? b.sport : null;
+    const sport = [...SPORTS, ...ALTRI_SPORT, "camminata"].includes(b.sport) ? b.sport : null;
     if (!stato) return json({ errore: "Esito non valido" }, 400);
     await env.DB.prepare("INSERT INTO esiti(day,stato,sport,created) VALUES(?,?,?,?) ON CONFLICT(day) DO UPDATE SET stato=excluded.stato, sport=excluded.sport, created=excluded.created")
       .bind(todayLocal(tz), stato, stato === "saltato" ? null : sport, new Date().toISOString()).run();

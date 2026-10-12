@@ -1,3 +1,4 @@
+import { SPORTS, ALTRI_SPORT } from "./profile.js";
 // Validation of incoming data: only known metrics, valid timestamps and plausible values are stored.
 // Anything else is discarded and counted, so a malformed request can never corrupt the database.
 
@@ -82,7 +83,7 @@ export function parsePayload(payload) {
 }
 
 // Check-in: every field is optional, but when present it must be in range.
-const ACTIVITIES = new Set(["palestra", "nuoto", "bici", "calcio", "corsa", "camminata", "altro", "riposo"]);
+const ACTIVITIES = new Set([...SPORTS, ...ALTRI_SPORT, "camminata", "altro", "riposo"]);
 export const TAGS = ["alcol", "malanno", "viaggio", "stress", "cena tardi", "allenamento serale"];
 export function cleanCheckin(c, fallbackDay) {
   const int = (v, lo, hi) => (v == null || v === "" ? null : Number.isInteger(Number(v)) && Number(v) >= lo && Number(v) <= hi ? Number(v) : undefined);

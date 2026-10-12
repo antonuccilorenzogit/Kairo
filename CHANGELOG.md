@@ -2,6 +2,16 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.17.0] — 2026-10-12
+
+### Aggiunto
+- **Settaggio iniziale**: finché non ci sono 14 notti con l'HRV, 10 notti con il Watch, 10 giorni con la FC a riposo e l'età (o la FC massima) nel profilo, Kairo non mostra score di recupero, allenamento consigliato, messaggio del coach e notifica del punteggio. In home restano solo ciò che è già affidabile: sonno, palestra, check-in e, se attivo, il piano dell'infortunio. Una scheda «Settaggio · giorno N» mostra quante notti mancano.
+- **Pagina Settaggio** (da home o Impostazioni): avanzamento dei dati e lista di cosa impostare (età/FC massima, invio automatico, sport, schede, sveglia), Respira e check-in consigliati, e **«Ricomincia da oggi»** (nuovo Watch, lungo stop): le medie ripartono da quel giorno. A settaggio completato non torna indietro da solo.
+- **Altri sport**: calcio, padel, tennis, basket, pallavolo, arrampicata, sci, arti marziali. Kairo non li pianifica, ma compaiono nel check-in e nell'esito, il coach li conosce e dopo una partita non propone sedute intense. Il carico arriva comunque dal battito registrato dal Watch.
+
+### Migliorato
+- Durante il settaggio il coach in chat non cita recupero e carico e parla di sonno, palestra e di come completare il settaggio; l'allenamento proposto resta a intensità media.
+
 ## [1.16.0] — 2026-10-12
 
 ### Migliorato

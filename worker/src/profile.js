@@ -1,7 +1,9 @@
 // User profile, stored on the server so every device (iPhone, PC) and the coach see the same data.
 
 export const DEFAULT_SLEEP_NEED = 480; // minutes (centre of the AASM 7-9 h range)
-export const SPORTS = ["palestra", "nuoto", "bici", "corsa"];
+export const SPORTS = ["palestra", "nuoto", "bici", "corsa"];       // Kairo plans these
+// sports Kairo does not plan (matches, team training) but counts: load from heart rate, check-in, coach
+export const ALTRI_SPORT = ["calcio", "padel", "tennis", "basket", "pallavolo", "arrampicata", "sci", "arti marziali"];
 
 const str = (v, n) => (v == null ? "" : String(v).trim().slice(0, n));
 const intIn = (v, lo, hi) => { const n = Number(v); return v === "" || v == null || !Number.isFinite(n) ? null : n >= lo && n <= hi ? Math.round(n) : undefined; };
@@ -36,6 +38,7 @@ export function cleanProfile(p) {
     sonno_min: intIn(p?.sonno_min, 360, 600) ?? null,  // personal sleep need
     sveglia: /^\d{2}:\d{2}$/.test(String(p?.sveglia || "")) ? p.sveglia : "",
     sport: Array.isArray(p?.sport) ? [...new Set(p.sport.filter((x) => SPORTS.includes(x)))] : ["palestra", "nuoto", "bici", "corsa"],
+    altri_sport: Array.isArray(p?.altri_sport) ? [...new Set(p.altri_sport.filter((x) => ALTRI_SPORT.includes(x)))] : [],
     infortunio: cleanInjury(p?.infortunio),
     tz: /^[A-Za-z_]+(\/[A-Za-z0-9_+-]+){0,2}$/.test(String(p?.tz || "")) ? p.tz : "Europe/Rome",
   };
@@ -66,6 +69,7 @@ export function profileText(p) {
     p.note ? `Di sé dice: ${p.note}` : "",
     p.obiettivi ? `I suoi obiettivi: ${p.obiettivi}` : "Non ha ancora indicato i suoi obiettivi.",
     p.sport && p.sport.length ? `Sport che pratica: ${p.sport.join(", ")}.` : "",
+    p.altri_sport && p.altri_sport.length ? `Pratica anche (partite o allenamenti che Kairo non pianifica, ma di cui tiene conto nel carico): ${p.altri_sport.join(", ")}.` : "",
     p.infortunio?.attivo ? `\nÈ INFORTUNATO${p.infortunio.dal ? ` dal ${p.infortunio.dal}` : ""}: ${p.infortunio.descrizione || "non ha descritto l'infortunio"}.
 È in MODALITÀ INFORTUNIO: niente allenamenti normali (ignora l'allenamento consigliato calcolato da carico e recupero). Consiglia solo riposo, esercizi riabilitativi dolci o esercizi per le parti del corpo non coinvolte, con dolore massimo 3/10. Non fare diagnosi; se il dolore è forte, peggiora o ci sono gonfiore, formicolio o perdita di forza, consiglia un medico o un fisioterapista.` : "",
   ].filter(Boolean).join("\n");

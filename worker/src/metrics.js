@@ -586,8 +586,12 @@ export async function computeHistory(db, endDay, nDays) {
     return (maskCache[day] = m);
   };
   const profile = await getProfile(db);
-  // with an active injury the baseline starts after it (from 3 days later), as soon as there are enough days
-  const baseFrom = profile.infortunio?.attivo && profile.infortunio.dal ? addDays(profile.infortunio.dal, 3) : null;
+  const setupRows = (await db.prepare("SELECT key, value FROM settings WHERE key IN ('settaggio_dal','settaggio_finito')").all()).results;
+  const setupCfg = Object.fromEntries(setupRows.map((x) => [x.key, x.value]));
+  // with an active injury the baseline starts after it (from 3 days later), as soon as there are enough days;
+  // a restarted set-up period (new Watch, big change) starts a new baseline too
+  const injuryFrom = profile.infortunio?.attivo && profile.infortunio.dal ? addDays(profile.infortunio.dal, 3) : null;
+  const baseFrom = [injuryFrom, setupCfg.settaggio_dal || null].filter(Boolean).sort().pop() || null;
   for (let i = 0; i < days.length; i++) finalize(days, i, maskOf, baseFrom);
   enrich(days, data, profile, start);
   // The day's recovery is frozen as soon as the check-in and the complete night are in: data arriving later
@@ -606,8 +610,30 @@ export async function computeHistory(db, endDay, nDays) {
   }
   if (freeze.length) await db.batch(freeze);
   const out = days.filter((d) => d.giorno >= start);
+  out[out.length - 1].settaggio = await setupStatus(db, days, endDay, profile, setupCfg);
   for (const d of out) if (d.sonno) { delete d.sonno._bed; delete d.sonno._wake; delete d.sonno._midH; delete d.sonno._contributi; }
   return out;
+}
+
+// Set-up period: until there are enough nights with the Watch, scores and advice are not shown (no partial data).
+export const SETUP = { notti_hrv: 14, notti_sonno: 10, giorni_fc: 10 };
+async function setupStatus(db, days, endDay, profile, cfg) {
+  const dal = cfg.settaggio_dal || null;
+  const profilo = !!(profile.eta || profile.fc_max);
+  if (cfg.settaggio_finito) return { pronto: true, dal, finito: cfg.settaggio_finito, profilo };
+  const win = days.filter((d) => d.giorno <= endDay && (!dal || d.giorno >= dal));
+  const count = (f) => win.filter(f).length;
+  const notti_hrv = count((d) => d.notte.hrv_fonte === "notte" || d.notte.hrv_mattino != null);
+  const notti_sonno = count((d) => d.sonno && !d.sonno.manuale);
+  const giorni_fc = count((d) => d.notte.fc_notte_bpm != null || d.notte.fcr_bpm != null);
+  const mattine = count((d) => d.notte.hrv_mattino != null);
+  const checkin = count((d) => d.checkin && d.checkin.energia != null);
+  const first = dal || win.find((d) => d.notte.hrv_ms != null || d.sonno)?.giorno || endDay;
+  const giorno = Math.max(1, Math.round((Date.parse(endDay) - Date.parse(first)) / 864e5) + 1);
+  const mancano = Math.max(0, SETUP.notti_hrv - notti_hrv, SETUP.notti_sonno - notti_sonno, SETUP.giorni_fc - giorni_fc);
+  const pronto = mancano === 0 && profilo;
+  if (pronto) await db.prepare("INSERT INTO settings(key,value) VALUES('settaggio_finito',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(endDay).run();
+  return { pronto, dal: first, giorno, notti_hrv, notti_sonno, giorni_fc, mattine, checkin, mancano, profilo, obiettivo: SETUP };
 }
 
 export async function computeDay(db, day) {

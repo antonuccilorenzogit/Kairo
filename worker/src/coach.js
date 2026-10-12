@@ -12,17 +12,19 @@ export const FALLBACK_MODELS = ["@cf/meta/llama-3.1-8b-instruct-fp8", "@cf/mistr
 export const FALLBACK_MODEL = FALLBACK_MODELS[0];
 
 // advice cached before this date was written with an older prompt and is regenerated
-const PROMPT_DATE = "2026-10-11T19:45:00Z";
+const PROMPT_DATE = "2026-10-12T08:00:00Z";
 const fmtMin = (m) => (m == null ? "n/d" : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`);
 
 // One compact line per day: the LLM receives numbers already computed, never raw samples.
 export async function buildContext(db, today, days = 14) {
   const hist = await computeHistory(db, today, days);
+  const setup = hist[hist.length - 1].settaggio;
+  const inSetup = setup && !setup.pronto;
   const lines = hist.map((d) => {
     const r = d.recupero, s = d.sonno, n = d.notte, a = d.attivita, c = d.checkin;
     const parts = [
       d.giorno,
-      `recupero ${r.score ?? "n/d"} (${r.stato})`,
+      inSetup ? "recupero in settaggio" : `recupero ${r.score ?? "n/d"} (${r.stato})`,
       `HRV ${n.hrv_ms ?? "n/d"}ms`,
       `FC riposo ${n.fcr_bpm ?? "n/d"}`,
       s ? (s.manuale ? `sonno ${fmtMin(s.durata_min)} (dichiarato, senza Watch)` : `sonno ${fmtMin(s.durata_min)} (punteggio ${s.punteggio}, profondo ${s.fasi_min.profondo}m, REM ${s.fasi_min.rem}m)`) : "sonno non registrato",
@@ -72,13 +74,15 @@ async function buildSummary(db, today, hist) {
     const st = mf.filter((f) => f.stato !== "fresco"), lo = mf.filter((f) => f.volume === "basso"), hi = mf.filter((f) => f.volume === "alto");
     if (mf.length) forza += ` Fatica per muscolo: ${st.length ? st.map((f) => `${f.muscolo} ${f.stato}`).join(", ") : "tutti freschi"}. Serie negli ultimi 7 giorni (consigliato 10-20 per muscolo): ${mf.map((f) => `${f.muscolo} ${f.serie_7g}`).join(", ")}${lo.length ? `; volume basso per ${lo.map((f) => f.muscolo).join(", ")}` : ""}${hi.length ? `; volume alto per ${hi.map((f) => f.muscolo).join(", ")}` : ""}.`;
   } catch (_) {}
+  const setup = oggi.settaggio;
   const lines = [
+    setup && !setup.pronto ? `KAIRO È IN SETTAGGIO (giorno ${setup.giorno}; notti con HRV ${setup.notti_hrv}/${setup.obiettivo.notti_hrv}, notti con il Watch ${setup.notti_sonno}/${setup.obiettivo.notti_sonno}, giorni con FC a riposo ${setup.giorni_fc}/${setup.obiettivo.giorni_fc}${setup.profilo ? "" : ", manca l'età nel profilo"}). Recupero, carico e allenamento consigliato NON sono ancora affidabili e la persona non li vede: NON citarli mai e non dedurre niente da HRV o FC. Parla di sonno (orari regolari, durata), di palestra e di come completare il settaggio: Watch al polso anche di notte, 1 minuto di Respira appena sveglio, check-in ogni mattina.` : "",
     forza,
     `Carico di allenamento (TRIMP): media ultimi 7 giorni ${r1(c.acuto)}, media 28 giorni ${r1(c.cronico)}, rapporto ${c.rapporto ?? "n/d"} → ${STATO[c.stato] || "n/d"}. Carico di oggi finora ${c.oggi ?? 0}.`,
-    c.consiglio ? `ALLENAMENTO CONSIGLIATO OGGI (calcolato da recupero e carico): ${c.consiglio.titolo} — ${c.consiglio.testo} (carico tra ${c.consiglio.min} e ${c.consiglio.max}).` : "Allenamento consigliato: non ancora disponibile (servono 2 settimane di carico).",
+    setup && !setup.pronto ? "" : c.consiglio ? `ALLENAMENTO CONSIGLIATO OGGI (calcolato da recupero e carico): ${c.consiglio.titolo} — ${c.consiglio.testo} (carico tra ${c.consiglio.min} e ${c.consiglio.max}).` : "Allenamento consigliato: non ancora disponibile (servono 2 settimane di carico).",
     oggi.allarme ? `ATTENZIONE: ${oggi.allarme.titolo}. ${oggi.allarme.testo}` : "Nessun allarme di sovraccarico o malanno.",
     oggi.sonno_stanotte ? `Fabbisogno di sonno stanotte ${fmtMin(oggi.sonno_stanotte.fabbisogno_min)}${oggi.sonno_stanotte.a_letto ? `, a letto entro le ${oggi.sonno_stanotte.a_letto}` : ""} (debito ultimi 7 giorni ${fmtMin(oggi.sonno_stanotte.debito_7g_min)}).` : "",
-    `Recupero medio: ultimi 7 giorni ${r1(avg(last7.map((d) => d.recupero.score)))}, 7 giorni prima ${r1(avg(prev7.map((d) => d.recupero.score)))}.`,
+    setup && !setup.pronto ? "" : `Recupero medio: ultimi 7 giorni ${r1(avg(last7.map((d) => d.recupero.score)))}, 7 giorni prima ${r1(avg(prev7.map((d) => d.recupero.score)))}.`,
     `HRV media 7 giorni ${r1(avg(last7.map((d) => d.notte.hrv_ms)))} ms contro media personale 60 giorni ${r1(hrv60?.v)} ms (più alta = più recuperato).`,
     `FC a riposo media 7 giorni ${r1(avg(last7.map((d) => d.notte.fcr_bpm)))} contro media 60 giorni ${r1(fcr60?.v)} bpm (più bassa = meglio).`,
     `Sonno: registrato in ${nights} notti su 7${nights ? `, durata media ${fmtMin(Math.round(avg(last7.map((d) => d.sonno?.durata_min))))}` : ""}.`,
@@ -88,7 +92,7 @@ async function buildSummary(db, today, hist) {
     `Ultimi 30 giorni registrati dal Watch: nuoto in ${nuoto30?.n || 0} giorni${nuoto30?.n ? ` (${r1(nuoto30.v)} m in totale)` : ""}, bici in ${bici30?.n || 0} giorni${bici30?.n ? ` (${r1(bici30.v, 1)} km in totale)` : ""}.`,
     Object.keys(acts).length ? `Attività dichiarate nei check-in degli ultimi 14 giorni: ${Object.entries(acts).map(([k, v]) => `${k} ${v}`).join(", ")}.` : "Nessun check-in negli ultimi 14 giorni.",
   ];
-  return lines.join("\n");
+  return lines.filter(Boolean).join("\n");
 }
 
 const SYSTEM = (profile) => `Sei il coach di Kairo: un allenatore personale esperto di recupero, sonno e allenamento. Parli italiano, dai del tu, con il tono di un coach umano che conosce bene la persona: caldo, diretto, motivante, mai robotico.
@@ -107,7 +111,7 @@ COME RISPONDI
 - Puoi usare **grassetto** per 1-2 concetti chiave e un elenco puntato solo per le azioni pratiche.
 
 COSA SAI DEI DATI
-Lo score di recupero (0-100) segue la struttura della Readiness di Oura: HRV (stanotte e media 7 giorni) e FC a riposo confrontate con la media personale dei 60 giorni, sonno della notte, bilancio di sonno a 14 giorni e respirazione notturna. Fasce Whoop: 67+ verde, 34-66 giallo, sotto 34 rosso. Il punteggio del sonno usa le soglie AASM/NSF (7-9 h, efficienza >= 85%). L'HRV di Apple Watch è SDNN: confrontala con la media personale, non con altre persone. Il VO2max è il miglior indicatore della forma aerobica.
+Lo score di recupero (0-100) ha 5 ingredienti: HRV 40% (stanotte o Respira del mattino, e media 7 giorni) e FC a riposo 20% confrontate con la media personale dei 60 giorni (dopo un infortunio solo dei giorni successivi), sonno 25% (notte + bilancio di 14 notti), carico 10%, respirazione notturna 5%. Come si sente nel check-in NON entra nello score. Fasce Whoop: 67+ verde, 34-66 giallo, sotto 34 rosso. Il punteggio del sonno usa le soglie AASM/NSF (7-9 h, efficienza >= 85%). L'HRV di Apple Watch è SDNN: confrontala con la media personale, non con altre persone. Il VO2max è il miglior indicatore della forma aerobica.
 ${profile ? `\nCHI È LA PERSONA\n${profile}` : ""}`;
 
 function parseQuota(h) {
