@@ -2,7 +2,7 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
-## [Non pubblicato]
+## [1.10.0] — 2026-10-12
 
 ### Aggiunto
 - **FC a riposo pronta alla sveglia**: Kairo calcola la frequenza più bassa mentre dormi (media di 10 minuti nelle fasi di sonno), come Oura e Whoop, appena arrivano battiti e sonno, e la usa nel recupero confrontandola solo con le tue altre notti (dopo 5 notti; prima usa la FC a riposo di Apple, che arriva durante la giornata). Le ultime 60 notti vengono calcolate da sole al primo invio.
