@@ -23,7 +23,7 @@ const dropTodayAdvice = (db, day) => db.prepare("DELETE FROM advice WHERE day IN
 import { recomputeTrimp, recomputeNightHr } from "./load.js";
 import { getVapid, sendPush, validEndpoint } from "./push.js";
 
-const VERSION = "1.10.0";
+const VERSION = "1.10.1";
 
 // No CORS headers: only the Kairo app (same origin) and the Shortcuts app (not a browser) talk to the API.
 const json = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), {
@@ -127,21 +127,23 @@ async function ingest(payload, env, origin) {
   for (const [s, e, st] of rows.sleep) stmts.push(db.prepare("INSERT OR IGNORE INTO sleep(start,end,stage) VALUES(?,?,?)").bind(s, e, st));
   // statements that touch last night (sleep stages, HRV, resting HR, breathing): the Watch finishes
   // processing the night a few minutes after waking up, so these can arrive in a later sync
+  // Only data of the night just passed counts (from 18:00 yesterday to 12:00 today, phone's local time):
+  // the Watch also measures HRV during the day, and that must not rewrite the texts at every sync.
   const NIGHT = new Set(["hrv", "fcr", "resp", "spo2"]);
+  const today = todayLocal((await getProfile(db)).tz);
+  const yesterday = new Date(Date.parse(today + "T12:00:00Z") - 86400e3).toISOString().slice(0, 10);
+  const lastNight = (ts) => { const local = String(ts).slice(0, 16); return local >= `${yesterday}T18:00` && local <= `${today}T12:00`; };
   const nightIdx = new Set();
-  rows.samples.forEach((x, i) => { if (NIGHT.has(x[0])) nightIdx.add(i); });
+  rows.samples.forEach((x, i) => { if (NIGHT.has(x[0]) && lastNight(x[1])) nightIdx.add(i); });
   const sleepFrom = rows.samples.length + rows.daily.length + rows.hourly.length;
-  rows.sleep.forEach((_, i) => nightIdx.add(sleepFrom + i));
+  rows.sleep.forEach((x, i) => { if (lastNight(x[1])) nightIdx.add(sleepFrom + i); });
   let nightNew = 0;
   for (let i = 0; i < stmts.length; i += 400) {
     const res = await db.batch(stmts.slice(i, i + 400));
     res.forEach((x, j) => { if (nightIdx.has(i + j) && x?.meta?.changes) nightNew++; });
   }
   // the night changed → today's coach texts were written on an incomplete night: write them again
-  if (nightNew) {
-    const day = todayLocal((await getProfile(db)).tz);
-    await db.prepare("DELETE FROM advice WHERE day IN (?, ?)").bind(day, "A:" + day).run();
-  }
+  if (nightNew) await db.prepare("DELETE FROM advice WHERE day IN (?, ?)").bind(today, "A:" + today).run();
   // new heart-rate samples → recompute the training load of those days
   const fcDays = rows.samples.filter((r) => r[0] === "fc").map((r) => r[1].slice(0, 10));
   if (fcDays.length) await recomputeTrimp(db, fcDays, hrMax(await getProfile(db)));

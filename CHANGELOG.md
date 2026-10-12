@@ -2,6 +2,11 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.10.1] — 2026-10-12
+
+### Migliorato
+- Consiglio del coach e allenamento del giorno si rifanno **solo se arrivano dati della notte appena passata** (dalle 18 di ieri a mezzogiorno di oggi): l'HRV misurata di giorno non li fa più rigenerare, così più invii di HealthSync al giorno non consumano IA.
+
 ## [1.10.0] — 2026-10-12
 
 ### Aggiunto

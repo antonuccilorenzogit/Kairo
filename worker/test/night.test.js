@@ -7,7 +7,8 @@ test("notte completata dopo la sveglia: i testi del giorno si rifanno solo se ar
   const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Rome" }).format(new Date());
   const cache = () => env.DB.batch([today, "A:" + today].map((k) => env.DB.prepare("INSERT OR REPLACE INTO advice(day,text,created) VALUES(?,'vecchio',?)").bind(k, new Date().toISOString())));
   const count = async () => (await env.DB.prepare("SELECT count(*) n FROM advice WHERE day IN (?,?)").bind(today, "A:" + today).first()).n;
-  const t = new Date(Date.now() - 3 * 36e5).toISOString().slice(0, 19) + "Z", e = new Date(Date.now() - 2 * 36e5).toISOString().slice(0, 19) + "Z";
+  const yesterday = new Date(Date.parse(today + "T12:00:00Z") - 86400e3).toISOString().slice(0, 10);
+  const t = `${today}T03:00:00+02:00`, e = `${today}T04:00:00+02:00`;
   const night = { hrv_valori: "62", hrv_date: t, sonno_valori: "Profondo", sonno_date: t, sonno_fine: e };
   await cache();
   await call(env, "/api/ingest", { method: "POST", code: CODE, body: night });
@@ -17,4 +18,6 @@ test("notte completata dopo la sveglia: i testi del giorno si rifanno solo se ar
   assert.equal(await count(), 2, "stessi dati reinviati: niente da rifare");
   await call(env, "/api/ingest", { method: "POST", code: CODE, body: { passi_valori: "5000", passi_date: t } });
   assert.equal(await count(), 2, "i passi non toccano la notte");
+  await call(env, "/api/ingest", { method: "POST", code: CODE, body: { hrv_valori: "70", hrv_date: `${yesterday}T15:00:00+02:00` } });
+  assert.equal(await count(), 2, "l'HRV misurata di giorno non rifà i testi");
 });
