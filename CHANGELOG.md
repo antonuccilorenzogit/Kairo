@@ -2,6 +2,11 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.20.1] — 2026-10-12
+
+### Migliorato
+- **Aggiornamento automatico ogni notte** invece che ogni lunedì: l'azione *Aggiorna Kairo* gira verso le 6 italiane e, se non c'è una versione nuova, non fa nulla. Vale per le copie nuove; per quelle già installate basta cambiare una riga (vedi `docs/SETUP.md`, *Aggiornamenti*).
+
 ## [1.20.0] — 2026-10-12
 
 ### Aggiunto

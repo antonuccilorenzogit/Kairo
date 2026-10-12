@@ -43,7 +43,7 @@ Dal PC: apri lo stesso indirizzo in Chrome o Edge, accedi con il codice e clicca
 
 ## Aggiornamenti
 
-La tua copia di Kairo **si aggiorna da sola ogni lunedì**. Lo fa l'azione *Aggiorna Kairo* nel tuo repository GitHub, e Cloudflare ripubblica in automatico. I tuoi dati non vengono toccati.
+La tua copia di Kairo **si aggiorna da sola ogni notte** (verso le 6 italiane; se non c'è niente di nuovo non fa nulla). Le copie installate prima della 1.20.1 si aggiornano il lunedì: per passare al giro di ogni notte, nel tuo repository apri `.github/workflows/aggiorna-kairo.yml` e cambia `"17 4 * * 1"` in `"17 4 * * *"`. Lo fa l'azione *Aggiorna Kairo* nel tuo repository GitHub, e Cloudflare ripubblica in automatico. I tuoi dati non vengono toccati.
 
 Per aggiornare subito: GitHub → il tuo repository → **Actions** → **Aggiorna Kairo** → **Run workflow**. Se GitHub chiede di abilitare le Actions, clicca *I understand… enable them*.
 
@@ -92,7 +92,7 @@ Kairo salva da solo una copia dei tuoi dati **ogni lunedì** e **prima di ogni c
 | La chiave Groq dà errore | Ricopiala per intero da console.groq.com: inizia con `gsk_` e non ha spazi. Oppure salta il passo, il coach funziona lo stesso |
 | *"Il server ha risposto in modo inatteso"* | Ricarica la pagina; se continua apri *Impostazioni → Stato di Kairo* e tocca *Copia report* |
 | *"Troppi tentativi sbagliati"* | hai sbagliato il codice 5 volte: aspetta il tempo indicato (dalla stessa rete) e riprova con il codice giusto |
-| *"Backup automatici non attivi"* | la tua copia è stata installata prima della 1.4: l'aggiornamento automatico del lunedì li attiva da solo |
+| *"Backup automatici non attivi"* | la tua copia è stata installata prima della 1.4: il prossimo aggiornamento automatico li attiva da solo |
 | Lo score resta "in calibrazione" | Servono almeno 5 notti con il Watch, oppure importa lo storico da Salute |
 | *Stato di Kairo* segnala l'iPhone in giallo o rosso | In *Comandi → Automazione* controlla che le due automazioni siano attive e su *Esegui immediatamente* |
 

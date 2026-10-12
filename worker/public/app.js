@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.20.0";
+const APP_VERSION = "1.20.1";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -1873,7 +1873,7 @@ function healthChecks(d, err, lat, rel) {
   // versions
   const srv = d.server.versione;
   if (srv && srv !== APP_VERSION) out.push({ s: "warn", t: "Versione", text: `App ${APP_VERSION}, server ${srv}.`, fix: "Chiudi e riapri Kairo per caricare la versione nuova." });
-  else if (rel && newer(rel.tag, srv || APP_VERSION)) out.push({ s: "warn", t: "Versione", text: `Hai la ${srv}, è uscita la ${rel.tag}.`, fix: "Si aggiorna da sola il lunedì. Per farlo subito: il tuo repository GitHub → Actions → Aggiorna Kairo → Run workflow." });
+  else if (rel && newer(rel.tag, srv || APP_VERSION)) out.push({ s: "warn", t: "Versione", text: `Hai la ${srv}, è uscita la ${rel.tag}.`, fix: "Si aggiorna da sola nel giro automatico (ogni notte; il lunedì nelle copie installate prima della 1.20.1). Per farlo subito: il tuo repository GitHub → Actions → Aggiorna Kairo → Run workflow." });
   else out.push({ s: "ok", t: "Versione", text: `Kairo ${srv || APP_VERSION}${rel ? ", aggiornato" : ""}.`, fix: "" });
   // sync
   const last = d.importazioni[0], ageH = last ? (Date.now() - Date.parse(last.received)) / 36e5 : Infinity;
@@ -1896,7 +1896,7 @@ function healthChecks(d, err, lat, rel) {
     : { s: "err", t: "Coach IA", text: "Nessun modello IA disponibile.", fix: "Aggiungi una chiave Groq in Impostazioni → Coach IA." });
   // backup
   const bk = d.backup;
-  out.push(!bk?.attivo ? { s: "warn", t: "Backup", text: "I backup automatici non sono attivi.", fix: "Si attivano con il prossimo aggiornamento automatico (lunedì). Intanto esporta i dati da Backup ed esportazione." }
+  out.push(!bk?.attivo ? { s: "warn", t: "Backup", text: "I backup automatici non sono attivi.", fix: "Si attivano con il prossimo aggiornamento automatico. Intanto esporta i dati da Backup ed esportazione." }
     : bk.ultimo && days(bk.ultimo.creato) < 9 ? { s: "ok", t: "Backup", text: `Ultima copia ${ago(bk.ultimo.creato)}.`, fix: "" }
     : { s: "warn", t: "Backup", text: bk.ultimo ? `Ultima copia ${ago(bk.ultimo.creato)}.` : "Nessuna copia ancora.", fix: "Tocca «Backup ora» in Backup ed esportazione." });
   // this device

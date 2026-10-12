@@ -1,12 +1,12 @@
 # Keeps your copy of Kairo up to date with the official version.
-# Runs every Monday, or by hand: GitHub → your repository → Actions → "Aggiorna Kairo" → Run workflow.
+# Runs every night (04:17 UTC; if nothing is new it does nothing), or by hand: GitHub → your repository → Actions → "Aggiorna Kairo" → Run workflow.
 # Cloudflare sees the new commit and redeploys automatically. Your data is not touched.
 name: Aggiorna Kairo
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "17 4 * * 1"
+    - cron: "17 4 * * *"
 
 permissions:
   contents: write
