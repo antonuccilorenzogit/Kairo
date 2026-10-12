@@ -19,19 +19,55 @@ async function seed(env, { hrv = () => 70 } = {}) {
   await env.DB.batch(st);
 }
 
-test("recupero: componenti nuove, check-in, incertezza, spiegazione", async () => {
+test("recupero: 5 ingredienti, segnali a parte, come ti senti fuori dallo score", async () => {
   const env = makeEnv(); await setup(env); await seed(env);
   let d = await computeDay(env.DB, today);
   const r = d.recupero;
   assert.ok(r.score != null); assert.equal(r.affidabilita, "alta");
-  assert.ok(r.componenti.stabilita_hrv.punteggio != null, "stabilità HRV calcolata");
-  assert.ok(r.incertezza > 0); assert.ok(Array.isArray(r.spiegazione));
-  assert.equal(r.componenti.soggettivo.punteggio, null);
-  // check-in: feeling bad lowers the score
+  assert.deepEqual(Object.keys(r.componenti).sort(), ["carico", "fc_riposo", "hrv", "respirazione", "sonno"]);
+  const pesi = Object.values(r.componenti).reduce((a, c) => a + c.peso, 0);
+  assert.ok(Math.abs(pesi - 1) < 0.15, `pesi ${pesi}`);
+  assert.ok(r.segnali.stabilita_hrv.punteggio != null, "stabilità HRV calcolata come segnale");
+  assert.ok("ossigeno" in r.segnali && "bilancio_sonno" in r.segnali);
+  assert.equal(r.componenti.sonno.bilancio_min, r.segnali.bilancio_sonno.valore);
+  assert.ok(Array.isArray(r.spiegazione));
+  assert.equal(r.segnali.soggettivo.punteggio, null);
+  // check-in: how you feel is shown next to the score, it does not change it
   await env.DB.prepare("INSERT INTO checkin(day, energia, dolori, umore) VALUES(?, 1, 5, 1)").bind(today).run();
   d = await computeDay(env.DB, today);
-  assert.equal(d.recupero.componenti.soggettivo.punteggio, 0);
-  assert.ok(d.recupero.score < r.score);
+  assert.equal(d.recupero.segnali.soggettivo.punteggio, 0);
+  assert.equal(d.recupero.score, r.score);
+});
+
+test("infortunio: le medie ripartono dai giorni dopo l'infortunio", async () => {
+  const env = makeEnv(); await setup(env);
+  // HRV 70 before the injury (20 days ago), 50 after it
+  await seed(env, { hrv: (i) => (i < 20 ? 50 : 70) });
+  const a = (await computeDay(env.DB, today)).recupero;
+  assert.ok(!a.nuova_base);
+  await call(env, "/api/infortunio", { method: "POST", code: CODE, body: { attivo: true, descrizione: "menisco", dal: day(20) } });
+  const b = (await computeDay(env.DB, today)).recupero;
+  assert.equal(b.nuova_base, true);
+  assert.ok(b.componenti.hrv.baseline < a.componenti.hrv.baseline, `${b.componenti.hrv.baseline} < ${a.componenti.hrv.baseline}`);
+  assert.ok(b.score > a.score, "rispetto alla nuova fase l'HRV di oggi è normale");
+});
+
+test("un giorno bloccato con la formula vecchia viene ricalcolato", async () => {
+  const env = makeEnv(); await setup(env); await seed(env);
+  await env.DB.prepare("INSERT INTO recupero_giorno(day,dati,created) VALUES(?,?,?)").bind(today, JSON.stringify({ score: 3, calcolo: 1, componenti: {} }), new Date().toISOString()).run();
+  const r = (await computeDay(env.DB, today)).recupero;
+  assert.notEqual(r.score, 3);
+  assert.ok(r.componenti.hrv);
+});
+
+test("verifica senza palestra: usa l'energia del check-in, che non entra nello score", async () => {
+  const env = makeEnv(); await setup(env);
+  // alternating good and bad nights; energy follows them
+  await seed(env, { hrv: (i) => (i % 2 ? 40 : 95) });
+  const st = env.DB.prepare("INSERT INTO checkin(day, energia) VALUES(?, ?)");
+  await env.DB.batch(Array.from({ length: 30 }, (_, i) => st.bind(day(i + 1), i % 2 ? 4 : 2)));
+  const v = (await call(env, "/api/recupero/verifica", { code: CODE })).data;
+  assert.equal(v.pronto, true, v.messaggio); assert.equal(v.fonte, "energia");
 });
 
 test("recupero: i giorni con alcol o malanno non entrano nelle medie", async () => {

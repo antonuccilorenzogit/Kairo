@@ -2,6 +2,17 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.16.0] — 2026-10-12
+
+### Migliorato
+- **Score di Recupero più serio: solo 5 ingredienti** misurati dal Watch: HRV 40% (26–40% secondo quante misure ha fatto il Watch), sonno 25% (75% la notte, 25% il bilancio delle ultime 14 notti), FC a riposo 20%, carico 10% (ieri rispetto al tuo giorno tipico e rapporto 7/28 giorni), respirazione 5%. Meno pesi = meno rumore con dati scarsi.
+- **Come ti senti fuori dallo score**: l'energia del check-in compare in una scheda accanto al Recupero, non dentro. Così lo score è solo fisiologia e si può controllare se ci azzecca.
+- **Avvisi invece di ingredienti**: stabilità dell'HRV (7 giorni) e ossigeno notturno compaiono solo quando sono fuori dal normale; l'ossigeno basso conta anche nell'allarme malanno.
+- **Nuova base dopo l'infortunio**: con la modalità infortunio attiva le medie personali usano solo i giorni dopo l'infortunio (dal terzo giorno, se ci sono almeno 5 notti), perché il corpo è in un'altra fase. Sotto lo score: «Rispetto ai giorni dopo l'infortunio».
+- **HRV del mattino al centro**: prima del check-in Kairo chiede «1 minuto di Respira sul Watch, ancora a letto»; quando c'è mostra «HRV del mattino ✓». Dopo 5 mattine diventa il valore principale.
+- **Verifica dello score non circolare**: «Lo score funziona per te?» usa le sedute in palestra oppure, senza palestra (es. infortunio), l'energia del check-in, che non entra nel calcolo.
+- I giorni già bloccati con la formula precedente vengono ricalcolati una volta con quella nuova.
+
 ## [1.15.2] — 2026-10-12
 
 ### Corretto

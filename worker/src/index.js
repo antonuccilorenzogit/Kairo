@@ -23,7 +23,7 @@ const dropTodayAdvice = (db, day) => db.prepare("DELETE FROM advice WHERE day IN
 import { recomputeTrimp, recomputeNightHr } from "./load.js";
 import { getVapid, sendPush, validEndpoint } from "./push.js";
 
-const VERSION = "1.15.2";
+const VERSION = "1.16.0";
 
 // No CORS headers: only the Kairo app (same origin) and the Shortcuts app (not a browser) talk to the API.
 const json = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), {
@@ -412,7 +412,7 @@ async function api(req, env, url) {
   // does the recovery score predict your gym performance? (last 150 days)
   if (p === "/api/recupero/verifica") {
     const hist = await computeHistory(env.DB, todayLocal(tz), 150);
-    return json(await recoveryCheck(env.DB, Object.fromEntries(hist.map((d) => [d.giorno, d.recupero.score]))));
+    return json(await recoveryCheck(env.DB, Object.fromEntries(hist.map((d) => [d.giorno, d.recupero.score])), Object.fromEntries(hist.map((d) => [d.giorno, d.checkin?.energia ?? null]))));
   }
   if (p === "/api/corpo") {
     // Body page: measurements grouped per day, VO2max history, resting and walking heart rate per day

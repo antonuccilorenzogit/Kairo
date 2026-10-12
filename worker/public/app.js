@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.15.2";
+const APP_VERSION = "1.16.0";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -171,11 +171,12 @@ views.oggi = async (el) => {
       <div class="card col center" style="gap:12px;padding:26px 20px">${bean(null, 70)}
         <div class="h2">Prima il check-in</div>
         <div class="small" style="line-height:1.5;color:var(--text);max-width:300px">Com'è andata ieri e come ti senti: 10 secondi. Poi vedi recupero, sonno e cosa fare oggi, con il consiglio del coach scritto su misura.</div>
+        ${d.notte.hrv_mattino == null ? `<div class="card soft small" style="line-height:1.45;text-align:left">⌚ <b>Prima: 1 minuto di Respira</b> sul Watch, ancora a letto. È la misura di HRV più precisa della giornata.</div>` : `<div class="small good" style="font-weight:700">HRV del mattino ✓</div>`}
         <button class="btn orange block" data-checkin style="min-height:52px;border-radius:18px;justify-content:center"><b>Fai il check-in</b>${ico.arrow}</button>
         <button class="small muted" id="skipCk" style="background:none;border:0;cursor:pointer;text-decoration:underline">Oggi salto il check-in</button></div>
       <a class="card row between" href="#/settimana"><span style="font-weight:800">La tua settimana</span>${ico.chevron}</a>
       </div>`;
-    el.querySelectorAll("[data-checkin]").forEach((b) => b.addEventListener("click", () => checkinSheet(null, !d.sonno || d.sonno.manuale, y.attivita.sessioni || [])));
+    el.querySelectorAll("[data-checkin]").forEach((b) => b.addEventListener("click", () => checkinSheet(null, !d.sonno || d.sonno.manuale, y.attivita.sessioni || [], d.notte.hrv_mattino == null)));
     $("#skipCk").onclick = async () => { try { await api("/api/checkin", { method: "POST", body: { day: todayStr() } }); router(); } catch (e) { toast(e.message); } };
     $("#syncNow").onclick = () => { const back = () => { if (document.visibilityState !== "visible") return; document.removeEventListener("visibilitychange", back); setTimeout(() => router(), 1500); }; document.addEventListener("visibilitychange", back); };
     return;
@@ -466,20 +467,30 @@ function infoSheet(kind, d) {
       + `<div class="card list">${[["Durata", "durata", "35%", "7–9 h raccomandate (AASM); pieno punteggio da 8 h"], ["Efficienza", "efficienza", "20%", "≥ 85% del tempo a letto dormendo (National Sleep Foundation)"], ["Sonno profondo", "profondo", "10%", "almeno 15% del sonno"], ["REM", "rem", "10%", "almeno 20% del sonno"], ["Regolarità", "regolarita", "15%", "Sleep Regularity Index sugli ultimi 7 giorni"], ["Orario", "orario", "10%", "punto medio del sonno tra 00:00 e 03:00"]]
           .map(([l, k, w, why]) => `<div class="item"><div class="col" style="gap:2px"><b>${l} <span class="small muted">${w}</span></b><span class="small muted">${why}</span></div><b>${s && s.contributi && s.contributi[k] != null ? s.contributi[k] : "–"}</b></div>`).join("")}</div>`
       + you(s && s.manuale ? `${s.punteggio}/100 · ${fmtMin(s.durata_min)} dichiarate nel check-in: senza il Watch conta solo la durata.` : s ? `${s.punteggio}/100 · ${fmtMin(s.durata_min)} di sonno, efficienza ${s.efficienza}%, profondo ${s.quota_profondo}%, REM ${s.quota_rem}%${s.sri != null ? `, regolarità (SRI) ${s.sri}` : ""}.` : "nessuna notte registrata: dormi con il Watch per avere questo dato.")
+      + body(`<b>Nel Recupero</b> il sonno conta per il 75% questa notte e per il 25% il bilancio delle ultime 14 notti${c.sonno?.bilancio_min != null ? ` (tu: ${c.sonno.bilancio_min >= 0 ? "in pari" : `${fmtMin(-c.sonno.bilancio_min)} in meno a notte`})` : ""}: una notte corta si recupera, un debito lungo pesa di più.`)
       + tip("Il sonno profondo si concentra nella prima metà della notte, il REM verso il mattino: andare a letto tardi taglia soprattutto il profondo, quello che ripara i muscoli.");
   } else if (kind === "bilancio") {
-    const v = c.bilancio_sonno.valore;
+    const v = d.recupero.segnali?.bilancio_sonno?.valore ?? c.sonno?.bilancio_min ?? null;
     html = sheetHead("Bilancio di sonno")
       + body("Confronta quanto hai dormito in media nelle ultime 14 notti registrate con il fabbisogno di riferimento di 8 ore (centro dell'intervallo 7–9 h raccomandato per gli adulti). Una notte corta si recupera; un debito che dura settimane pesa sul recupero. È lo stesso principio del «Sleep balance» di Oura.")
       + you(v == null ? "servono almeno 3 notti registrate nelle ultime 2 settimane." : v >= 0 ? `in media dormi ${fmtMin(SLEEP_NEED + v)} a notte: sei in pari.` : `in media dormi ${fmtMin(SLEEP_NEED + v)} a notte, ${fmtMin(-v)} meno del fabbisogno.`)
       + tip("Il debito di sonno non si azzera con una sola dormita lunga: servono più notti di fila un po' più lunghe del solito.");
   } else if (kind === "metodo") {
-    const w = Object.entries(c).map(([k, x]) => [k, x.peso, x.punteggio]);
-    const names = REC_NAMES;
+    const order = ["hrv", "sonno", "fc_riposo", "carico", "respirazione"];
+    const w = order.filter((k) => c[k]).map((k) => [k, c[k].peso, c[k].punteggio]);
     html = sheetHead("Come si calcola il Recupero")
-      + body("Ogni ingrediente riceve un punteggio da 0 a 100, dove 60 significa «come al solito per te». Il Recupero è la loro media pesata; se un dato manca, gli altri si ridistribuiscono il peso. Un buon sonno o un buon umore però non possono compensare HRV e FC a riposo in allarme: il Recupero non supera di oltre 20 punti il loro segnale. Le tue medie usano mediana e deviazione robusta degli ultimi 60 giorni, senza i giorni con alcol, malanno o viaggio. Con poche misure di HRV il punteggio non cambia più di 15 punti da ieri. Le fasce sono quelle di Whoop: 67–100 verde, 34–66 giallo, 0–33 rosso.")
-      + `<div class="card list">${w.map(([k, p, sc]) => `<div class="item"><span>${names[k]} <span class="small muted">${Math.round(p * 100)}%</span></span><b>${sc ?? "–"}</b></div>`).join("")}</div>`
-      + body("La struttura segue la Readiness di Oura (FC a riposo e HRV confrontate con le tue medie, sonno, bilancio di sonno, attività di ieri e bilancio di attività); l'HRV e la sua stabilità (coefficiente di variazione a 7 giorni) seguono Plews e HRV4Training; come ti senti segue i questionari di benessere (Saw et al. 2016); respirazione e ossigeno notturni sono segnali precoci di malanno. Nessuna di queste app pubblica la formula esatta: i pesi sono di Kairo e il codice è pubblico su GitHub.");
+      + body("Solo <b>5 ingredienti</b>, misurati dal Watch. Ognuno riceve un punteggio da 0 a 100, dove 60 significa «come al solito per te». Il Recupero è la loro media pesata; se un dato manca, gli altri si ridistribuiscono il peso.")
+      + `<div class="card list">${w.map(([k, p, sc]) => `<div class="item"><span>${REC_NAMES[k]} <span class="small muted">${Math.round(p * 100)}%</span></span><b>${sc ?? "–"}</b></div>`).join("")}</div>`
+      + body("<b>Regole di sicurezza.</b> Un buon sonno non può compensare HRV e FC in allarme: il Recupero non supera di oltre 20 punti il loro segnale. Con poche misure di HRV non cambia più di 15 punti da ieri. Le tue medie usano mediana e deviazione robusta degli ultimi 60 giorni, senza i giorni con alcol, malanno o viaggio" + (d.recupero.nuova_base ? "; con l'infortunio attivo contano solo i giorni dopo l'infortunio, perché il corpo è in un'altra fase." : ".") + " Fasce: 67–100 verde, 34–66 giallo, 0–33 rosso.")
+      + body("<b>Cosa resta fuori.</b> Come ti senti (check-in) è mostrato accanto allo score, non dentro: così si può controllare se lo score ci azzecca. Stabilità dell'HRV e ossigeno notturno diventano avvisi solo quando sono fuori dal normale.")
+      + body("<b>HRV del mattino.</b> 1 minuto di Respira appena sveglio dà la misura più affidabile: dopo 5 mattine diventa il valore principale.")
+      + body("Struttura ispirata alla Readiness di Oura e al metodo HRV di Plews / HRV4Training. I pesi sono di Kairo e il codice è pubblico su GitHub.");
+  } else if (kind === "carico") {
+    const k = c.carico || {};
+    html = sheetHead("Carico di allenamento")
+      + body("Quanto hai faticato: il carico di ieri rispetto al tuo giorno tipico e quello degli ultimi 7 giorni rispetto agli ultimi 28 (rapporto acuto/cronico). Tra 0,8 e 1,3 sei nella zona in cui il corpo si adatta; sopra 1,5 il rischio di affaticamento cresce.")
+      + you(k.punteggio == null ? `servono ancora ${k.mancano || 14} giorni di dati per conoscere il tuo carico abituale.` : `ieri ${k.valore ?? 0}, il tuo giorno tipico ${k.baseline ?? "–"}${k.rapporto != null ? `; rapporto 7/28 giorni ${fmtNum(k.rapporto, 2)}` : ""}.`)
+      + tip("Il carico viene dalla frequenza cardiaca delle sedute (TRIMP) e dalle serie registrate in palestra.");
   } else {
     html = sheetHead("Respirazione notturna")
       + body("Quanti respiri fai al minuto mentre dormi. È molto stabile: un aumento di 1–2 respiri al minuto per più notti può segnalare affaticamento o un malanno in arrivo.")
@@ -490,32 +501,35 @@ function infoSheet(kind, d) {
   openSheet(html, "Spiegazione");
 }
 
-const REC_NAMES = { hrv: "HRV", fc_riposo: "FC a riposo", sonno: "Sonno della notte", bilancio_sonno: "Bilancio di sonno (14 giorni)", respirazione: "Respirazione notturna", stabilita_hrv: "Stabilità dell'HRV (7 giorni)", soggettivo: "Come ti senti (check-in)", ossigeno: "Ossigeno notturno", attivita_ieri: "Attività di ieri", bilancio_attivita: "Bilancio di attività (7/28 giorni)" };
+const REC_NAMES = { hrv: "HRV", sonno: "Sonno (notte + bilancio 14 giorni)", fc_riposo: "FC a riposo", carico: "Carico (ieri e 7/28 giorni)", respirazione: "Respirazione notturna" };
 const TAG_LABEL = { alcol: "alcol", malanno: "malanno", viaggio: "viaggio", stress: "stress", "cena tardi": "cena tardi", "allenamento serale": "allenamento serale" };
 views.recupero = async (el) => {
   el.innerHTML = header("Recupero") + loading(3);
   const [hist, mesi] = await Promise.all([api("/api/history?days=14"), api("/api/hrv-mensile")]);
   const d = hist[hist.length - 1], r = d.recupero, st = state(r.score);
+  const C = r.componenti, S = r.segnali || {};
+  const bal = C.sonno?.bilancio_min;
   const comps = [
-    ["hrv", "HRV", d.notte.hrv_ms != null ? `${fmtNum(d.notte.hrv_ms)} ms` : "–", r.componenti.hrv],
-    ["fc_riposo", r.componenti.fc_riposo.fonte === "notte" ? "FC nel sonno" : "FC a riposo", r.componenti.fc_riposo.valore != null ? `${fmtNum(r.componenti.fc_riposo.valore)} bpm` : "–", r.componenti.fc_riposo],
-    ["sonno", "Sonno", d.sonno ? `${d.sonno.punteggio} pt` : "–", r.componenti.sonno],
-    ["bilancio_sonno", "Bilancio sonno 14 gg", r.componenti.bilancio_sonno.valore != null ? (r.componenti.bilancio_sonno.valore >= 0 ? "in pari" : `−${fmtMin(-r.componenti.bilancio_sonno.valore)}/notte`) : "–", r.componenti.bilancio_sonno],
-    ["respirazione", "Respirazione", d.notte.resp_rpm != null ? fmtNum(d.notte.resp_rpm, 1) : "–", r.componenti.respirazione],
-    ["stabilita_hrv", "Stabilità HRV 7 gg", r.componenti.stabilita_hrv?.valore != null ? `CV ${fmtNum(r.componenti.stabilita_hrv.valore, 1)}%` : "–", r.componenti.stabilita_hrv],
-    ["soggettivo", "Come ti senti", d.checkin?.energia != null ? `energia ${d.checkin.energia}/5${d.checkin.dolori != null ? ` · indolenzim. ${d.checkin.dolori}/5` : ""}` : "–", r.componenti.soggettivo],
-    ["ossigeno", "Ossigeno notturno", d.notte.spo2_media != null ? `${fmtNum(d.notte.spo2_media, 1)}%` : "–", r.componenti.ossigeno],
-    ["attivita_ieri", "Attività di ieri", r.componenti.attivita_ieri?.valore != null ? `carico ${r.componenti.attivita_ieri.valore}` : "–", r.componenti.attivita_ieri],
-    ["bilancio_attivita", "Bilancio di attività", r.componenti.bilancio_attivita?.valore != null ? fmtNum(r.componenti.bilancio_attivita.valore, 2) : "–", r.componenti.bilancio_attivita],
-  ].filter(([k, , , c]) => c && (["hrv", "fc_riposo", "sonno", "bilancio_sonno"].includes(k) ? true : k === "respirazione" || k === "ossigeno" ? c.punteggio != null && c.punteggio < 60 : c.punteggio != null)); // the secondary ones only when they count
+    ["hrv", C.hrv.fonte === "mattino" ? "HRV del mattino" : "HRV", d.notte.hrv_ms != null || C.hrv.valore != null ? `${fmtNum(C.hrv.valore ?? d.notte.hrv_ms)} ms` : "–", C.hrv],
+    ["sonno", "Sonno", d.sonno ? `${fmtMin(d.sonno.durata_min)}${bal != null ? ` · ${bal >= 0 ? "in pari" : `debito ${fmtMin(-bal)}/notte`}` : ""}` : "–", C.sonno],
+    ["fc_riposo", C.fc_riposo.fonte === "notte" ? "FC nel sonno" : "FC a riposo", C.fc_riposo.valore != null ? `${fmtNum(C.fc_riposo.valore)} bpm` : "–", C.fc_riposo],
+    ["carico", "Carico", C.carico?.valore != null ? `ieri ${C.carico.valore}` : "–", C.carico],
+    ["respirazione", "Respirazione", d.notte.resp_rpm != null ? fmtNum(d.notte.resp_rpm, 1) : "–", C.respirazione],
+  ].filter(([k, , , c]) => c && (k !== "respirazione" || (c.punteggio != null && c.punteggio < 60))); // breathing only when it lowers the score
+  // alarms that do not enter the score but are worth knowing
+  const alarms = [];
+  if (S.stabilita_hrv?.z != null && S.stabilita_hrv.z <= -1.5) alarms.push("HRV molto instabile negli ultimi 7 giorni: spesso succede con stress, poco sonno o un malanno in arrivo.");
+  if (S.ossigeno?.z != null && S.ossigeno.z <= -1.5) alarms.push(`Ossigeno notturno sotto il tuo solito (${fmtNum(S.ossigeno.valore, 1)}%): se ti senti giù, riposa.`);
+  const ci = d.checkin;
+  const feel = ci?.energia != null ? `<div class="card row between" style="gap:10px"><div class="col" style="gap:2px"><div class="label">Come ti senti oggi</div><div class="small muted">dal check-in · non entra nello score</div></div><div style="font-weight:800;text-align:right">energia ${ci.energia}/5${ci.dolori != null ? `<br><span class="small muted" style="font-weight:600">indolenzimento ${ci.dolori}/5</span>` : ""}</div></div>` : "";
   const compRow = ([k, name, val, c]) => {
     // ogni contributo vale 0-100; 60 = come al solito: la barra mostra quanto si discosta
     const z = c.punteggio == null ? 0 : (c.punteggio - 60) / 20;
     const w = Math.min(Math.abs(z), 3) / 3 * 50;
     const color = z > 0.05 ? "var(--green)" : z < -0.05 ? "var(--red)" : "#C9CEDB";
     const wait = (n) => `tra ${n} ${n === 1 ? "giorno" : "giorni"}`;
-    const media = c.punteggio != null ? `${c.punteggio}/100` : c.mancano > 0 ? wait(c.mancano) : k === "soggettivo" ? "fai il check-in" : "nessun dato oggi";
-    return `<button class="comp" data-info="${k === "respirazione" ? "resp" : k === "bilancio_sonno" ? "bilancio" : ["hrv", "fc_riposo", "sonno"].includes(k) ? k : "metodo"}" aria-label="Cosa significa ${name}">
+    const media = c.punteggio != null ? `${c.punteggio}/100` : c.mancano > 0 ? wait(c.mancano) : "nessun dato oggi";
+    return `<button class="comp" data-info="${k === "respirazione" ? "resp" : ["hrv", "fc_riposo", "sonno", "carico"].includes(k) ? k : "metodo"}" aria-label="Cosa significa ${name}">
       <div class="row between" style="width:100%"><div class="row" style="gap:6px;font-weight:800">${name} ${ico.info} <span class="small muted" style="font-weight:600">${Math.round(c.peso * 100)}%</span></div>
       <div style="font-weight:800">${val} <span class="small muted" style="font-weight:600">${media}</span></div></div>
       <div class="track"><div class="zero"></div><div class="bar" style="left:${z >= 0 ? 50 : 50 - w}%;width:${Math.max(w, 1.5)}%;background:${color}"></div></div></button>`;
@@ -526,7 +540,9 @@ views.recupero = async (el) => {
     return `<div class="col" style="align-items:center;gap:4px;flex:1"><div style="height:90px;width:100%;display:flex;align-items:flex-end;justify-content:center"><div title="${h.giorno}: ${s ?? "n/d"}" style="width:70%;max-width:18px;border-radius:6px;height:${s == null ? 4 : Math.max(6, s * 0.9)}px;background:${s == null ? "#E2E5EC" : sc.fill}"></div></div><div class="small muted" style="font-size:11px">${fmtDate(h.giorno, { day: "numeric" })}</div></div>`;
   }).join("");
   el.innerHTML = `${header("Recupero", { sub: fmtDate(d.giorno, { weekday: "short", day: "numeric", month: "short" }) })}
-    <div class="card row" style="gap:14px">${bean(r.score, 46)}<div class="col" style="gap:2px"><div style="font-size:30px;font-weight:900;line-height:1">${r.score ?? "–"} <span class="${st.cls}" style="font-size:16px">${st.label}</span></div><div class="small muted">Rispetto ai tuoi ultimi 60 giorni</div>${r.affidabilita ? `<button class="small" id="precBtn" style="background:none;border:0;padding:0;text-align:left;cursor:pointer;font-weight:700">precisione <b class="${r.affidabilita === "alta" ? "good" : r.affidabilita === "media" ? "mid" : "bad"}" style="text-decoration:underline">${r.affidabilita}</b></button>` : ""}<button class="small" id="howScore" style="background:none;border:0;padding:0;color:var(--orange-ink);text-align:left;cursor:pointer;font-weight:700">Come si calcola?</button></div></div>
+    <div class="card row" style="gap:14px">${bean(r.score, 46)}<div class="col" style="gap:2px"><div style="font-size:30px;font-weight:900;line-height:1">${r.score ?? "–"} <span class="${st.cls}" style="font-size:16px">${st.label}</span></div><div class="small muted">${r.nuova_base ? "Rispetto ai giorni dopo l'infortunio" : "Rispetto ai tuoi ultimi 60 giorni"}</div>${r.affidabilita ? `<button class="small" id="precBtn" style="background:none;border:0;padding:0;text-align:left;cursor:pointer;font-weight:700">precisione <b class="${r.affidabilita === "alta" ? "good" : r.affidabilita === "media" ? "mid" : "bad"}" style="text-decoration:underline">${r.affidabilita}</b></button>` : ""}<button class="small" id="howScore" style="background:none;border:0;padding:0;color:var(--orange-ink);text-align:left;cursor:pointer;font-weight:700">Come si calcola?</button></div></div>
+    ${feel}
+    ${alarms.map((a) => `<div class="card small" style="line-height:1.45;border-left:4px solid var(--red)">⚠️ ${esc(a)}</div>`).join("")}
     ${r.domani_se_dormi?.personale ? `<div class="card small" style="line-height:1.45"><b>Se stanotte dormi quello che ti serve, domani circa ${r.domani_se_dormi.valore}</b><br><span class="muted">Imparato da ${r.domani_se_dormi.notti} tue notti piene.</span></div>` : ""}
     <div class="card" style="padding:16px 16px 10px"><div class="row between" style="padding:0 2px 6px"><div class="label">Cosa ha pesato oggi</div><div class="small muted">tocca per capire</div></div>
       ${comps.map(compRow).join("")}
@@ -534,7 +550,7 @@ views.recupero = async (el) => {
     <div class="card"><div class="label" style="margin-bottom:8px">Ultimi 14 giorni</div><div class="row" style="gap:2px;align-items:flex-end">${bars}</div></div>
     ${mesi.length > 1 ? `<button class="card col" data-info="hrv" style="border:0;text-align:left;cursor:pointer;gap:8px"><div class="row between" style="width:100%"><div class="label">HRV · media mensile</div><div class="small muted">${mesi.length} mesi</div></div>${lineChart(mesi.map((m) => m.media), mesi.map((m) => m.mese.slice(5)))}</button>` : ""}`;
   el.insertAdjacentHTML("beforeend", `<div class="card col" style="gap:8px"><div class="label">Lo score funziona per te?</div>
-      <div class="small" style="line-height:1.5;color:var(--text)">Kairo confronta le tue sedute in palestra nei giorni verdi e negli altri: se nei giorni verdi rendi di più, lo score sta leggendo bene il tuo corpo.</div>
+      <div class="small" style="line-height:1.5;color:var(--text)">Kairo controlla lo score con qualcosa che non usa per calcolarlo: le tue sedute in palestra o, se non ne hai abbastanza, l'energia che dichiari nel check-in. Se nei giorni verdi rendi di più o ti senti meglio, lo score sta leggendo bene il tuo corpo.</div>
       <button class="btn ghost" id="verify">Verifica</button><div id="verifyOut" class="small" style="line-height:1.5"></div></div>`);
   $("#verify").onclick = async () => {
     const out = $("#verifyOut"); out.textContent = "Calcolo…";
@@ -557,7 +573,9 @@ function precisionSheet(r) {
   if (C.fc_riposo.punteggio == null) why.push(C.fc_riposo.fonte === "apple" || C.fc_riposo.notti_fc_sonno < 5 ? "La FC a riposo di oggi non c'è ancora: quella di Apple arriva durante la giornata." : "Manca la FC a riposo di oggi.");
   if (r.calibrazione) why.push(`Le tue medie personali sono ancora in costruzione (${r.giorni_baseline} giorni su 14).`);
   const need = [Math.max(0, 14 - (r.giorni_baseline || 0)), r.domani_se_dormi?.mancano || 0];
-  for (const k of ["hrv", "fc_riposo", "bilancio_sonno", "stabilita_hrv", "respirazione"]) need.push(C[k]?.mancano || 0);
+  for (const k of ["hrv", "fc_riposo", "carico", "respirazione"]) need.push(C[k]?.mancano || 0);
+  for (const k of ["bilancio_sonno", "stabilita_hrv"]) need.push(r.segnali?.[k]?.mancano || 0);
+  if (r.nuova_base) why.push("Con l'infortunio confronto i tuoi dati solo con i giorni dopo l'infortunio: il corpo è in un'altra fase.");
   if (C.fc_riposo.fonte !== "notte") need.push(Math.max(0, 5 - (C.fc_riposo.notti_fc_sonno || 0)));
   const left = Math.max(...need), done = Math.max(0, 14 - Math.min(14, left));
   openSheet(`${sheetHead(`Precisione ${esc(r.affidabilita)}`)}
@@ -1148,7 +1166,7 @@ function finishSheet(ses) {
 }
 
 /* ---------- check-in ---------- */
-function checkinSheet(existing, askSleep = false, detected = []) {
+function checkinSheet(existing, askSleep = false, detected = [], askRespira = false) {
   // training sessions the Watch detected yesterday (from heart rate): duration and sport prefilled
   const detMin = detected.reduce((a, x) => a + x.minuti, 0), detSport = detected.map((x) => x.sport).find(Boolean);
   const s = { energia: existing?.energia ?? 3, dolori: existing?.dolori ?? 2, umore: existing?.umore ?? 3,
@@ -1162,6 +1180,7 @@ function checkinSheet(existing, askSleep = false, detected = []) {
     const sport = [...s.act].some((a) => a !== "riposo");
     w.querySelector(".sheet").innerHTML = `<div class="grab"></div>${sheetHead("Check-in")}
       <div class="muted">Com'è andata ieri, e come ti senti oggi?</div>
+      ${askRespira && !existing ? `<div class="card soft small" style="line-height:1.45">⌚ Non l'hai ancora fatto? <b>1 minuto di Respira</b> sul Watch prima di salvare: lo score sarà più preciso.</div>` : ""}
       ${askSleep ? `<div class="card col"><label class="row between" for="slp" style="font-weight:800"><span>Quanto hai dormito? <span class="small muted" style="font-weight:600">(senza Watch)</span></span><span style="color:var(--orange-ink)">${fmtMin(s.sonno)}</span></label><input id="slp" type="range" min="180" max="720" step="15" value="${s.sonno}"></div>` : ""}
       ${scale("energia", "Energia", "1 a terra · 5 al top")}${scale("dolori", "Indolenzimento", "1 niente · 5 tanto")}${scale("umore", "Umore", "1 giù · 5 alle stelle")}
       ${detMin ? `<div class="card soft small" style="line-height:1.45">⌚ Il Watch ha rilevato ieri <b>${detMin} min</b> di allenamento${detected.length > 1 ? ` in ${detected.length} sessioni` : ""} · FC media ${Math.round(detected.reduce((a, x) => a + x.fc_media * x.minuti, 0) / detMin)}${detSport ? ` · probabilmente <b>${esc(detSport)}</b>` : ""}. Dimmi cos'era.</div>` : ""}

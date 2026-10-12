@@ -20,7 +20,8 @@ import { getProfile, hrMax, DEFAULT_SLEEP_NEED } from "./profile.js";
 //   (Windred 2024): mediana 81, intervallo interquartile 73,8-86,3.
 
 const BASELINE_DAYS = 60;   // finestra della media personale
-const MIN_BASELINE = 5;     // notti minime per considerare affidabile una baseline
+const MIN_BASELINE = 5;
+const CALC_VERSION = 2;     // bump when the recovery formula changes: frozen days are recomputed
 const GAP_MS = 2 * 3600e3;  // pausa oltre la quale due blocchi di sonno sono sessioni diverse
 
 const DAY_MS = 86400e3;
@@ -59,7 +60,8 @@ async function load(db, from, to) {
     db.prepare("SELECT day, dati FROM recupero_giorno WHERE day >= ? AND day <= ?").bind(from, to),
   ]);
   const frozen = {};
-  for (const x of r[6].results) try { frozen[x.day] = JSON.parse(x.dati); } catch (_) {}
+  // a day frozen by an older version of the calculation is computed again (and frozen again)
+  for (const x of r[6].results) try { const v = JSON.parse(x.dati); if (v.calcolo === CALC_VERSION) frozen[x.day] = v; } catch (_) {}
   const sessioni = {};
   for (const x of r[5].results) (sessioni[x.day] ||= []).push({ inizio: x.start, fine: x.end, minuti: x.minuti, fc_media: x.fc_media, carico: x.trimp });
   const samples = {};
@@ -273,9 +275,15 @@ function sri(masks) {
 // trasforma uno z-score (rispetto alla media personale) in un contributo 0-100: 60 = come al solito
 const zScore = (z) => clamp(60 + 20 * clamp(z, -3, 2), 0, 100);
 
-function finalize(days, idx, maskOf) {
+function finalize(days, idx, maskOf, baseFrom = null) {
   const today = days[idx];
-  const prev = days.slice(Math.max(0, idx - BASELINE_DAYS), idx).filter((d) => !tagged(d));
+  let prev = days.slice(Math.max(0, idx - BASELINE_DAYS), idx).filter((d) => !tagged(d));
+  // new baseline after an injury: only the days after it, once there are at least MIN_BASELINE nights with HRV
+  let nuovaBase = false;
+  if (baseFrom) {
+    const after = prev.filter((d) => d.giorno >= baseFrom);
+    if (after.filter((d) => d.notte.hrv_ms != null).length >= MIN_BASELINE) { prev = after; nuovaBase = true; }
+  }
   const week = days.slice(Math.max(0, idx - 6), idx + 1);
 
   // ---- punteggio del sonno (contributi stile Oura, soglie AASM/NSF) ----
@@ -344,7 +352,7 @@ function finalize(days, idx, maskOf) {
       }
       score = lnWeek.length >= 3 ? wTonight * zScore(z) + (1 - wTonight) * zScore(zt) : zScore(z);
     }
-    comp.hrv = { valore: v, unita: "ms", peso: n >= 2 ? 0.30 : n === 1 ? 0.24 : 0.20, misure: useM ? null : today.notte.hrv_misure, misure_tipiche: typ,
+    comp.hrv = { valore: v, unita: "ms", peso: n >= 2 ? 0.40 : n === 1 ? 0.32 : 0.26, misure: useM ? null : today.notte.hrv_misure, misure_tipiche: typ,
       fonte: useM ? "mattino" : today.notte.hrv_fonte, baseline: ok ? r1(Math.exp(b.media)) : null, z: r1(z, 2), punteggio: score, giorni_baseline: b.n,
       mancano: ok ? 0 : MIN_BASELINE - (b.n || 0), mattine: bMorning.n || 0,
       normale: ok ? [r1(Math.exp(b.media - 0.5 * b.dev)), r1(Math.exp(b.media + 0.5 * b.dev))] : null };
@@ -354,11 +362,11 @@ function finalize(days, idx, maskOf) {
     const night = today.notte.fc_notte_bpm != null && !bFcN.insufficiente;
     const b = night ? bFcN : bFcr, v = night ? today.notte.fc_notte_bpm : today.notte.fcr_bpm, ok = !b.insufficiente;
     const z = v != null && ok ? -(v - b.media) / b.dev : null;
-    comp.fc_riposo = { valore: v, unita: "bpm", peso: 0.15, baseline: ok ? r1(b.media) : null, z: r1(z, 2), punteggio: z == null ? null : zScore(z), giorni_baseline: b.n,
+    comp.fc_riposo = { valore: v, unita: "bpm", peso: 0.20, baseline: ok ? r1(b.media) : null, z: r1(z, 2), punteggio: z == null ? null : zScore(z), giorni_baseline: b.n,
       fonte: v == null ? null : night ? "notte" : "apple", mancano: ok ? 0 : MIN_BASELINE - (b.n || 0), notti_fc_sonno: bFcN.n || 0 };
   }
   // sonno della notte: il suo punteggio è già 0-100
-  comp.sonno = { valore: today.sonno ? today.sonno.punteggio : null, unita: "punti", peso: 0.20, baseline: null, z: null, punteggio: today.sonno ? today.sonno.punteggio : null };
+  comp.sonno = { valore: today.sonno ? today.sonno.punteggio : null, unita: "punti", peso: 0.25, baseline: null, z: null, punteggio: today.sonno ? today.sonno.punteggio : null };
   // bilancio di sonno a 14 giorni
   comp.bilancio_sonno = { valore: balance == null ? null : Math.round(balance), unita: "min/notte", peso: 0.05, baseline: SLEEP_NEED_MIN,
     punteggio: balance == null ? null : pw(balance, [[-150, 0], [-120, 20], [-60, 65], [-30, 85], [0, 100]]), mancano: balance == null ? Math.max(1, 3 - last14.length) : 0 };
@@ -391,11 +399,18 @@ function finalize(days, idx, maskOf) {
     const down = v != null && ok ? Math.max(0, (bSpo2.media - v) / bSpo2.dev) : null;
     comp.ossigeno = { valore: v, unita: "%", peso: 0.03, baseline: ok ? r1(bSpo2.media) : null, z: v != null && ok ? r1((v - bSpo2.media) / bSpo2.dev, 2) : null, punteggio: down == null ? null : clamp(75 - 25 * down, 0, 100) };
   }
+  // Only five ingredients enter the score (HRV, sleep, resting HR, load, breathing): with sparse Watch data more
+  // weights would only add noise. HRV stability and oxygen become alarms, how you feel stays next to the score.
+  const segnali = {};
+  for (const k of ["bilancio_sonno", "stabilita_hrv", "soggettivo", "ossigeno"]) { segnali[k] = comp[k]; delete comp[k]; }
+  // the 14-day sleep balance is part of "sleep" (25% of it)
+  if (comp.sonno.punteggio != null && segnali.bilancio_sonno.punteggio != null) comp.sonno.punteggio = 0.75 * comp.sonno.punteggio + 0.25 * segnali.bilancio_sonno.punteggio;
+  comp.sonno.bilancio_min = segnali.bilancio_sonno.valore;
   const prevScore = days[idx - 1]?.recupero?.score ?? null;
   const { score, affidabilita } = scoreFrom(today, comp, prevScore);
   // days of personal baseline: HRV is the main signal (resting HR may arrive later or come from the night)
   const giorniDati = bHrv.n || 0;
-  for (const c of Object.values(comp)) if (c.punteggio != null) c.punteggio = Math.round(c.punteggio);
+  for (const c of [...Object.values(comp), ...Object.values(segnali)]) if (c.punteggio != null) c.punteggio = Math.round(c.punteggio);
   today.recupero = {
     score,
     stato: score == null ? "calibrazione" : score >= 67 ? "recuperato" : score >= 34 ? "parziale" : "basso",
@@ -404,6 +419,8 @@ function finalize(days, idx, maskOf) {
     affidabilita: score == null ? null : affidabilita,
     giorni_baseline: giorniDati,
     componenti: comp,
+    segnali,
+    nuova_base: nuovaBase,
   };
   return today;
 }
@@ -480,14 +497,11 @@ function enrich(days, data, profile, from) {
     // ---- recovery, second step: activity contributors (like Oura's Readiness) and reading of the score ----
     {
       const comp = d.recupero.componenti;
-      // yesterday's load vs your usual day: a very hard day lowers today's readiness
+      // load (like Oura's activity contributors): yesterday vs your usual day + last 7 days vs last 28
       const yRatio = chronic && load[i - 1] != null ? load[i - 1] / chronic : null;
-      comp.attivita_ieri = { valore: load[i - 1] ?? null, unita: "carico", peso: 0.04, baseline: chronic ? Math.round(chronic) : null, z: null,
-        punteggio: yRatio == null ? null : pw(yRatio, [[0, 85], [1, 85], [1.5, 70], [2, 50], [3, 25]]) };
-      // activity balance: last 7 days vs last 28 (too little or too much both lower it)
-      comp.bilancio_attivita = { valore: r1(ratio, 2), unita: "7/28 gg", peso: 0.03, baseline: null, z: null,
-        punteggio: ratio == null ? null : pw(ratio, [[0.4, 60], [0.8, 90], [1.3, 90], [1.5, 65], [2, 35]]) };
-      for (const k of ["attivita_ieri", "bilancio_attivita"]) if (comp[k].punteggio != null) comp[k].punteggio = Math.round(comp[k].punteggio);
+      const parts = [yRatio == null ? null : pw(yRatio, [[0, 85], [1, 85], [1.5, 70], [2, 50], [3, 25]]), ratio == null ? null : pw(ratio, [[0.4, 60], [0.8, 90], [1.3, 90], [1.5, 65], [2, 35]])].filter((x) => x != null);
+      comp.carico = { valore: load[i - 1] ?? null, unita: "ieri", rapporto: r1(ratio, 2), peso: 0.10, baseline: chronic ? Math.round(chronic) : null, z: null,
+        punteggio: parts.length ? Math.round(mean(parts)) : null, mancano: chronic ? 0 : Math.max(1, 14 - c28.length) };
       const prevScore = days[i - 1]?.recupero?.score ?? null;
       const sc = scoreFrom(d, comp, prevScore);
       const rec = d.recupero;
@@ -523,11 +537,12 @@ function enrich(days, data, profile, from) {
 
     // allarmi: due giorni di fila con HRV bassa e FC a riposo o respirazione alte → stanchezza o malanno in arrivo
     const bad = (x) => x && x.recupero && x.recupero.componenti.hrv.z != null && x.recupero.componenti.hrv.z <= -1 &&
-      ((x.recupero.componenti.fc_riposo.z != null && x.recupero.componenti.fc_riposo.z <= -1) || (x.recupero.componenti.respirazione.z != null && x.recupero.componenti.respirazione.z >= 1));
+      ((x.recupero.componenti.fc_riposo.z != null && x.recupero.componenti.fc_riposo.z <= -1) || (x.recupero.componenti.respirazione.z != null && x.recupero.componenti.respirazione.z >= 1) ||
+      (x.recupero.segnali?.ossigeno?.z != null && x.recupero.segnali.ossigeno.z <= -1.5));
     const hrvLow = d.recupero.componenti.hrv.normale && days.slice(Math.max(0, i - 2), i + 1).every((x) => x.notte.hrv_ms != null && x.notte.hrv_ms < d.recupero.componenti.hrv.normale[0]);
     if (bad(d) && bad(days[i - 1])) d.allarme = { tipo: "malanno", titolo: "Segnali di stanchezza o di un malanno", testo: "Da due giorni HRV bassa e frequenza cardiaca (o respirazione) alta rispetto al tuo solito. Due giorni leggeri, sonno abbondante e idratazione; se ti senti male, fermati." };
     // HRV swinging much more than usual while its weekly mean drops: adaptation is not keeping up (Plews)
-    else if (d.recupero.affidabilita !== "bassa" && d.recupero.componenti.stabilita_hrv?.z != null && d.recupero.componenti.stabilita_hrv.z <= -1.5 && d.recupero.componenti.hrv.z != null && d.recupero.componenti.hrv.z < 0)
+    else if (d.recupero.affidabilita !== "bassa" && d.recupero.segnali?.stabilita_hrv?.z != null && d.recupero.segnali.stabilita_hrv.z <= -1.5 && d.recupero.componenti.hrv.z != null && d.recupero.componenti.hrv.z < 0)
       d.allarme = { tipo: "instabile", titolo: "HRV instabile", testo: "Questa settimana la tua HRV oscilla molto più del solito e la media cala: il corpo fa fatica ad assorbire il carico. Un paio di giorni facili e sonno regolare." };
     else if (hrvLow && ratio != null && ratio > 1.3) d.allarme = { tipo: "sovraccarico", titolo: "Stai accumulando fatica", testo: "Da tre giorni l'HRV è sotto il tuo intervallo normale e il carico è sopra il solito. Inserisci 2-3 giorni leggeri prima della prossima seduta dura." };
 
@@ -570,8 +585,10 @@ export async function computeHistory(db, endDay, nDays) {
     }
     return (maskCache[day] = m);
   };
-  for (let i = 0; i < days.length; i++) finalize(days, i, maskOf);
   const profile = await getProfile(db);
+  // with an active injury the baseline starts after it (from 3 days later), as soon as there are enough days
+  const baseFrom = profile.infortunio?.attivo && profile.infortunio.dal ? addDays(profile.infortunio.dal, 3) : null;
+  for (let i = 0; i < days.length; i++) finalize(days, i, maskOf, baseFrom);
   enrich(days, data, profile, start);
   // The day's recovery is frozen as soon as the check-in and the complete night are in: data arriving later
   // (Apple's resting HR, daytime HRV, naps) no longer change it, so the score and the coach's message stay consistent.
@@ -581,7 +598,8 @@ export async function computeHistory(db, endDay, nDays) {
     const night = d.sonno && (d.sonno.manuale || (d.sonno.fasi_min && (d.sonno.fasi_min.profondo || 0) + (d.sonno.fasi_min.rem || 0) > 0));
     if (d.giorno >= start && d.giorno === endDay && d.checkin && night && d.recupero.score != null) {
       d.recupero.bloccato = new Date().toISOString();
-      freeze.push(db.prepare("INSERT OR IGNORE INTO recupero_giorno(day,dati,created) VALUES(?,?,?)").bind(d.giorno, JSON.stringify(d.recupero), d.recupero.bloccato));
+      d.recupero.calcolo = CALC_VERSION;
+      freeze.push(db.prepare("INSERT OR REPLACE INTO recupero_giorno(day,dati,created) VALUES(?,?,?)").bind(d.giorno, JSON.stringify(d.recupero), d.recupero.bloccato));
       // a coach's message written before the freeze may quote another score: it is written again with this one
       freeze.push(db.prepare("DELETE FROM advice WHERE day = ? AND created < ?").bind(d.giorno, d.recupero.bloccato));
     }

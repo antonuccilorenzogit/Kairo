@@ -132,7 +132,7 @@ export const routineFatigue = (scheda, fat) => {
 // ---------- does the recovery score work for you? ----------
 // For each gym day: best estimated 1RM of each exercise / your best of the previous 8 weeks.
 // Then compare the days with recovery 67+ with the others (and the correlation over all days).
-export async function recoveryCheck(db, scoresByDay) {
+export async function recoveryCheck(db, scoresByDay, energyByDay = {}) {
   const since = new Date(Date.now() - 150 * 86400e3).toISOString().slice(0, 10);
   const r = await db.prepare("SELECT substr(start,1,10) d, exercise, max(weight * (1 + reps / 30.0)) e FROM sets WHERE start >= ? AND weight > 0 AND reps BETWEEN 1 AND 12 AND (set_type IS NULL OR set_type != 'warmup') GROUP BY d, exercise ORDER BY d").bind(since).all();
   const hist = {}, perf = {};
@@ -143,8 +143,20 @@ export async function recoveryCheck(db, scoresByDay) {
     hist[x.exercise] = [...prev, { d: x.d, e: x.e }];
   }
   const pts = Object.entries(perf).filter(([d]) => scoresByDay[d] != null).map(([d, v]) => ({ score: scoresByDay[d], perf: v.reduce((a, b) => a + b, 0) / v.length }));
-  if (pts.length < 10) return { sedute: pts.length, pronto: false, messaggio: `Servono almeno 10 sedute di palestra con il recupero calcolato (ne ho ${pts.length}).` };
   const avg = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+  if (pts.length < 10) {
+    // no gym yet (or injured): check with how you feel in the check-in, which is not part of the score
+    const en = Object.entries(energyByDay).filter(([d, e]) => e != null && scoresByDay[d] != null).map(([d, e]) => ({ score: scoresByDay[d], e }));
+    const g = en.filter((x) => x.score >= 67), o = en.filter((x) => x.score < 67);
+    if (en.length >= 14 && g.length >= 4 && o.length >= 4) {
+      const eg = avg(g.map((x) => x.e)), eo = avg(o.map((x) => x.e));
+      return { pronto: true, fonte: "energia", sedute: pts.length, giorni: en.length, giorni_verdi: g.length, altri_giorni: o.length,
+        messaggio: eg - eo >= 0.3 ? `Nei giorni verdi ti senti più carico (energia ${eg.toFixed(1)}/5 contro ${eo.toFixed(1)}/5): lo score descrive bene come stai.`
+          : eg - eo > -0.3 ? `Per ora l'energia che segni è simile nei giorni verdi e negli altri (${eg.toFixed(1)} contro ${eo.toFixed(1)}): servono più giorni per capire.`
+          : `Nei giorni verdi segni meno energia (${eg.toFixed(1)} contro ${eo.toFixed(1)}): per te lo score per ora non coincide con le sensazioni.` };
+    }
+    return { sedute: pts.length, pronto: false, messaggio: `Servono 10 sedute di palestra oppure 14 check-in (con giorni verdi e non) per verificarlo: ne ho ${pts.length} e ${en.length}.` };
+  }
   const green = pts.filter((p) => p.score >= 67), other = pts.filter((p) => p.score < 67);
   const mx = avg(pts.map((p) => p.score)), my = avg(pts.map((p) => p.perf));
   const cov = pts.reduce((a, p) => a + (p.score - mx) * (p.perf - my), 0);
