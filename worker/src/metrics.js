@@ -572,8 +572,11 @@ function enrich(days, data, profile, from) {
     const strainAdd = chronic && load[i] != null ? clamp((load[i] / chronic - 1) * 30, 0, 45) : 0;
     const debtAdd = clamp(debt / 7, 0, 60);
     const before = need0 + strainAdd + debtAdd;
+    // today's naps, minute for minute (Whoop, Oura and Rise count naps in the day's total sleep):
+    // they pay back the week's debt and take the same minutes off tonight's need (never below 6 h)
     const napToday = napMin(d);
     const needTonight = Math.round(napToday ? Math.max(before - napToday, Math.min(before, NIGHT_FLOOR_MIN)) : before);
+    const debtNow = Math.max(0, debt - napToday);
     // sveglia: dal profilo, altrimenti l'orario medio di risveglio delle ultime 14 notti registrate
     let wake = profile.sveglia ? Number(profile.sveglia.slice(0, 2)) * 60 + Number(profile.sveglia.slice(3)) : null;
     if (wake == null) {
@@ -581,8 +584,8 @@ function enrich(days, data, profile, from) {
       if (ends.length >= 3) wake = Math.round(mean(ends));
     }
     const bed = wake == null ? null : (wake - needTonight - 15 + 1440 * 2) % 1440; // 15 minuti per addormentarsi
-    d.sonno_stanotte = { fabbisogno_min: needTonight, base_min: need0, base_fonte: needSource, per_carico_min: Math.round(strainAdd), per_debito_min: Math.round(debtAdd), debito_7g_min: Math.round(debt),
-      pisolino_min: napToday ? Math.round(before) - needTonight : 0,
+    d.sonno_stanotte = { fabbisogno_min: needTonight, base_min: need0, base_fonte: needSource, per_carico_min: Math.round(strainAdd), per_debito_min: Math.round(debtAdd), debito_7g_min: Math.round(debtNow),
+      pisolino_min: napToday ? Math.round(before) - needTonight : 0, debito_pagato_min: Math.round(debt - debtNow),
       sveglia: wake == null ? null : `${String(Math.floor(wake / 60)).padStart(2, "0")}:${String(wake % 60).padStart(2, "0")}`,
       a_letto: bed == null ? null : `${String(Math.floor(bed / 60)).padStart(2, "0")}:${String(bed % 60).padStart(2, "0")}` };
   });

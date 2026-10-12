@@ -73,6 +73,31 @@ test("il pisolino di ieri riduce il debito e conta nel bilancio di oggi; quello 
   const today = await dayData(env);
   assert.equal(today.recupero.componenti.sonno.bilancio_min, after.recupero.componenti.sonno.bilancio_min);
   assert.equal(today.sonno_stanotte.fabbisogno_min, after.sonno_stanotte.fabbisogno_min - 30);
+  // ...and it pays back the week's debt minute for minute
+  assert.equal(today.sonno_stanotte.debito_7g_min, 270);
+  assert.equal(today.sonno_stanotte.debito_pagato_min, 30);
+});
+
+test("senza debito il pisolino non crea un credito, ma abbassa comunque il fabbisogno", async () => {
+  const env = makeEnv(); await setup(env); await seed(env);
+  await watchNap(env, day(0), "14:00", "15:00");
+  const d = await dayData(env);
+  assert.equal(d.sonno_stanotte.debito_7g_min, 0); assert.equal(d.sonno_stanotte.debito_pagato_min, 0);
+  assert.equal(d.sonno_stanotte.fabbisogno_min, 420);
+});
+
+test("in settaggio il pisolino cambia già fabbisogno e ora di andare a letto", async () => {
+  const env = makeEnv(); await setup(env);
+  await call(env, "/api/profilo", { method: "POST", code: CODE, body: { sveglia: "07:00", sonno_min: 480 } });
+  // 3 nights only: Kairo is still in its set-up period
+  const st = [];
+  for (const i of [0, 1, 2]) st.push(env.DB.prepare("INSERT INTO sleep(start,end,stage) VALUES(?,?,'core')").bind(ts(day(i + 1), "23:00"), ts(day(i), "07:00")));
+  await env.DB.batch(st);
+  await watchNap(env, day(0), "15:00", "15:45");
+  const d = await dayData(env);
+  assert.equal(d.settaggio.pronto, false);
+  assert.equal(d.sonno_stanotte.fabbisogno_min, 435);
+  assert.equal(d.sonno_stanotte.a_letto, "23:30");
 });
 
 // local ISO time in Europe/Rome, n minutes ago
