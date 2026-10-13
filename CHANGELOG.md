@@ -2,6 +2,11 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.23.1] — 2026-10-13
+
+### Corretto
+- **Respira del mattino non riconosciuto senza le fasi del sonno.** Il mattino partiva dalla fine del sonno registrato dal Watch: nelle notti senza fasi del sonno il Respira non contava come misura del mattino e finiva tra le misure «della notte» (fino alle 9), alzandone il valore. Ora, se le fasi mancano, la sveglia abituale del profilo fa da risveglio: le misure da 30 minuti prima a 90 minuti dopo sono «del mattino», quelle prima restano della notte.
+
 ## [1.23.0] — 2026-10-13
 
 ### Migliorato

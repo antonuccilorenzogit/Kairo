@@ -175,13 +175,17 @@ function rawDay(day, data, sessionsByDay) {
   } : null;
 
   let winFrom, winTo;
+  // no sleep stages from the Watch: the usual alarm (profile) stands in for the wake-up, so a Breathe session in the
+  // morning is recognised and is not mixed into the night readings
+  const alarm = !main && data.sveglia ? t(`${day}T${data.sveglia}:00+02:00`) : null;
   if (main) { winFrom = main.startMs - 30 * 60e3; winTo = main.endMs; }
-  else { winFrom = t(day + "T00:00:00+02:00"); winTo = t(day + "T09:00:00+02:00"); }
+  else { winFrom = t(day + "T00:00:00+02:00"); winTo = alarm ? alarm - 30 * 60e3 : t(day + "T09:00:00+02:00"); }
 
   const hrvNight = inWindow(data.samples.hrv, winFrom, winTo);
   // morning reading: within 60 minutes after waking up (e.g. a 1-minute Breathe session in bed).
   // Guided breathing raises HRV, so it is compared only with your other mornings, never with the night.
-  const hrvMorning = main ? inWindow(data.samples.hrv, main.endMs, main.endMs + 60 * 60e3) : [];
+  const hrvMorning = main ? inWindow(data.samples.hrv, main.endMs, main.endMs + 60 * 60e3)
+    : alarm ? inWindow(data.samples.hrv, alarm - 30 * 60e3, alarm + 90 * 60e3) : [];
   const hrvDay = (data.samples.hrv || []).filter((s) => s.ts.startsWith(day)).map((s) => s.v);
   // senza misure notturne uso le 24 h precedenti a mezzogiorno (il Watch misura l'HRV in momenti casuali)
   const hrvFallback = inWindow(data.samples.hrv, t(day + "T12:00:00+02:00") - DAY_MS, t(day + "T12:00:00+02:00"));
@@ -623,6 +627,9 @@ async function computeHistoryRaw(db, endDay, nDays) {
   const start = addDays(endDay, -(nDays - 1));
   const from = addDays(start, -BASELINE_DAYS - 1);
   const data = await load(db, from, endDay);
+  const profile = await getProfile(db);
+  // usual alarm time: without the Watch's sleep stages it marks the end of the night and the morning window
+  data.sveglia = /^\d{2}:\d{2}$/.test(profile.sveglia || "") ? profile.sveglia : null;
   const sessionsByDay = buildSessions(data.sleepRows);
   const days = [];
   for (let d = from; d <= endDay; d = addDays(d, 1)) days.push(rawDay(d, data, sessionsByDay));
@@ -639,7 +646,6 @@ async function computeHistoryRaw(db, endDay, nDays) {
     }
     return (maskCache[day] = m);
   };
-  const profile = await getProfile(db);
   const setupRows = (await db.prepare("SELECT key, value FROM settings WHERE key IN ('settaggio_dal','settaggio_finito')").all()).results;
   const setupCfg = Object.fromEntries(setupRows.map((x) => [x.key, x.value]));
   // with an active injury the baseline starts after it (from 3 days later), as soon as there are enough days;

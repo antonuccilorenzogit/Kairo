@@ -148,3 +148,13 @@ test("il recupero di oggi si blocca con check-in e notte completa: i dati arriva
   await call(env, "/api/checkin", { method: "POST", code: CODE, body: { day: today, energia: 4, dolori: 2, umore: 4 } });
   assert.ok((await computeDay(env.DB, today)).recupero.score < a.score);
 });
+
+test("senza le fasi del sonno la sveglia del profilo segna il mattino: il Respira non finisce tra le misure della notte", async () => {
+  const env = makeEnv(); await setup(env);
+  await call(env, "/api/profilo", { method: "POST", code: CODE, body: { sveglia: "07:00" } });
+  const S = env.DB.prepare("INSERT INTO samples(metric,ts,t,value) VALUES('hrv',?,?,?)");
+  await env.DB.batch([[ts(today, "03:00"), 50], [ts(today, "07:10"), 95]].map(([x, v]) => S.bind(x, Math.floor(Date.parse(x) / 1000), v)));
+  const d = await computeDay(env.DB, today);
+  assert.equal(d.notte.hrv_mattino, 95);
+  assert.equal(d.notte.hrv_ms, 50, "la notte resta senza il Respira");
+});
