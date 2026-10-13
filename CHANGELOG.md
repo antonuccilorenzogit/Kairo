@@ -2,6 +2,14 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.23.0] — 2026-10-13
+
+### Migliorato
+- **Pesante + back-off autoregolate.** La pesante si fa a 1–2 ripetizioni dal cedimento e dopo averla spuntata segni quante ripetizioni ti restavano (**0 · 1 · 2 · 3+ in riserva**, al posto di facile/giusta/al limite). Ripetizioni fatte + in riserva stimano il tuo massimale di oggi (Epley) e da lì Kairo calcola subito il peso delle back-off **a cedimento** nel loro range, e del drop. Esempio, pesante 100 kg × 7: con 3+ in riserva back-off a 97,5 kg, con 1 a 92,5 kg, con 100 × 5 e 0 in riserva a 85 kg. Se correggi peso o ripetizioni della pesante, le back-off si ricalcolano.
+- **Calo dopo la pesante imparato su di te**: parte da circa 7% e si aggiusta con le ultime 3 sedute (back-off migliori del previsto → più pesanti la volta dopo, peggiori → più leggere).
+- **Pesante della volta dopo dal massimale stimato**: il peso per fare il massimo del range con 1–2 in riserva, entro i limiti di sempre (+1/+2 incrementi, resta se eri senza riserva al minimo utile, −10% dopo 3 sedute ferme, scarico nella quarta settimana del piano).
+- **Fatica dei muscoli**: le serie a cedimento (back-off, drop, pesante senza riserva) contano 1,3 e si smaltiscono più lentamente (fino a 72 ore), così la scheda dello stesso muscolo non torna troppo presto.
+
 ## [1.22.2] — 2026-10-13
 
 ### Corretto

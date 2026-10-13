@@ -101,19 +101,23 @@ export async function unknownExercises(db, schede = []) {
 }
 export const musclesOf = (name, custom) => muscleWeights(name, custom).map(([m]) => m);
 
-// For each muscle: recent fatigue (hard sets in the last 72 h, decaying: <24 h ×1, 24-48 h ×0.6, 48-72 h ×0.3)
+// For each muscle: recent fatigue (sets in the last 72 h, decaying: <24 h ×1, 24-48 h ×0.6, 48-72 h ×0.3; sets to failure
+// ×1.3, decaying slower: ×1, ×0.8, ×0.5)
 // and weekly volume (sets in 7 days, helper muscles count only their fraction) vs the 10-20 sets/week range (Schoenfeld 2017).
 export async function muscleFatigue(db, nowMs = Date.now()) {
   const since = new Date(nowMs - 7 * 86400e3).toISOString().slice(0, 10);
-  const r = await db.prepare("SELECT start, exercise, count(*) n FROM sets WHERE start >= ? AND (set_type IS NULL OR set_type != 'warmup') GROUP BY start, exercise").bind(since).all();
+  // sets to failure (back-offs, drops, a heavy set with no reps left) need more recovery: they count 1.3 and fade slower
+  const r = await db.prepare("SELECT start, exercise, count(*) n, sum(CASE WHEN set_type IN ('backoff','dropset','failure') OR (set_type = 'top' AND rpe >= 9.5) THEN 1 ELSE 0 END) hard FROM sets WHERE start >= ? AND (set_type IS NULL OR set_type != 'warmup') GROUP BY start, exercise").bind(since).all();
   const out = {}, custom = await customMuscles(db);
   for (const x of r.results) {
     const ms = muscleWeights(x.exercise, custom); if (!ms.length) continue;
     const h = (nowMs - Date.parse(x.start)) / 36e5;
     const w = h < 24 ? 1 : h < 48 ? 0.6 : h < 72 ? 0.3 : 0;
+    const wh = h < 24 ? 1 : h < 48 ? 0.8 : h < 72 ? 0.5 : 0;
+    const hard = Math.min(x.hard || 0, x.n);
     ms.forEach(([m, k]) => {
       const o = (out[m] ||= { muscolo: m, fatica: 0, serie_7g: 0 });
-      o.fatica += x.n * k * w; o.serie_7g += x.n * k;
+      o.fatica += (x.n - hard) * k * w + hard * 1.3 * k * wh; o.serie_7g += x.n * k;
     });
   }
   const list = Object.values(out).map((o) => ({ ...o, fatica: Math.round(o.fatica * 10) / 10, serie_7g: Math.round(o.serie_7g),

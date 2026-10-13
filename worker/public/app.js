@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.22.2";
+const APP_VERSION = "1.23.0";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -1161,7 +1161,19 @@ const localIso = (d = new Date()) => {
 // "4×8–10" or, for heavy set + back-off, "1×5–7 + 2 back-off"
 const exShort = (e) => `${e.metodo === "top" ? `1×${e.min}${e.max !== e.min ? "–" + e.max : ""} + ${Math.max(0, e.serie - 1)} back-off${e.drop ? " + drop" : ""}` : `${e.serie}×${e.min}${e.max !== e.min ? "–" + e.max : ""}`}`;
 const SET_LABEL = { top: "Pesante", backoff: "Back-off", dropset: "Drop", normal: "Serie" };
-const FEEL_RPE = { facile: 7, giusta: 8.5, limite: 10 };
+// back-off weight from the heavy set just done: reps + reps in reserve → today's max (Epley), then the weight for the
+// back-off reps to failure minus the fatigue left by the heavy set (learned on you, sent by the server)
+const backFromTop = (ex, top) => {
+  if (!top.kg || top.reps == null || !ex.step || !ex.bo_target) return null;
+  const max = top.kg * (1 + (top.reps + (top.rir ?? 1.5)) / 30);
+  return roundStep((max / (1 + ex.bo_target / 30)) * (1 - (ex.fatica ?? 0.07)), ex.step);
+};
+const updateBackoffs = (ex) => {
+  const top = ex.serie.find((y) => y.tipo === "top" && y.fatto);
+  const back = top && !ex.scarico ? backFromTop(ex, top) : null;
+  if (!back) return;
+  ex.serie.forEach((y) => { if (!y.fatto && y.tipo === "backoff") y.kg = back; if (!y.fatto && y.tipo === "dropset") y.kg = roundStep(back * 0.75, ex.step); });
+};
 const roundStep = (kg, step) => Math.max(step, Math.round(kg / step) * step);
 async function startSession(scheda) {
   const cur = store.get("sessione", null);
@@ -1173,8 +1185,8 @@ async function startSession(scheda) {
     esercizi: scheda.esercizi.map((e, i) => {
       const pr = prop?.[i] || { metodo: e.metodo || "classico", consiglio: "Senza rete: carichi dell'ultima volta.", serie: Array.from({ length: e.serie }, () => ({ tipo: e.metodo === "top" ? "backoff" : "normal", kg: null, min: e.min, max: e.max })) };
       if (!prop && e.metodo === "top" && pr.serie[0]) pr.serie[0].tipo = "top";
-      return { nome: e.nome, min: e.min, max: e.max, note: e.note || "", metodo: pr.metodo, consiglio: pr.consiglio, riscaldamento: pr.riscaldamento || null, ratio: pr.ratio || null, step: pr.step || null,
-        serie: pr.serie.map((x) => ({ tipo: x.tipo, kg: x.kg, rmin: x.min, rmax: x.max, reps: null, fatto: false, sens: null })) };
+      return { nome: e.nome, min: e.min, max: e.max, note: e.note || "", metodo: pr.metodo, consiglio: pr.consiglio, riscaldamento: pr.riscaldamento || null, step: pr.step || null, fatica: pr.fatica ?? null, bo_target: pr.bo_target ?? null, scarico: !!pr.scarico,
+        serie: pr.serie.map((x) => ({ tipo: x.tipo, kg: x.kg, rmin: x.min, rmax: x.max, reps: null, fatto: false, rir: null })) };
     }),
   });
   route("sessione");
@@ -1284,14 +1296,13 @@ views.scheda = async (el) => {
         <div class="row" style="gap:8px"><label class="field" style="flex:1;font-size:13px">${e.metodo === "top" ? "Serie totali" : "Serie"}<input class="input" type="number" inputmode="numeric" min="1" max="10" data-f="serie" data-i="${i}" value="${e.serie}"></label>
           <label class="field" style="flex:1;font-size:13px">${e.metodo === "top" ? "Pesante min" : "Rip. min"}<input class="input" type="number" inputmode="numeric" min="1" max="50" data-f="min" data-i="${i}" value="${e.min}"></label>
           <label class="field" style="flex:1;font-size:13px">${e.metodo === "top" ? "Pesante max" : "Rip. max"}<input class="input" type="number" inputmode="numeric" min="1" max="60" data-f="max" data-i="${i}" value="${e.max}"></label></div>
-        ${e.metodo === "top" ? `<div class="row" style="gap:8px;align-items:flex-end"><label class="field" style="flex:1;font-size:13px">Back-off più leggere del<select class="input" data-f="backoff" data-i="${i}">${[8, 10, 12, 15, 20, 25].map((v) => `<option value="${v}" ${(e.backoff || 12) === v ? "selected" : ""}>${v}%</option>`).join("")}</select></label>
-          <button class="choice" data-drop="${i}" aria-pressed="${!!e.drop}" style="flex:1;min-height:44px;font-size:13px">Drop set finale</button></div>
-          <span class="hint">1 pesante da ${e.min}–${e.max} + ${Math.max(0, e.serie - 1)} back-off da ${e.min + 2}–${e.max + 2}${e.drop ? " + 1 drop a cedimento" : ""}. Il carico sale guardando solo la pesante.</span>` : ""}</div>`).join("")}
+        ${e.metodo === "top" ? `<button class="choice" data-drop="${i}" aria-pressed="${!!e.drop}" style="min-height:40px;font-size:13px">Drop set finale</button>
+          <span class="hint">1 pesante da ${e.min}–${e.max} con 1–2 ripetizioni in riserva + ${Math.max(0, e.serie - 1)} back-off a cedimento da ${e.min + 2}–${e.max + 2}${e.drop ? " + 1 drop a cedimento" : ""}. Il peso delle back-off lo calcola Kairo da come va la pesante.</span>` : ""}</div>`).join("")}
       <button class="btn ghost" id="addEx">+ Aggiungi esercizio</button>
       <button class="btn primary" id="saveSc">Salva scheda</button>
       ${isNew ? "" : `<button class="btn danger" id="delSc">Elimina scheda</button>`}`;
     el.querySelectorAll("[data-f]").forEach((inp) => (inp.oninput = inp.onchange = () => { const e = sc.esercizi[Number(inp.dataset.i)]; e[inp.dataset.f] = inp.dataset.f === "nome" ? inp.value : Number(inp.value); }));
-    el.querySelectorAll("[data-met]").forEach((b) => (b.onclick = () => { const [i, m] = b.dataset.met.split(":"), e = sc.esercizi[Number(i)]; if (m === "top") Object.assign(e, { metodo: "top", backoff: e.backoff || 12, drop: !!e.drop }); else { delete e.metodo; delete e.backoff; delete e.drop; } draw(); }));
+    el.querySelectorAll("[data-met]").forEach((b) => (b.onclick = () => { const [i, m] = b.dataset.met.split(":"), e = sc.esercizi[Number(i)]; if (m === "top") Object.assign(e, { metodo: "top", drop: !!e.drop }); else { delete e.metodo; delete e.backoff; delete e.drop; } draw(); }));
     el.querySelectorAll("[data-drop]").forEach((b) => (b.onclick = () => { const e = sc.esercizi[Number(b.dataset.drop)]; e.drop = !e.drop; draw(); }));
     el.querySelectorAll("[data-del]").forEach((b) => (b.onclick = () => { sc.esercizi.splice(Number(b.dataset.del), 1); draw(); }));
     $("#scNome").oninput = (e) => (sc.nome = e.target.value);
@@ -1330,31 +1341,32 @@ views.sessione = async (el) => {
           <input class="input" type="number" inputmode="decimal" step="0.5" min="0" placeholder="kg" data-k="${i}.${j}" value="${x.kg ?? ""}" style="flex:1;min-height:44px" aria-label="Chili ${label}">
           <input class="input" type="number" inputmode="numeric" min="0" max="100" placeholder="${ph}" data-r="${i}.${j}" value="${x.reps ?? ""}" style="flex:1;min-height:44px" aria-label="Ripetizioni ${label}">
           <button class="choice" data-ok="${i}.${j}" aria-pressed="${x.fatto}" style="min-height:44px;width:52px" aria-label="Serie fatta">✓</button></div>
-          ${tipo === "top" && x.fatto ? `<div class="row" style="gap:6px;align-items:center"><span class="small muted" style="width:64px">Com'era?</span>${[["facile", "Facile"], ["giusta", "Giusta"], ["limite", "Al limite"]].map(([k, l]) => `<button class="choice" data-sens="${i}.${j}.${k}" aria-pressed="${x.sens === k}" style="flex:1;min-height:38px;font-size:13px">${l}</button>`).join("")}</div>` : ""}`; }).join("")}
+          ${tipo === "top" && x.fatto ? `<div class="row" style="gap:6px;align-items:center"><span class="small muted" style="width:64px;line-height:1.2">In riserva</span>${[0, 1, 2, 3].map((k) => `<button class="choice" data-rir="${i}.${j}.${k}" aria-pressed="${x.rir === k}" style="flex:1;min-height:38px;font-size:14px">${k === 3 ? "3+" : k}</button>`).join("")}</div>
+          ${x.rir == null ? `<div class="small" style="color:var(--orange-ink);font-weight:700">Quante ripetizioni ti restavano? Da qui il peso delle back-off.</div>` : ""}` : ""}`; }).join("")}
+        ${e.metodo === "top" && !e.scarico ? `<div class="small muted">Back-off e drop a cedimento.</div>` : ""}
         <button class="small" data-add="${i}" style="background:none;border:0;color:var(--orange-ink);font-weight:800;cursor:pointer;align-self:flex-start">+ serie</button></div>`).join("")}
       <button class="btn primary block" id="finish">Termina allenamento</button>
       <button class="btn ghost block" id="abandon">Abbandona</button>`;
     const at = (v) => v.split(".").map(Number);
-    el.querySelectorAll("[data-k]").forEach((inp) => (inp.onchange = () => { const [i, j] = at(inp.dataset.k); ses.esercizi[i].serie[j].kg = inp.value === "" ? null : Number(inp.value); save(); }));
-    el.querySelectorAll("[data-r]").forEach((inp) => (inp.onchange = () => { const [i, j] = at(inp.dataset.r); ses.esercizi[i].serie[j].reps = inp.value === "" ? null : Number(inp.value); save(); }));
+    // a heavy set corrected after ticking it: back-offs follow
+    const topEdited = (i, j) => { const ex = ses.esercizi[i], x = ex.serie[j]; if (x.tipo === "top" && x.fatto) { updateBackoffs(ex); const y = window.scrollY; draw(); window.scrollTo(0, y); } };
+    el.querySelectorAll("[data-k]").forEach((inp) => (inp.onchange = () => { const [i, j] = at(inp.dataset.k); ses.esercizi[i].serie[j].kg = inp.value === "" ? null : Number(inp.value); save(); topEdited(i, j); }));
+    el.querySelectorAll("[data-r]").forEach((inp) => (inp.onchange = () => { const [i, j] = at(inp.dataset.r); ses.esercizi[i].serie[j].reps = inp.value === "" ? null : Number(inp.value); save(); topEdited(i, j); }));
     el.querySelectorAll("[data-ok]").forEach((b) => (b.onclick = () => {
       const [i, j] = at(b.dataset.ok), x = ses.esercizi[i].serie[j];
       x.fatto = !x.fatto;
       const ex = ses.esercizi[i];
       if (x.fatto && x.reps == null && x.tipo !== "dropset") x.reps = x.rmax ?? ex.max; // tick without typing = top of the range
-      // heavy set done with another weight than proposed: back-offs and drop follow it
-      if (x.fatto && x.tipo === "top" && x.kg && ex.ratio && ex.step) {
-        const back = roundStep(x.kg * ex.ratio, ex.step);
-        ex.serie.forEach((y) => { if (!y.fatto && y.tipo === "backoff") y.kg = back; if (!y.fatto && y.tipo === "dropset") y.kg = roundStep(back * 0.75, ex.step); });
-      }
+      // heavy set done: back-offs and drop follow it (recalculated again when you note the reps in reserve)
+      if (x.fatto && x.tipo === "top") updateBackoffs(ex);
       // the next set starts with the same weight
       const nx = ex.serie[j + 1]; if (x.fatto && nx && nx.kg == null) nx.kg = x.kg;
       save(); const y = window.scrollY; draw(); window.scrollTo(0, y);
     }));
-    el.querySelectorAll("[data-sens]").forEach((b) => (b.onclick = () => { const [i, j, k] = b.dataset.sens.split("."); const x = ses.esercizi[Number(i)].serie[Number(j)]; x.sens = x.sens === k ? null : k; save(); const y = window.scrollY; draw(); window.scrollTo(0, y); }));
+    el.querySelectorAll("[data-rir]").forEach((b) => (b.onclick = () => { const [i, j, k] = b.dataset.rir.split(".").map(Number); const ex = ses.esercizi[i], x = ex.serie[j]; x.rir = k; updateBackoffs(ex); save(); const y = window.scrollY; draw(); window.scrollTo(0, y); }));
     el.querySelectorAll("[data-add]").forEach((b) => (b.onclick = () => { const e = ses.esercizi[Number(b.dataset.add)], l = e.serie[e.serie.length - 1];
       const tipo = e.metodo === "top" ? "backoff" : "normal", ref = e.serie.filter((y) => y.tipo === tipo).pop() || l;
-      e.serie.splice(l?.tipo === "dropset" ? e.serie.length - 1 : e.serie.length, 0, { tipo, kg: ref?.kg ?? null, rmin: ref?.rmin ?? e.min, rmax: ref?.rmax ?? e.max, reps: null, fatto: false, sens: null }); save(); draw(); }));
+      e.serie.splice(l?.tipo === "dropset" ? e.serie.length - 1 : e.serie.length, 0, { tipo, kg: ref?.kg ?? null, rmin: ref?.rmin ?? e.min, rmax: ref?.rmax ?? e.max, reps: null, fatto: false, rir: null }); save(); draw(); }));
     $("#abandon").onclick = () => { if (confirm("Abbandonare l'allenamento? Le serie segnate non verranno salvate.")) { store.del("sessione"); route("palestra"); } };
     $("#finish").onclick = () => finishSheet(ses);
   };
@@ -1373,9 +1385,9 @@ function finishSheet(ses) {
   w.querySelector("#sendF").onclick = async () => {
     const end = localIso();
     // the heavy set keeps how it felt (its own RPE): it decides the next weight
-    const serie = ses.esercizi.flatMap((e) => e.serie.filter((x) => x.fatto).map((x, j) => ({ start: ses.inizio, end, workout: ses.nome, exercise: e.nome, set_index: j, set_type: x.tipo || "normal", weight: x.kg, reps: x.reps, rpe: x.tipo === "top" && x.sens ? FEEL_RPE[x.sens] : rpe, fonte: "kairo" })));
-    const noFeel = ses.esercizi.some((e) => e.serie.some((x) => x.fatto && x.tipo === "top" && !x.sens));
-    if (noFeel && !w.dataset.asked) { w.dataset.asked = "1"; toast("Segna com'era la pesante: serve per il carico della prossima volta"); return; }
+    const serie = ses.esercizi.flatMap((e) => e.serie.filter((x) => x.fatto).map((x, j) => ({ start: ses.inizio, end, workout: ses.nome, exercise: e.nome, set_index: j, set_type: x.tipo || "normal", weight: x.kg, reps: x.reps, rpe: x.tipo === "top" && x.rir != null ? 10 - x.rir : rpe, fonte: "kairo" })));
+    const noFeel = ses.esercizi.some((e) => e.serie.some((x) => x.fatto && x.tipo === "top" && x.rir == null));
+    if (noFeel && !w.dataset.asked) { w.dataset.asked = "1"; toast("Segna quante ripetizioni ti restavano nella pesante: serve per i carichi della prossima volta"); return; }
     if (!serie.length) { toast("Nessuna serie segnata"); return; }
     try { await api("/api/forza", { method: "POST", body: { serie } }); toast(`Salvato: ${serie.length} serie`); }
     catch (_) { store.set("coda", [...store.get("coda", []), serie]); toast("Senza rete: lo invio appena possibile"); }

@@ -4,24 +4,21 @@
 // "classico"  – straight sets: double progression (all sets at the top of the range → more weight; otherwise same
 //               weight and more reps), stall after 3 sessions at the same weight → −10% and build back up.
 // "top"       – one heavy set (after the warm-up), then back-off sets and an optional drop set. Only the heavy set
-//               drives the progression: its reps and how it felt decide the next weight; back-off weights follow it
-//               as a percentage that adapts to the reps you did in the back-offs.
+//               drives the progression: its reps and the reps left in reserve (RIR) estimate today's max, which gives
+//               the back-off weight (to failure) and the next heavy set.
 //
-// How it felt is stored as the RPE of the heavy set: easy 7, right 8.5, at the limit 10.
+// Reps in reserve are stored as the RPE of the heavy set: RPE = 10 − RIR (3+ → 7).
 
 const LOWER = /squat|stacco|deadlift|leg press|pressa|hip thrust|affond|bulgar|rdl|romanian|rumeno|good morning|lunge/i;
 const ISOL = /curl|croci|alzat|estension|french|push ?down|kick ?back|calf|polpacc|face pull|shrug|scrollat|pullover|fly|raise|extension|crunch|addom/i;
 // weight increments by kind of exercise: big lower-body lifts move faster, small isolation lifts slower
 export const kgStep = (kg, name = "") => (LOWER.test(name) && !/leg curl|leg extension/i.test(name) ? (kg >= 60 ? 5 : 2.5) : ISOL.test(name) ? (kg >= 30 ? 2.5 : 1) : kg >= 20 ? 2.5 : 1);
 export const roundTo = (kg, step) => Math.max(step, Math.round(kg / step) * step);
-export const FEEL = { facile: 7, giusta: 8.5, limite: 10 };
-const feelOf = (rpe) => (rpe == null ? null : rpe <= 7.5 ? "facile" : rpe >= 9.5 ? "limite" : "giusta");
 const kgTxt = (kg) => `${String(Math.round(kg * 10) / 10).replace(".", ",")} kg`;
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 
 // back-off sets: a couple of reps more than the heavy set
 export const backoffRange = (ex) => [ex.min + 2, ex.max + 2];
-export const DEFAULT_BACKOFF = 12; // % lighter than the heavy set
 
 function warmup(top, name) {
   if (!top || top < 20) return "Riscaldamento: 1–2 serie leggere sullo stesso movimento.";
@@ -31,6 +28,34 @@ function warmup(top, name) {
 }
 
 // ---------- heavy set + back-off (+ drop) ----------
+// Autoregulation: the heavy set is done 1–2 reps short of failure and you note how many reps you had left (RIR).
+// Reps done + reps left = reps to failure → today's estimated max (Epley). The back-offs (to failure, in their
+// range) get the weight that today's max allows, minus the fatigue left by the heavy set — learned from your own
+// sessions. The next heavy set comes from the same estimate, within the usual safety limits.
+export const DEFAULT_FATIGUE = 0.07; // back-offs about 7% weaker than the heavy set would predict
+export const e1rm = (kg, repsToFailure) => kg * (1 + repsToFailure / 30);
+export const weightFor = (max, reps) => max / (1 + reps / 30);
+export const rirOf = (rpe) => (rpe == null ? null : Math.max(0, Math.min(3, Math.round(10 - rpe))));
+export const backoffTarget = (ex) => { const [a, b] = backoffRange(ex); return Math.round((a + b) / 2); };
+
+// fatigue after the heavy set, from the last sessions with a heavy set and its reps in reserve (shrunk towards 7%)
+export function learnFatigue(sessions = []) {
+  const obs = [];
+  for (const ses of sessions.slice(0, 3)) {
+    const top = ses.find((x) => x.tipo === "top" && x.kg && x.reps != null && x.rpe != null);
+    if (!top) continue;
+    const t = e1rm(top.kg, top.reps + rirOf(top.rpe));
+    for (const b of ses.filter((x) => x.tipo === "backoff" && x.kg && x.reps)) obs.push(clamp(1 - e1rm(b.kg, b.reps) / t, -0.05, 0.3));
+  }
+  // prior worth 4 back-off sets: a single odd session does not move it much
+  return { fatica: clamp((DEFAULT_FATIGUE * 4 + obs.reduce((a, x) => a + x, 0)) / (4 + obs.length), 0.02, 0.2), serie: obs.length };
+}
+// back-off weight from today's heavy set
+export function backoffFromTop(kg, reps, rir, ex, fatica, step) {
+  const max = e1rm(kg, reps + (rir ?? 1.5));
+  return roundTo(weightFor(max, backoffTarget(ex)) * (1 - fatica), step);
+}
+
 export function proposeTop(ex, last, { scarico = false } = {}) {
   const nBack = Math.max(0, ex.serie - 1), drop = !!ex.drop;
   const [bmin, bmax] = backoffRange(ex);
@@ -40,48 +65,46 @@ export function proposeTop(ex, last, { scarico = false } = {}) {
     ...(withDrop ? [{ tipo: "dropset", kg: dropKg, min: null, max: null }] : []),
   ];
   const all = last?.serie || [];
+  const { fatica, serie: learned } = learnFatigue(last?.sessioni || (all.length ? [all] : []));
+  const base = { metodo: "top", fatica, bo_target: backoffTarget(ex) };
   const top = all.find((x) => x.tipo === "top") || [...all].filter((x) => x.kg != null && x.tipo !== "dropset" && x.tipo !== "warmup").sort((a, b) => b.kg - a.kg)[0];
-  let ratio = 1 - (ex.backoff || DEFAULT_BACKOFF) / 100;
   if (!top || top.kg == null || top.reps == null) {
-    return { metodo: "top", consiglio: `Prima volta: dopo il riscaldamento fai la pesante da ${ex.min}–${ex.max} ripetizioni lasciandone 1–2 in riserva, poi ${nBack ? `${nBack} back-off circa ${ex.backoff || DEFAULT_BACKOFF}% più leggere` : "basta"}. Dalla prossima volta i carichi li calcola Kairo.`,
-      riscaldamento: "Riscaldamento: 2–3 serie in salita, sempre meno ripetizioni.", ratio, step: null, serie: sets(null, null, null) };
+    return { ...base, consiglio: `Prima volta: dopo il riscaldamento fai la pesante da ${ex.min}–${ex.max} ripetizioni lasciandone 1–2 in riserva e segna quante te ne restavano: il peso delle back-off (a cedimento) lo calcola Kairo da lì.`,
+      riscaldamento: "Riscaldamento: 2–3 serie in salita, sempre meno ripetizioni.", step: null, serie: sets(null, null, null) };
   }
-  // how it felt only from a heavy set logged as such (older sets carry the RPE of the whole session)
-  const step = kgStep(top.kg, ex.nome), feel = top.tipo === "top" ? feelOf(top.rpe) : null;
-  const lastTxt = `Ultima pesante: ${kgTxt(top.kg)} × ${top.reps}${feel ? ` (${feel === "limite" ? "al limite" : feel})` : ""}`;
-  // back-off percentage that follows your back-off reps: all at the top of their range → a bit heavier, below → lighter
-  const backs = all.filter((x) => x.tipo === "backoff" && x.kg != null && x.reps != null);
-  let backNote = "";
-  if (backs.length) {
-    ratio = backs.reduce((a, x) => a + x.kg, 0) / backs.length / top.kg;
-    if (backs.every((x) => x.reps >= bmax)) { ratio += 0.025; backNote = " Back-off tutte in cima al range: un po' più pesanti."; }
-    else if (backs.some((x) => x.reps < bmin)) { ratio -= 0.05; backNote = " Back-off sotto il range: un po' più leggere."; }
-  }
-  ratio = clamp(ratio, 0.7, 0.95);
-  // the heavy set decides the next weight
+  const step = kgStep(top.kg, ex.nome);
+  // reps in reserve only from a heavy set logged as such (older sets carry the RPE of the whole session)
+  const rir = top.tipo === "top" ? rirOf(top.rpe) : null;
+  const lastTxt = `Ultima pesante: ${kgTxt(top.kg)} × ${top.reps}${rir != null ? ` (${rir >= 3 ? "3+" : rir} in riserva)` : ""}`;
+  // the heavy set decides the next weight: the weight for the top of the range with 1–2 reps left, from today's max,
+  // never more than 2 increments at a time
+  const max = e1rm(top.kg, top.reps + (rir ?? 1));
+  const target = roundTo(weightFor(max, ex.max + 1.5), step);
   let next = top.kg, why;
   const h = last.storia || [];
   if (h.length >= 3 && h.every((x) => x.kg === h[0].kg) && h[0].reps_top != null && h[2].reps_top != null && h[0].reps_top <= h[2].reps_top) {
-    next = roundTo(top.kg * 0.9, step); why = `Ferma da 3 sedute a ${kgTxt(top.kg)}: oggi ${kgTxt(next)} con ripetizioni pulite, poi si risale.`;
+    next = roundTo(top.kg * 0.9, step); why = `Ferma da 3 sedute a ${kgTxt(top.kg)}: oggi ${kgTxt(next)}, poi si risale.`;
   } else if (top.reps >= ex.max) {
-    const extra = top.reps - ex.max;
-    if (feel === "facile" || extra >= 2) { next = top.kg + 2 * step; why = `Molto facile: +${kgTxt(2 * step)}.`; }
-    else if (feel === "limite" && extra === 0) { why = `Range chiuso ma al limite: resta a ${kgTxt(top.kg)} finché non ti viene più facile.`; }
-    else { next = top.kg + step; why = `Range chiuso: +${kgTxt(step)}.`; }
+    if (rir === 0 && top.reps === ex.max) why = `Range chiuso ma senza ripetizioni in riserva: resta a ${kgTxt(top.kg)} finché non te ne avanza una.`;
+    else { next = clamp(target, top.kg + step, top.kg + 2 * step); why = `Range chiuso: +${kgTxt(next - top.kg)}.`; }
   } else if (top.reps >= ex.min) {
-    why = `Stesso carico, punta a ${top.reps + 1} ripetizioni${top.reps + 1 >= ex.max ? ": poi si sale" : ""}.`;
+    if (target >= top.kg + step) { next = top.kg + step; why = `Avevi margine: +${kgTxt(step)}.`; }
+    else why = `Stesso carico, punta a ${top.reps + 1} ripetizioni${top.reps + 1 >= ex.max ? ": poi si sale" : ""}.`;
   } else {
-    next = Math.max(step, top.kg - (feel === "limite" && top.reps < ex.min - 1 ? 2 : 1) * step);
+    // even counting the reps left you would not reach the range → two increments down, otherwise one
+    next = Math.max(step, top.kg - (top.reps + (rir ?? 1) < ex.min ? 2 : 1) * step);
     why = `Sotto il range: scendi a ${kgTxt(next)} e torna a ${ex.min}–${ex.max}.`;
   }
+  const fatTxt = learned >= 3 ? ` Calo dopo la pesante imparato su di te: ${Math.round(fatica * 100)}%.` : "";
   if (scarico) {
-    const t = roundTo(next * 0.9, step), b = roundTo(t * ratio, step);
-    return { metodo: "top", consiglio: `${lastTxt}. Settimana di scarico: pesante a ${kgTxt(t)} lontano dal cedimento, una back-off in meno, niente drop.`,
-      riscaldamento: warmup(t, ex.nome), ratio, step, serie: sets(t, b, null, Math.max(0, nBack - 1), false) };
+    const t = roundTo(next * 0.9, step);
+    return { ...base, consiglio: `${lastTxt}. Settimana di scarico: pesante a ${kgTxt(t)} con 3 ripetizioni in riserva, una back-off in meno senza cedimento, niente drop.`,
+      riscaldamento: warmup(t, ex.nome), step, scarico: true, serie: sets(t, roundTo(t * 0.85, step), null, Math.max(0, nBack - 1), false) };
   }
-  const back = roundTo(next * ratio, step), dropKg = roundTo(back * 0.75, step);
-  return { metodo: "top", consiglio: `${lastTxt}. ${why}${backNote}${nBack ? ` Back-off a ${kgTxt(back)} (−${Math.round((1 - back / next) * 100)}%).` : ""}`,
-    riscaldamento: warmup(next, ex.nome), ratio, step, serie: sets(next, back, dropKg) };
+  // back-offs planned for a heavy set at the top of the range with 1–2 reps left; recalculated when you note it
+  const back = backoffFromTop(next, ex.max, 1.5, ex, fatica, step), dropKg = roundTo(back * 0.75, step);
+  return { ...base, consiglio: `${lastTxt}. ${why}${fatTxt}${nBack ? ` Back-off a cedimento intorno a ${kgTxt(back)}: il peso giusto lo calcola Kairo quando segni la pesante.` : ""}`,
+    riscaldamento: warmup(next, ex.nome), step, serie: sets(next, back, dropKg) };
 }
 
 // ---------- straight sets (double progression) ----------

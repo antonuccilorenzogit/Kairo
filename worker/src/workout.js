@@ -69,7 +69,11 @@ export async function lastSets(db, names) {
       const t = top.results[0];
       storia.push({ data: x.start, kg: t?.kg ?? x.kg, reps: reps.results[0]?.r ?? null, reps_top: t?.reps ?? null, rpe: x.rpe == null ? null : Math.round(x.rpe * 10) / 10 });
     }
-    out[n] = { data: last.start, serie: r.results.map((x) => ({ kg: x.weight, reps: x.reps, tipo: x.set_type || "normal", rpe: x.rpe })), storia };
+    // the last 3 sessions set by set: how much weaker the back-offs are after the heavy set, learned on you
+    const prev = await db.prepare("SELECT start, weight, reps, set_type, rpe FROM sets WHERE exercise = ? AND start IN (SELECT DISTINCT start FROM sets WHERE exercise = ? ORDER BY start DESC LIMIT 3) ORDER BY start DESC, set_index").bind(n, n).all();
+    const by = {};
+    for (const x of prev.results) (by[x.start] ||= []).push({ kg: x.weight, reps: x.reps, tipo: x.set_type || "normal", rpe: x.rpe });
+    out[n] = { data: last.start, serie: r.results.map((x) => ({ kg: x.weight, reps: x.reps, tipo: x.set_type || "normal", rpe: x.rpe })), storia, sessioni: Object.values(by) };
   }
   return out;
 }
