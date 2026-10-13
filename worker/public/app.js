@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.23.2";
+const APP_VERSION = "1.23.3";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -278,10 +278,11 @@ views.settaggio = async (el) => {
       ${item(k.piano, "Piano di allenamento", "Facoltativo: sedute che progrediscono a blocchi. Funziona anche durante il settaggio.", "#/piano")}
     </div>
     <div class="card col" style="gap:6px"><div class="label">Consigliati, non obbligatori</div>
-      <div class="small" style="line-height:1.5;color:var(--text)">⌚ <b>1 minuto di Respira</b> appena sveglio: ${s.mattine ? `${s.mattine} ${s.mattine === 1 ? "mattina" : "mattine"} finora` : "nessuna mattina ancora"}. Dopo 5 diventa la tua misura principale di HRV.<br>📝 <b>Check-in ogni mattina</b>: ${s.checkin ?? 0} finora. Servirà per verificare che lo score ci azzecchi.</div></div>
+      <div class="small" style="line-height:1.5;color:var(--text)">⌚ <b>1 minuto di Respira</b> appena sveglio: ${s.mattine ? `${s.mattine} ${s.mattine === 1 ? "mattina" : "mattine"} finora (${(s.mattine_giorni || []).map((g) => fmtDate(g, { day: "numeric", month: "short" })).join(", ")})` : "nessuna mattina ancora"}. Dopo 5 diventa la tua misura principale di HRV. <button class="small" id="hrvToday" style="background:none;border:0;padding:0;color:var(--orange-ink);font-weight:800;cursor:pointer;text-decoration:underline">Vedi le misure di oggi</button><br>📝 <b>Check-in ogni mattina</b>: ${s.checkin ?? 0} finora. Servirà per verificare che lo score ci azzecchi.</div></div>
     <div class="card col" style="gap:8px"><div class="label">Ricomincia il settaggio</div>
       <div class="small muted" style="line-height:1.5">Se cambi Watch o cambia molto la tua vita (nuovo sport, lungo stop): le medie ripartono da oggi e per due settimane lo score non si vede.</div>
       <button class="btn ghost" id="setupRestart">Ricomincia da oggi</button></div>`;
+  $("#hrvToday").onclick = async () => { try { const d = await api("/api/day"); openSheet(`${sheetHead("HRV di oggi")}${hrvReadings(d.notte) || `<div class="small muted">Nessuna misura di HRV oggi.</div>`}`, "HRV di oggi"); } catch (e) { toast(e.message); } };
   $("#setupRestart").onclick = async () => {
     if (!confirm("Ricominciare il settaggio da oggi? Per circa due settimane lo score di recupero non si vedrà.")) return;
     try { await api("/api/settaggio", { method: "POST", body: { ricomincia: true } }); toast("Settaggio ricominciato"); router(); } catch (e) { toast(e.message); }
@@ -583,6 +584,16 @@ function md(text) {
   return out.map((b) => (Array.isArray(b) ? `<ul>${b.map((i) => `<li>${i}</li>`).join("")}</ul>` : `<p>${b}</p>`)).join("");
 }
 
+// Today's HRV readings and what each one counted as: night, morning (Breathe after waking), nap, day
+const LETTURA = { notte: ["notte", "muted"], mattino: ["mattino ✓", "good"], pisolino: ["pisolino", "mid"], giorno: ["giorno", "muted"] };
+function hrvReadings(n) {
+  const l = n?.hrv_letture || [];
+  if (!l.length) return "";
+  return `<div class="card col" style="gap:6px"><div class="row between"><div class="small" style="font-weight:800">Le misure di oggi</div><div class="small muted">${n.risveglio ? `risveglio alle ${n.risveglio}` : "notte senza fasi del sonno"}</div></div>
+    <div class="list">${l.map((x) => `<div class="item" style="padding:6px 0"><span class="small">${x.ora}</span><span class="small"><b>${fmtNum(x.valore)} ms</b> · <span class="${LETTURA[x.tipo][1]}">${LETTURA[x.tipo][0]}</span></span></div>`).join("")}</div>
+    <div class="small muted" style="line-height:1.45">«Mattino» è solo la prima misura entro un'ora dal risveglio registrato dal Watch: il tuo Respira. Senza la notte registrata il risveglio non si conosce e il mattino non conta.</div></div>`;
+}
+
 /* explanation panels for the recovery components */
 const SLEEP_NEED = 480; // fabbisogno di riferimento in minuti (8 h)
 function infoSheet(kind, d) {
@@ -601,6 +612,7 @@ function infoSheet(kind, d) {
       + body("Il cuore non batte come un metronomo: tra un battito e l'altro il tempo cambia di qualche millisecondo. Più cambia, più il corpo è rilassato e pronto. Stanchezza, stress o un malanno in arrivo rendono il battito più rigido e l'HRV scende.")
       + range("Adulti sani, SDNN a breve termine (Nunan et al. 2010)", 32, 93, 10, 140, b ?? d.notte.hrv_ms, ["10 ms", "tipico 32–93 · media 50", "140"])
       + you(b ? `media personale ${fmtNum(b)} ms${c.hrv.normale ? `, la tua fascia normale è ${fmtNum(c.hrv.normale[0])}–${fmtNum(c.hrv.normale[1])} ms` : ""}; oggi ${fmtNum(d.notte.hrv_ms)} ms. Conta il confronto con te stesso: l'HRV dipende molto da genetica ed età.` : "non ho ancora abbastanza notti per la tua media personale.")
+      + hrvReadings(d.notte)
       + body("<b>Come lo uso:</b> confronto il logaritmo dell'HRV di stanotte e la media degli ultimi 7 giorni con la tua media dei 60 giorni precedenti. Le variazioni entro ±0,5 deviazioni standard sono considerate normali oscillazioni (metodo di Plews e HRV4Training).")
       + tip("L'HRV è più alta di notte. Per questo Kairo usa le misure fatte mentre dormi: quelle di giorno cambiano con caffè, stress e movimento. Apple Watch misura la SDNN, quindi i valori non sono confrontabili con Whoop o Oura (che usano la RMSSD).");
   } else if (kind === "fc_riposo") {

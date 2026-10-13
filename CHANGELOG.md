@@ -2,6 +2,14 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.23.3] — 2026-10-13
+
+### Corretto
+- **Mattine contate per errore.** Nella 1.23.1, nei giorni senza la notte registrata, la sveglia del profilo faceva da risveglio: una misura casuale del Watch vicino a quell'ora passava per un Respira. Ora il mattino conta solo con il risveglio vero registrato dal Watch; senza la notte, la sveglia serve solo a non mescolare le misure del mattino con quelle della notte.
+
+### Aggiunto
+- **Le misure di HRV di oggi**, con l'ora e come è stata usata ciascuna (notte, mattino ✓, pisolino, giorno) e l'ora del risveglio: nel foglio dell'HRV in Recupero e in Settaggio («Vedi le misure di oggi»). In Settaggio anche i giorni in cui il Respira del mattino è stato contato.
+
 ## [1.23.2] — 2026-10-13
 
 ### Corretto

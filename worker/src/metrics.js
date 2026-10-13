@@ -191,8 +191,14 @@ function rawDay(day, data, sessionsByDay) {
   // same measurement), and never one taken during a nap or in the hour after it
   const afterNap = (ms) => sessions.some((x) => x !== main && ms >= x.startMs && ms <= x.endMs + 60 * 60e3);
   const firstOf = (from, to) => { const r = (data.samples.hrv || []).find((x) => x.ms >= from && x.ms <= to && !afterNap(x.ms)); return r ? [r.v] : []; };
-  const hrvMorning = main ? firstOf(main.endMs, main.endMs + 60 * 60e3)
-    : alarm ? firstOf(alarm - 30 * 60e3, alarm + 90 * 60e3) : [];
+  // the morning reading needs the real wake-up (the night recorded by the Watch): around the usual alarm a random
+  // reading of the Watch would pass for a Breathe session. Without the night the alarm only closes the night window.
+  const hrvMorning = main ? firstOf(main.endMs, main.endMs + 60 * 60e3) : [];
+  // the readings of the morning with what each one counted as (shown in the app, to check the data)
+  const mornMs = main && hrvMorning.length ? (data.samples.hrv || []).find((x) => x.ms >= main.endMs && x.ms <= main.endMs + 60 * 60e3 && !afterNap(x.ms))?.ms : null;
+  const letture = (data.samples.hrv || []).filter((x) => x.ms >= winFrom && x.ms <= t(day + "T23:59:59+02:00") && x.ts.slice(0, 10) <= day).map((x) => ({
+    ora: x.ts.slice(11, 16), valore: r1(x.v),
+    tipo: x.ms === mornMs ? "mattino" : x.ms >= winFrom && x.ms <= winTo ? "notte" : sessions.some((n) => n !== main && x.ms >= n.startMs && x.ms <= n.endMs + 60 * 60e3) ? "pisolino" : "giorno" })).slice(-30);
   const hrvDay = (data.samples.hrv || []).filter((s) => s.ts.startsWith(day)).map((s) => s.v);
   // senza misure notturne uso le 24 h precedenti a mezzogiorno (il Watch misura l'HRV in momenti casuali)
   const hrvFallback = inWindow(data.samples.hrv, t(day + "T12:00:00+02:00") - DAY_MS, t(day + "T12:00:00+02:00"));
@@ -240,7 +246,7 @@ function rawDay(day, data, sessionsByDay) {
   const d = data.daily[day] || {};
   return {
     giorno: day,
-    notte: { hrv_ms: r1(hrv), hrv_misure: hrvNight.length || hrvFallback.length, hrv_fonte: hrvNight.length ? "notte" : hrvFallback.length ? "24h" : null, hrv_mattino: hrvMorning.length ? r1(median(hrvMorning)) : null, hrv_giorno_ms: r1(mean(hrvDay)), fcr_bpm: fcr, fc_notte_bpm: d.fc_notte ?? null,
+    notte: { hrv_ms: r1(hrv), hrv_misure: hrvNight.length || hrvFallback.length, hrv_fonte: hrvNight.length ? "notte" : hrvFallback.length ? "24h" : null, hrv_mattino: hrvMorning.length ? r1(median(hrvMorning)) : null, hrv_letture: letture, risveglio: main ? main.endIso.slice(11, 16) : null, hrv_giorno_ms: r1(mean(hrvDay)), fcr_bpm: fcr, fc_notte_bpm: d.fc_notte ?? null,
       resp_rpm: r1(resp), spo2_media: r1(mean(spo2)), spo2_min: spo2.length ? Math.min(...spo2) : null },
     sonno: sleep,
     pisolini,
@@ -694,13 +700,14 @@ async function setupStatus(db, days, endDay, profile, cfg) {
   const notti_sonno = count((d) => d.sonno && !d.sonno.manuale);
   const giorni_fc = count((d) => d.notte.fc_notte_bpm != null || d.notte.fcr_bpm != null);
   const mattine = count((d) => d.notte.hrv_mattino != null);
+  const mattine_giorni = win.filter((d) => d.notte.hrv_mattino != null).map((d) => d.giorno).slice(-7);
   const checkin = count((d) => d.checkin && d.checkin.energia != null);
   const first = dal || win.find((d) => d.notte.hrv_ms != null || d.sonno)?.giorno || endDay;
   const giorno = Math.max(1, Math.round((Date.parse(endDay) - Date.parse(first)) / 864e5) + 1);
   const mancano = Math.max(0, SETUP.notti_hrv - notti_hrv, SETUP.notti_sonno - notti_sonno, SETUP.giorni_fc - giorni_fc);
   const pronto = mancano === 0 && profilo;
   if (pronto) await db.prepare("INSERT INTO settings(key,value) VALUES('settaggio_finito',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(endDay).run();
-  return { pronto, dal: first, giorno, notti_hrv, notti_sonno, giorni_fc, mattine, checkin, mancano, profilo, obiettivo: SETUP };
+  return { pronto, dal: first, giorno, notti_hrv, notti_sonno, giorni_fc, mattine, mattine_giorni, checkin, mancano, profilo, obiettivo: SETUP };
 }
 
 export async function computeDay(db, day) {

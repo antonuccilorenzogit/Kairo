@@ -149,14 +149,15 @@ test("il recupero di oggi si blocca con check-in e notte completa: i dati arriva
   assert.ok((await computeDay(env.DB, today)).recupero.score < a.score);
 });
 
-test("senza le fasi del sonno la sveglia del profilo segna il mattino: il Respira non finisce tra le misure della notte", async () => {
+test("senza le fasi del sonno la sveglia del profilo chiude la notte: una misura del mattino non finisce tra quelle della notte", async () => {
   const env = makeEnv(); await setup(env);
   await call(env, "/api/profilo", { method: "POST", code: CODE, body: { sveglia: "07:00" } });
   const S = env.DB.prepare("INSERT INTO samples(metric,ts,t,value) VALUES('hrv',?,?,?)");
   await env.DB.batch([[ts(today, "03:00"), 50], [ts(today, "07:10"), 95]].map(([x, v]) => S.bind(x, Math.floor(Date.parse(x) / 1000), v)));
   const d = await computeDay(env.DB, today);
-  assert.equal(d.notte.hrv_mattino, 95);
-  assert.equal(d.notte.hrv_ms, 50, "la notte resta senza il Respira");
+  assert.equal(d.notte.hrv_mattino, null, "senza la notte registrata non si sa quando ti sei svegliato");
+  assert.equal(d.notte.hrv_ms, 50, "la notte resta senza la misura delle 7:10");
+  assert.deepEqual(d.notte.hrv_letture.map((x) => x.tipo), ["notte", "giorno"]);
 });
 
 test("un Respira dopo un pisolino lungo non è il Respira del mattino; conta solo il primo dopo il risveglio", async () => {
@@ -174,4 +175,6 @@ test("un Respira dopo un pisolino lungo non è il Respira del mattino; conta sol
   const [a, b] = await computeHistory(env.DB, today, 2);
   assert.equal(a.notte.hrv_mattino, null, "il pisolino non è la notte");
   assert.equal(b.notte.hrv_mattino, 90, "il primo dopo il risveglio");
+  assert.equal(b.notte.risveglio, "07:00");
+  assert.deepEqual(b.notte.hrv_letture.map((x) => `${x.ora} ${x.tipo}`), ["03:30 notte", "07:10 mattino", "07:40 giorno"]);
 });
