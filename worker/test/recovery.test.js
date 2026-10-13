@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeEnv, call, setup, CODE } from "./helpers.js";
-import { computeDay } from "../src/metrics.js";
+import { computeDay, computeHistory } from "../src/metrics.js";
 
 const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Rome" }).format(new Date());
 const day = (n) => new Date(Date.parse(today + "T12:00:00Z") - n * 86400e3).toISOString().slice(0, 10);
@@ -157,4 +157,21 @@ test("senza le fasi del sonno la sveglia del profilo segna il mattino: il Respir
   const d = await computeDay(env.DB, today);
   assert.equal(d.notte.hrv_mattino, 95);
   assert.equal(d.notte.hrv_ms, 50, "la notte resta senza il Respira");
+});
+
+test("un Respira dopo un pisolino lungo non è il Respira del mattino; conta solo il primo dopo il risveglio", async () => {
+  const env = makeEnv(); await setup(env);
+  const y = day(1);
+  const L = env.DB.prepare("INSERT INTO sleep(start,end,stage) VALUES(?,?,?)"), S = env.DB.prepare("INSERT INTO samples(metric,ts,t,value) VALUES('hrv',?,?,?)");
+  const hrv = (x, v) => S.bind(x, Math.floor(Date.parse(x) / 1000), v);
+  await env.DB.batch([
+    // yesterday: no night with the Watch, a 2.5 h afternoon nap and a Breathe session after it
+    L.bind(ts(y, "13:00"), ts(y, "15:30"), "core"), hrv(ts(y, "15:40"), 120),
+    // last night with the Watch, Breathe at 07:10 and a random reading at 07:40
+    L.bind(ts(y, "23:30"), ts(today, "03:00"), "core"), L.bind(ts(today, "03:00"), ts(today, "07:00"), "rem"),
+    hrv(ts(today, "03:30"), 55), hrv(ts(today, "07:10"), 90), hrv(ts(today, "07:40"), 140),
+  ]);
+  const [a, b] = await computeHistory(env.DB, today, 2);
+  assert.equal(a.notte.hrv_mattino, null, "il pisolino non è la notte");
+  assert.equal(b.notte.hrv_mattino, 90, "il primo dopo il risveglio");
 });

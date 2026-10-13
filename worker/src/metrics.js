@@ -162,7 +162,10 @@ function inWindow(list, fromMs, toMs) {
 // Metriche "grezze" di un giorno, senza confronto con la baseline
 function rawDay(day, data, sessionsByDay) {
   const sessions = (sessionsByDay[day] || []).slice().sort((a, b) => b.asleepMin - a.asleepMin);
-  const main = sessions[0] && sessions[0].asleepMin >= 120 ? sessions[0] : null;
+  // the night: the longest sleep that ends before 14:00 (a long afternoon nap is never the night, so a Breathe
+  // session after a nap is never taken for the morning reading)
+  const night = sessions.find((s) => Number(s.endIso.slice(11, 13)) < 14);
+  const main = night && night.asleepMin >= 120 ? night : null;
   // naps: the other sleep sessions that end this day (at least 10 minutes asleep; shorter ones are noise)
   const naps = sessions.filter((s) => s !== main && s.asleepMin >= NAP_MIN_MIN).sort((a, b) => a.startMs - b.startMs);
   const napsMin = naps.reduce((a, s) => a + s.asleepMin, 0);
@@ -184,8 +187,12 @@ function rawDay(day, data, sessionsByDay) {
   const hrvNight = inWindow(data.samples.hrv, winFrom, winTo);
   // morning reading: within 60 minutes after waking up (e.g. a 1-minute Breathe session in bed).
   // Guided breathing raises HRV, so it is compared only with your other mornings, never with the night.
-  const hrvMorning = main ? inWindow(data.samples.hrv, main.endMs, main.endMs + 60 * 60e3)
-    : alarm ? inWindow(data.samples.hrv, alarm - 30 * 60e3, alarm + 90 * 60e3) : [];
+  // only the first reading after waking counts (one Breathe session; a later one or a random reading is not the
+  // same measurement), and never one taken during a nap or in the hour after it
+  const afterNap = (ms) => sessions.some((x) => x !== main && ms >= x.startMs && ms <= x.endMs + 60 * 60e3);
+  const firstOf = (from, to) => { const r = (data.samples.hrv || []).find((x) => x.ms >= from && x.ms <= to && !afterNap(x.ms)); return r ? [r.v] : []; };
+  const hrvMorning = main ? firstOf(main.endMs, main.endMs + 60 * 60e3)
+    : alarm ? firstOf(alarm - 30 * 60e3, alarm + 90 * 60e3) : [];
   const hrvDay = (data.samples.hrv || []).filter((s) => s.ts.startsWith(day)).map((s) => s.v);
   // senza misure notturne uso le 24 h precedenti a mezzogiorno (il Watch misura l'HRV in momenti casuali)
   const hrvFallback = inWindow(data.samples.hrv, t(day + "T12:00:00+02:00") - DAY_MS, t(day + "T12:00:00+02:00"));

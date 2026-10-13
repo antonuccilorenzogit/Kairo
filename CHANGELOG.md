@@ -2,6 +2,12 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.23.2] — 2026-10-13
+
+### Corretto
+- **Il Respira dopo un pisolino contava come Respira del mattino.** Un pisolino di oltre 2 ore, in un giorno senza la notte registrata, veniva preso per la notte e la misura fatta dopo diventava «del mattino». Ora la notte è solo il sonno che finisce prima delle 14: un pisolino non lo è mai, e le misure durante un pisolino o nell'ora successiva non contano mai come mattino.
+- **Una sola misura del mattino**: conta solo la prima dopo il risveglio (il Respira), non la media con altre misure casuali della stessa ora.
+
 ## [1.23.1] — 2026-10-13
 
 ### Corretto
