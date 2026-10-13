@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.22.1";
+const APP_VERSION = "1.22.2";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -1897,6 +1897,8 @@ function healthChecks(d, err, lat, rel) {
   const missing = [["HRV", lastOf("hrv")], ["FC a riposo", lastOf("fcr")], ["sonno", d.sonno.n ? d.sonno.a : null]].filter(([, a]) => days(a) > 3).map(([n]) => n);
   out.push(!missing.length ? { s: "ok", t: "Dati del Watch", text: "HRV, FC a riposo e sonno arrivano regolarmente.", fix: "" }
     : { s: missing.length === 3 ? "err" : "warn", t: "Dati del Watch", text: `Mancano da più di 3 giorni: ${missing.join(", ")}.`, fix: missing.includes("sonno") ? "Per il sonno tieni il Watch di notte con la modalità Sonno attiva. Se mancano anche gli altri, controlla in Salute → Condivisione → App → Comandi che sia tutto consentito." : "Controlla in Salute → Condivisione → App → Comandi che sia tutto consentito." });
+  // database reads (Cloudflare free plan: 5 million rows a day, then errors until midnight UTC)
+  if (d.letture && d.letture.oggi > d.letture.limite * 0.6) out.push({ s: d.letture.oggi > d.letture.limite * 0.85 ? "err" : "warn", t: "Database", text: `Oggi ${fmtNum(d.letture.oggi)} letture su ${fmtNum(d.letture.limite)} del piano gratuito.`, fix: "Il conteggio si azzera a mezzanotte UTC (l'1 o le 2 di notte in Italia). Se succede spesso, apri una segnalazione su GitHub: vuol dire che qualcosa legge troppo." });
   // AI
   const q = d.ia.groq_quota, key = cfg().groqKey || d.ia.chiave_groq_sul_server;
   out.push(key ? { s: q && Number(q.richieste_rimaste) < 50 ? "warn" : "ok", t: "Coach IA", text: `Groq attivo${q?.richieste_rimaste ? `, ${q.richieste_rimaste} richieste rimaste oggi` : ""}.`, fix: q && Number(q.richieste_rimaste) < 50 ? "Quasi finite per oggi: nel frattempo risponde il modello di riserva." : "" }
@@ -1943,6 +1945,9 @@ views.diagnostica = async (el) => {
     html += `<details class="card"><summary style="cursor:pointer;font-weight:800">Dettagli tecnici</summary><div class="list" style="padding-top:8px">
       <div class="label" style="padding-top:8px">Versioni</div>
       ${item("off", "App", APP_VERSION)}${item("off", "Server", esc(d.server.versione))}${item("off", "Schema database", `v${d.server.schema}`)}${item("off", "Ultima su GitHub", rel ? esc(rel.tag) : "–")}
+      ${d.letture ? `<div class="label" style="padding-top:12px">Letture del database oggi (limite gratuito ${fmtNum(d.letture.limite / 1e6)} milioni)</div>
+      ${item(d.letture.oggi > d.letture.limite * 0.6 ? "warn" : "ok", "Oggi", `${fmtNum(d.letture.oggi)} righe · ieri ${fmtNum(d.letture.ieri)}`)}
+      ${d.letture.per_funzione.map((x) => item("off", esc(x.funzione), fmtNum(x.righe))).join("")}` : ""}
       <div class="label" style="padding-top:12px">Invii da iPhone</div>
       ${Object.values(lastByMod).slice(0, 6).map((i) => item("off", esc(i.modulo || "?"), `${ago(i.received)} · ${i.righe} righe`)).join("") || item("off", "Nessun invio", "")}
       <div class="label" style="padding-top:12px">Dati ricevuti</div>

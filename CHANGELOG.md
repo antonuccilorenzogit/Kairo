@@ -2,6 +2,17 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.22.2] — 2026-10-13
+
+### Corretto
+- **Troppe letture del database** (avviso di Cloudflare: 76% del limite gratuito di 5 milioni di righe al giorno). Cloudflare D1 conta ogni riga che una query scorre, non solo quelle restituite:
+  - il calcolo del recupero scorreva anche tutta la frequenza cardiaca grezza (migliaia di righe al giorno) per scartarla: ora legge solo HRV, FC a riposo, respirazione e ossigeno attraverso la chiave (metrica, data);
+  - Stato di Kairo (aperto anche da ogni visita alle Impostazioni) contava tutte le righe di tutte le tabelle a ogni apertura: ora i conteggi si rifanno una volta al giorno, e ciò che deve essere aggiornato (ultimi dati arrivati) usa gli indici;
+  - lo storico calcolato resta in memoria finché nessuna richiesta scrive dati: aprire più pagine di seguito non lo ricalcola ogni volta;
+  - il promemoria serale non ricalcola niente dopo che è già stato inviato;
+  - le ultime sedute di ogni esercizio si trovano con un indice, senza scorrere tutte le serie mai registrate.
+- **Letture del database in Stato di Kairo**: totale di oggi e di ieri, le funzioni che leggono di più e un avviso sopra il 60% del limite.
+
 ## [1.22.1] — 2026-10-12
 
 ### Corretto

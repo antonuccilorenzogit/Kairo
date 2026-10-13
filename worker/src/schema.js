@@ -47,6 +47,8 @@ export const SCHEMA = [
      start TEXT NOT NULL, exercise TEXT NOT NULL, set_index INTEGER NOT NULL,
      set_type TEXT, weight REAL, reps INTEGER, rpe REAL, workout TEXT, end TEXT, fonte TEXT,
      PRIMARY KEY (start, exercise, set_index))`,
+  // last sessions of one exercise (progression of the loads) without scanning every set ever logged
+  `CREATE INDEX IF NOT EXISTS idx_sets_exercise ON sets(exercise, start)`,
   // Gym routines ("schede"): exercises with sets and a rep range, as JSON
   `CREATE TABLE IF NOT EXISTS schede (
      id TEXT PRIMARY KEY, nome TEXT NOT NULL, ordine INTEGER NOT NULL, esercizi TEXT NOT NULL, updated TEXT NOT NULL)`,

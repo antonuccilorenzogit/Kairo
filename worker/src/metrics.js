@@ -58,8 +58,9 @@ const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 
 async function load(db, from, to) {
   const r = await db.batch([
-    // la FC grezza (migliaia di valori al giorno) non serve qui: il carico arriva già calcolato in daily.trimp
-    db.prepare("SELECT metric, ts, value FROM samples WHERE ts >= ? AND ts < ? AND metric != 'fc' ORDER BY ts").bind(from, addDays(to, 1)),
+    // only the four metrics used here, through the (metric, ts) key: the raw heart rate (thousands of rows a day)
+    // and the body metrics are never scanned. D1 bills every row it reads, not only the rows returned.
+    db.prepare("SELECT metric, ts, value FROM samples WHERE metric IN ('hrv','fcr','resp','spo2') AND ts >= ? AND ts < ? ORDER BY ts").bind(from, addDays(to, 1)),
     db.prepare("SELECT start, end, stage FROM sleep WHERE end >= ? AND start < ? ORDER BY start").bind(from, addDays(to, 1)),
     db.prepare("SELECT metric, day, value FROM daily WHERE day >= ? AND day <= ?").bind(from, to),
     db.prepare("SELECT * FROM checkin WHERE day >= ? AND day <= ?").bind(from, addDays(to, 1)),
@@ -601,7 +602,24 @@ function enrich(days, data, profile, from) {
   });
 }
 
+// Short cache of the computed history (one Worker instance serves many requests in a row): the key includes the
+// data version, bumped by every request that writes, so a cached history is never older than the data.
+// Windows up to 14 days share one computation (the last days are the same whatever the window).
+const HIST_CACHE = new Map();
 export async function computeHistory(db, endDay, nDays) {
+  if (!db.kairoCache) return computeHistoryRaw(db, endDay, nDays);
+  const v = await db.prepare("SELECT value FROM settings WHERE key = 'versione_dati'").first();
+  const n = Math.max(nDays, 14), key = `${v?.value || 0}|${endDay}|${n}`;
+  let hit = HIST_CACHE.get(key);
+  if (!hit) {
+    hit = computeHistoryRaw(db, endDay, n);
+    HIST_CACHE.set(key, hit);
+    hit.catch(() => HIST_CACHE.delete(key));
+    while (HIST_CACHE.size > 6) HIST_CACHE.delete(HIST_CACHE.keys().next().value);
+  }
+  return structuredClone((await hit).slice(-nDays));
+}
+async function computeHistoryRaw(db, endDay, nDays) {
   const start = addDays(endDay, -(nDays - 1));
   const from = addDays(start, -BASELINE_DAYS - 1);
   const data = await load(db, from, endDay);

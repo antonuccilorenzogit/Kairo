@@ -7,7 +7,7 @@ class Stmt {
   bind(...args) { return new Stmt(this.db, this.sql, args); }
   get reader() { return /^\s*(select|with|pragma)/i.test(this.sql); }
   async first(col) { const r = this.db.prepare(this.sql).get(...this.args); const row = r ? { ...r } : null; return col && row ? row[col] : row; }
-  async all() { return { results: this.db.prepare(this.sql).all(...this.args).map((r) => ({ ...r })), success: true, meta: {} }; }
+  async all() { const results = this.db.prepare(this.sql).all(...this.args).map((r) => ({ ...r })); return { results, success: true, meta: { rows_read: results.length } }; }
   async run() { const r = this.db.prepare(this.sql).run(...this.args); return { success: true, results: [], meta: { changes: Number(r.changes) } }; }
   // like D1's batch: every result carries meta.changes
   exec() { if (this.reader) return { results: this.db.prepare(this.sql).all(...this.args).map((r) => ({ ...r })), meta: {} }; const r = this.db.prepare(this.sql).run(...this.args); return { results: [], meta: { changes: Number(r.changes) } }; }
@@ -31,7 +31,7 @@ export class KV {
 }
 
 export function makeEnv(extra = {}) {
-  return { DB: new D1(), BACKUP: new KV(), ASSETS: { fetch: async () => new Response("asset") }, ...extra };
+  return { DB: new D1(), BACKUP: new KV(), ASSETS: { fetch: async () => new Response("asset") }, KAIRO_NO_CACHE: true, ...extra };
 }
 
 // Calls the worker like a real HTTP request.

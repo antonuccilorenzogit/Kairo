@@ -21,11 +21,12 @@ const coachProfile = async (db, profile) => {
 // Today's coach texts depend on the injury: drop them when it changes.
 const dropTodayAdvice = (db, day) => db.prepare("DELETE FROM advice WHERE day IN (?, ?)").bind(day, "A:" + day).run();
 import { recomputeTrimp, recomputeNightHr } from "./load.js";
+import { metered, saveTally } from "./meter.js";
 import { getPlan, savePlan, restartPlan, planToday, planOverview, saveOutcome, blockOf, mondayOf } from "./plan.js";
 import { propose } from "./progression.js";
 import { getVapid, sendPush, validEndpoint } from "./push.js";
 
-const VERSION = "1.22.1";
+const VERSION = "1.22.2";
 
 // No CORS headers: only the Kairo app (same origin) and the Shortcuts app (not a browser) talk to the API.
 const json = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), {
@@ -118,6 +119,9 @@ async function eveningPush(env, origin) {
   const hourNow = Number(new Intl.DateTimeFormat("en-GB", { timeZone: prof.tz, hour: "2-digit", hourCycle: "h23" }).format(new Date()));
   if (hourNow >= 2 && hourNow < 19) return;
   const day = todayLocal(prof.tz);
+  // already sent tonight: nothing to compute (the evening slot is the day the evening started)
+  const sent = await env.DB.prepare("SELECT value FROM settings WHERE key = 'push_sera'").first();
+  if (sent?.value === day || (hourNow < 2 && sent?.value === new Date(Date.parse(day + "T12:00:00Z") - 864e5).toISOString().slice(0, 10))) return;
   const d = await computeDay(env.DB, day);
   const st = d.sonno_stanotte;
   if (!st || !st.a_letto) return;
@@ -185,23 +189,47 @@ const todayLocal = (tz) => {
 };
 const validDay = (d) => (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) && Number.isFinite(Date.parse(d)) ? d : null);
 
-async function diagnostics(env) {
+async function diagnostics(env, refresh = false) {
   const db = env.DB;
+  // counting every row of every table reads the whole database (D1 bills rows read, 5 million a day on the free
+  // plan): the counts are kept for 24 hours; what must be fresh (last data received) uses the indexes, a few rows.
+  const today = new Date().toISOString().slice(0, 10);
   const r = await db.batch([
-    db.prepare("SELECT (SELECT count(*) FROM samples) samples, (SELECT count(*) FROM daily) daily, (SELECT count(*) FROM hourly) hourly, (SELECT count(*) FROM sleep) sleep, (SELECT count(*) FROM checkin) checkin, (SELECT count(*) FROM imports) imports, (SELECT count(*) FROM advice) advice"),
-    db.prepare("SELECT metric, count(*) n, min(ts) da, max(ts) a FROM samples GROUP BY metric ORDER BY metric"),
-    db.prepare("SELECT metric, count(*) n, min(day) da, max(day) a FROM daily GROUP BY metric ORDER BY metric"),
-    db.prepare("SELECT count(*) n, min(start) da, max(end) a FROM sleep"),
+    db.prepare("SELECT value FROM settings WHERE key = 'diag_cache'"),
+    db.prepare("SELECT (SELECT max(ts) FROM samples WHERE metric='hrv') hrv, (SELECT max(ts) FROM samples WHERE metric='fcr') fcr, (SELECT max(ts) FROM samples WHERE metric='fc') fc, (SELECT max(ts) FROM samples WHERE metric='resp') resp, (SELECT max(ts) FROM samples WHERE metric='spo2') spo2, (SELECT max(end) FROM sleep) sonno"),
+    db.prepare("SELECT key, value FROM settings WHERE key IN (?, ?)").bind("letture_" + today, "letture_" + new Date(Date.now() - 864e5).toISOString().slice(0, 10)),
     db.prepare("SELECT received, modulo, esportato, righe, versione FROM imports ORDER BY id DESC LIMIT 12"),
     db.prepare("SELECT key, value FROM settings WHERE key LIKE 'ai_%' OR key IN ('schema_version','setup_at','last_backup','groq_model') OR (key = 'groq_key' AND value != '')"),
   ]);
+  let heavy = null;
+  try { heavy = JSON.parse(r[0].results[0]?.value || "null"); } catch (_) {}
+  if (refresh || !heavy || Date.now() - Date.parse(heavy.t) > 24 * 3600e3) {
+    const h = await db.batch([
+      db.prepare("SELECT (SELECT count(*) FROM samples) samples, (SELECT count(*) FROM daily) daily, (SELECT count(*) FROM hourly) hourly, (SELECT count(*) FROM sleep) sleep, (SELECT count(*) FROM checkin) checkin, (SELECT count(*) FROM imports) imports, (SELECT count(*) FROM advice) advice"),
+      db.prepare("SELECT metric, count(*) n, min(ts) da, max(ts) a FROM samples GROUP BY metric ORDER BY metric"),
+      db.prepare("SELECT metric, count(*) n, min(day) da, max(day) a FROM daily GROUP BY metric ORDER BY metric"),
+      db.prepare("SELECT count(*) n, min(start) da, max(end) a FROM sleep"),
+    ]);
+    heavy = { t: new Date().toISOString(), righe: h[0].results[0], metriche: h[1].results, giornaliere: h[2].results, sonno: h[3].results[0] };
+    await db.prepare("INSERT INTO settings(key,value) VALUES('diag_cache',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(JSON.stringify(heavy)).run();
+  }
+  const fresh = r[1].results[0] || {};
+  const metriche = heavy.metriche.map((m) => (fresh[m.metric] ? { ...m, a: fresh[m.metric] } : m));
+  for (const k of ["hrv", "fcr", "fc", "resp", "spo2"]) if (fresh[k] && !metriche.some((m) => m.metric === k)) metriche.push({ metric: k, n: null, da: null, a: fresh[k] });
+  const sonno = { ...heavy.sonno, a: fresh.sonno || heavy.sonno?.a, n: heavy.sonno?.n || (fresh.sonno ? 1 : 0) };
+  const lett = Object.fromEntries(r[2].results.map((x) => { try { return [x.key.slice(8), JSON.parse(x.value)]; } catch { return [x.key.slice(8), {}]; } }));
+  const tot = (o) => Object.values(o || {}).reduce((a, b) => a + b, 0);
+  const letture = { oggi: tot(lett[today]), ieri: tot(lett[new Date(Date.now() - 864e5).toISOString().slice(0, 10)]), limite: 5000000,
+    per_funzione: Object.entries(lett[today] || {}).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => ({ funzione: k, righe: v })) };
+  r.splice(0, 3, { results: [heavy.righe] }, { results: metriche }, { results: heavy.giornaliere }, { results: [sonno] });
+  // r: [righe, metriche, giornaliere, sonno, importazioni, settings] as before
   const settings = Object.fromEntries(r[5].results.map((x) => [x.key, x.key === "groq_key" ? "1" : x.value]));
   const day = new Date().toISOString().slice(0, 10);
   let dbSize = null;
   try { dbSize = (await db.prepare("SELECT 1").run()).meta?.size_after ?? null; } catch (_) {}
   return {
     server: { app: "kairo", versione: VERSION, schema: Number(settings.schema_version || SCHEMA_VERSION), ora_server: new Date().toISOString(), configurato_il: settings.setup_at || null },
-    database: { righe: r[0].results[0], dimensione_byte: dbSize },
+    database: { righe: r[0].results[0], dimensione_byte: dbSize, conteggi_del: heavy.t }, letture,
     metriche: r[1].results, giornaliere: r[2].results, sonno: r[3].results[0],
     importazioni: r[4].results,
     backup: { attivo: !!env.BACKUP, ultimo: settings.last_backup ? JSON.parse(settings.last_backup) : null },
@@ -576,7 +604,7 @@ async function api(req, env, url) {
     const m = (await env.DB.prepare("SELECT value FROM settings WHERE key = 'groq_model'").first())?.value || "";
     return json({ sul_server: !!k, finale: k ? k.slice(-4) : null, modello: m || null, segreto_cloudflare: !!env.GROQ_API_KEY });
   }
-  if (p === "/api/diagnostica") return json(await diagnostics(env));
+  if (p === "/api/diagnostica") return json(await diagnostics(env, url.searchParams.get("aggiorna") === "1"));
   if (p === "/api/codice" && req.method === "POST") {
     const b = (await readJson(req)) || {};
     const problem = codeProblem(b.nuovo);
@@ -616,22 +644,34 @@ async function api(req, env, url) {
 }
 
 export default {
-  async fetch(req, env) {
+  async fetch(req, env0, ctx) {
     const url = new URL(req.url);
-    if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(req);
+    if (!url.pathname.startsWith("/api/")) return env0.ASSETS.fetch(req);
     if (req.method === "OPTIONS") return new Response(null, { status: 204 });
+    const raw = env0.DB, db = metered(raw, { cache: !env0.KAIRO_NO_CACHE });
+    const env = { ...env0, DB: db };
+    const route = url.pathname.startsWith("/api/sync/") ? "/api/sync" : url.pathname.slice(0, 60);
+    // a request that may write bumps the data version before and after: cached histories are never stale
+    const writes = req.method !== "GET" && req.method !== "HEAD";
+    const bump = () => raw.prepare("INSERT INTO settings(key,value) VALUES('versione_dati','1') ON CONFLICT(key) DO UPDATE SET value = CAST(value AS INTEGER) + 1").run();
     try {
-      await ensureSchema(env.DB);
+      await ensureSchema(raw);
+      if (writes) await bump();
       return await api(req, env, url);
     } catch (e) {
       console.error(e);
       return json({ errore: "Errore interno del server. Riprova; se continua apri la Diagnostica." }, 500);
+    } finally {
+      const done = (writes ? bump() : Promise.resolve()).then(() => saveTally(raw, route, db.tally.rows)).catch((e) => console.warn("letture", e));
+      if (ctx?.waitUntil) ctx.waitUntil(done); else await done;
     }
   },
   // cron (wrangler.toml): weekly backup on Monday, bedtime reminder check every 30 minutes
-  async scheduled(event, env, ctx) {
-    await ensureSchema(env.DB);
-    if (event.cron === "17 3 * * 1") ctx.waitUntil(createBackup(env, VERSION, "automatico settimanale").then((r) => r.errore && console.warn(r.errore)));
-    else ctx.waitUntil(eveningPush(env, env.ORIGIN || "mailto:kairo@users.noreply.github.com").catch((e) => console.warn("push sera", e)));
+  async scheduled(event, env0, ctx) {
+    await ensureSchema(env0.DB);
+    const db = metered(env0.DB), env = { ...env0, DB: db };
+    const job = event.cron === "17 3 * * 1" ? createBackup(env, VERSION, "automatico settimanale").then((r) => r.errore && console.warn(r.errore))
+      : eveningPush(env, env.ORIGIN || "mailto:kairo@users.noreply.github.com").catch((e) => console.warn("push sera", e));
+    ctx.waitUntil(job.then(() => saveTally(env0.DB, event.cron === "17 3 * * 1" ? "cron backup" : "cron sera", db.tally.rows)).catch(() => {}));
   },
 };
