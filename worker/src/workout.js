@@ -30,6 +30,7 @@ export function cleanSchede(list) {
       if (!n || !(serie >= 1 && serie <= 10) || !(min >= 1 && min <= 50) || !(max >= min && max <= 60)) continue;
       const x = { nome: n, serie, min, max, note: clip(e?.note, 120) };
       // heavy set + back-off: % lighter for the back-offs and an optional drop set at the end
+      if ([0.5, 1, 1.25, 2, 2.5, 5].includes(Number(e?.incremento))) x.incremento = Number(e.incremento);
       if (e?.metodo === "top") { const b = Math.round(Number(e?.backoff)); Object.assign(x, { metodo: "top", backoff: b >= 5 && b <= 30 ? b : 12, drop: e?.drop === true }); }
       esercizi.push(x);
     }

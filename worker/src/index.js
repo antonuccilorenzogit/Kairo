@@ -26,7 +26,7 @@ import { getPlan, savePlan, restartPlan, planToday, planOverview, saveOutcome, b
 import { propose } from "./progression.js";
 import { getVapid, sendPush, validEndpoint } from "./push.js";
 
-const VERSION = "1.23.3";
+const VERSION = "1.23.4";
 
 // No CORS headers: only the Kairo app (same origin) and the Shortcuts app (not a browser) talk to the API.
 const json = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), {
@@ -480,7 +480,8 @@ async function api(req, env, url) {
     // next session of each routine: weights, reps and set types decided from what you did last time
     const plan = await getPlan(env.DB);
     const scarico = plan.attivo && plan.inizio ? blockOf(plan, mondayOf(todayLocal(tz))).scarico : false;
-    const proposte = Object.fromEntries(schede.map((s) => [s.id, s.esercizi.map((e) => propose(e, ultimo[e.nome], { scarico }))]));
+    const { incremento } = await getProfile(env.DB);
+    const proposte = Object.fromEntries(schede.map((s) => [s.id, s.esercizi.map((e) => propose(e, ultimo[e.nome], { scarico, incremento }))]));
     return json({ schede, ultimo, proposte, scarico });
   }
   if (p === "/api/schede/ia" && req.method === "POST") {

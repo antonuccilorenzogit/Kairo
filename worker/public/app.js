@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.23.3";
+const APP_VERSION = "1.23.4";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -1182,7 +1182,8 @@ const backFromTop = (ex, top) => {
 };
 const updateBackoffs = (ex) => {
   const top = ex.serie.find((y) => y.tipo === "top" && y.fatto);
-  const back = top && !ex.scarico ? backFromTop(ex, top) : null;
+  let back = top && !ex.scarico ? backFromTop(ex, top) : null;
+  if (back && top.kg) back = Math.min(back, Math.max(ex.step, roundStep(top.kg - ex.step, ex.step))); // always lighter than the heavy set
   if (!back) return;
   ex.serie.forEach((y) => { if (!y.fatto && y.tipo === "backoff") y.kg = back; if (!y.fatto && y.tipo === "dropset") y.kg = roundStep(back * 0.75, ex.step); });
 };
@@ -1308,6 +1309,7 @@ views.scheda = async (el) => {
         <div class="row" style="gap:8px"><label class="field" style="flex:1;font-size:13px">${e.metodo === "top" ? "Serie totali" : "Serie"}<input class="input" type="number" inputmode="numeric" min="1" max="10" data-f="serie" data-i="${i}" value="${e.serie}"></label>
           <label class="field" style="flex:1;font-size:13px">${e.metodo === "top" ? "Pesante min" : "Rip. min"}<input class="input" type="number" inputmode="numeric" min="1" max="50" data-f="min" data-i="${i}" value="${e.min}"></label>
           <label class="field" style="flex:1;font-size:13px">${e.metodo === "top" ? "Pesante max" : "Rip. max"}<input class="input" type="number" inputmode="numeric" min="1" max="60" data-f="max" data-i="${i}" value="${e.max}"></label></div>
+        <label class="field" style="font-size:13px">Salto di peso<select class="input" data-f="incremento" data-i="${i}"><option value="0" ${!e.incremento ? "selected" : ""}>come nel profilo</option>${[0.5, 1, 1.25, 2, 2.5, 5].map((v) => `<option value="${v}" ${e.incremento === v ? "selected" : ""}>${String(v).replace(".", ",")} kg</option>`).join("")}</select></label>
         ${e.metodo === "top" ? `<button class="choice" data-drop="${i}" aria-pressed="${!!e.drop}" style="min-height:40px;font-size:13px">Drop set finale</button>
           <span class="hint">1 pesante da ${e.min}–${e.max} con 1–2 ripetizioni in riserva + ${Math.max(0, e.serie - 1)} back-off a cedimento da ${e.min + 2}–${e.max + 2}${e.drop ? " + 1 drop a cedimento" : ""}. Il peso delle back-off lo calcola Kairo da come va la pesante.</span>` : ""}</div>`).join("")}
       <button class="btn ghost" id="addEx">+ Aggiungi esercizio</button>
@@ -1520,10 +1522,11 @@ views.profilo = async (el) => {
         <label class="field">Sonno che ti serve<select class="input" id="sonnomin"><option value="" ${!p.sonno_min ? "selected" : ""}>Automatico</option>${sleepOpts.map(([v, l]) => `<option value="${v}" ${p.sonno_min === v ? "selected" : ""}>${l}</option>`).join("")}</select></label></div>
       <span class="hint" style="margin-top:-6px">La sveglia serve per dirti a che ora andare a letto. «Automatico» lo stima dalle tue notti: oltre quante ore la mattina dopo non migliora più, e quanto dormi quando ti svegli senza sveglia (servono almeno 30 notti; intanto 8 ore).</span>
       <label class="field">FC massima (se la conosci)<input class="input" id="fcmax" type="number" inputmode="numeric" min="120" max="230" placeholder="${p.eta ? `stimata ${Math.round(208 - 0.7 * p.eta)} bpm` : "es. 195"}" value="${esc(p.fc_max || "")}"><span class="hint">Serve a calcolare il carico. Vuota = stima dall'età.</span></label>
+      <label class="field">Salto di peso più piccolo in palestra<select class="input" id="incr">${[0.5, 1, 1.25, 2, 2.5, 5].map((v) => `<option value="${v}" ${(p.incremento ?? 1.25) === v ? "selected" : ""}>${String(v).replace(".", ",")} kg</option>`).join("")}</select><span class="hint">I pesi proposti sono sempre multipli di questo: con i dischi più piccoli da 1,25 kg scegli 1,25. Nelle schede puoi cambiarlo per un singolo esercizio (macchine, manubri).</span></label>
       <button class="btn primary" id="saveProfilo">Salva</button></div>`;
   $("#saveProfilo").onclick = async () => {
     const body = { ...p, nome: $("#nome").value.trim(), eta: $("#eta").value.trim(), sesso: $("#sesso").value, note: $("#note").value.trim(), obiettivi: $("#obiettivi").value.trim(),
-      sveglia: $("#sveglia").value, sonno_min: $("#sonnomin").value ? Number($("#sonnomin").value) : null, fc_max: $("#fcmax").value.trim(), tz: tz() };
+      incremento: Number($("#incr").value), sveglia: $("#sveglia").value, sonno_min: $("#sonnomin").value ? Number($("#sonnomin").value) : null, fc_max: $("#fcmax").value.trim(), tz: tz() };
     delete body.infortunio;
     try { const saved = await api("/api/profilo", { method: "POST", body }); store.set("profilo", saved); toast("Profilo salvato"); route("impostazioni"); }
     catch (e) { toast(e.message); }

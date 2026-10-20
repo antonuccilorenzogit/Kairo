@@ -37,6 +37,8 @@ export function cleanProfile(p) {
     fc_max: intIn(p?.fc_max, 120, 230),                // measured maximum heart rate, if known
     sonno_min: intIn(p?.sonno_min, 360, 600) ?? null,  // personal sleep need
     sveglia: /^\d{2}:\d{2}$/.test(String(p?.sveglia || "")) ? p.sveglia : "",
+    // smallest weight jump in your gym (lightest plates ×2 on a bar, or the step of the machines): loads are multiples of it
+    incremento: [0.5, 1, 1.25, 2, 2.5, 5].includes(Number(p?.incremento)) ? Number(p.incremento) : 1.25,
     sport: Array.isArray(p?.sport) ? [...new Set(p.sport.filter((x) => SPORTS.includes(x)))] : ["palestra", "nuoto", "bici", "corsa"],
     altri_sport: Array.isArray(p?.altri_sport) ? [...new Set(p.altri_sport.filter((x) => ALTRI_SPORT.includes(x)))] : [],
     infortunio: cleanInjury(p?.infortunio),

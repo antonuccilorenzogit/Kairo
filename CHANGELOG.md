@@ -2,6 +2,12 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.23.4] — 2026-10-20
+
+### Migliorato
+- **Pesi che esistono davvero in palestra.** Nuovo «Salto di peso più piccolo» nel profilo (predefinito 1,25 kg, i dischi più piccoli) e, se serve, per singolo esercizio nella scheda (macchine da 2,5 o 5 kg, manubri da 2 kg). Pesante, back-off, drop e riscaldamento sono sempre multipli di quel valore: niente più +1 kg impossibili.
+- La pesante della volta dopo sale a passi fini (es. +3,75 kg invece di +5 quando il massimale stimato lo dice) e la back-off è sempre almeno un salto più leggera della pesante, anche con pesi molto piccoli.
+
 ## [1.23.3] — 2026-10-13
 
 ### Corretto

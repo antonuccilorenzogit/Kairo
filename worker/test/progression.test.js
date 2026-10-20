@@ -68,8 +68,20 @@ test("dall'app: scheda con pesante + back-off, seduta salvata con i tipi di seri
     { start, exercise: "Panca piana", set_index: 2, set_type: "backoff", weight: 92.5, reps: 8, rpe: 8 },
     { start, exercise: "Panca piana", set_index: 3, set_type: "dropset", weight: 65, reps: 12, rpe: 8 }] } });
   const p = (await call(env, "/api/schede", { code: CODE })).data.proposte.a[0];
-  assert.equal(p.serie[0].kg, 105, "7 con 3+ in riserva → +5 kg");
+  assert.equal(p.serie[0].kg, 103.75, "7 con 3+ in riserva → dal massimale stimato, a passi da 1,25 kg (dischi più piccoli)");
   assert.match(p.consiglio, /Ultima pesante: 100 kg × 7 \(3\+ in riserva\)/);
   const ultimo = (await call(env, "/api/schede", { code: CODE })).data.ultimo["Panca piana"];
   assert.equal(ultimo.sessioni.length, 1); assert.equal(ultimo.sessioni[0].length, 4);
+});
+
+test("incremento minimo della palestra: pesi multipli dei dischi più piccoli, back-off sempre più leggera della pesante", () => {
+  const alz = { nome: "Alzate laterali al cavo", serie: 2, min: 10, max: 12, metodo: "top" };
+  const top = (kg, reps, rir) => ({ serie: [{ tipo: "top", kg, reps, rpe: 10 - rir }], storia: [] });
+  assert.equal(kgStep(12, "Curl manubri", 1.25), 1.25, "1 kg non esiste: 1,25");
+  assert.equal(kgStep(80, "Panca", 2), 2, "manubri da 2 in 2");
+  const p = proposeTop(alz, top(5, 11, 2), { incremento: 1.25 });
+  for (const x of p.serie) if (x.kg != null) assert.equal(x.kg % 1.25, 0, `${x.kg}`);
+  assert.ok(p.serie[1].kg < p.serie[0].kg, "back-off più leggera");
+  const t = proposeTop({ nome: "Triceps pushdown", serie: 2, min: 8, max: 10, metodo: "top", incremento: 2.5 }, top(20, 10, 1), { incremento: 1.25 });
+  for (const x of t.serie) if (x.kg != null) assert.equal(x.kg % 2.5, 0, "l'incremento dell'esercizio vince su quello generale");
 });
