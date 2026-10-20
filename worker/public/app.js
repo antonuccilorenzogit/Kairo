@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.23.4";
+const APP_VERSION = "1.23.5";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -779,7 +779,9 @@ function baseNote(sn) {
 views.sonno = async (el) => {
   el.innerHTML = header("Sonno") + loading(3);
   const today = todayStr();
-  const [hist, stages] = await Promise.all([api("/api/history?days=7"), api(`/api/sonno?d=${today}`)]);
+  // 8 days: the debt of the last 7 sleeps also needs the naps of the day before the first one
+  const [hist8, stages] = await Promise.all([api("/api/history?days=8"), api(`/api/sonno?d=${today}`)]);
+  const hist = hist8.slice(-7);
   const d = hist[hist.length - 1], sAll = d.sonno, s = sAll && !sAll.manuale ? sAll : null, sn = d.sonno_stanotte;
   const tonight = sn ? `<div class="card col" style="gap:8px"><div class="label">Stanotte</div>
       <div class="row between"><div class="col" style="gap:2px"><div style="font-size:30px;font-weight:800;line-height:1">${fmtMin(sn.fabbisogno_min)}</div><div class="small muted">di sonno ti servono</div></div>
@@ -826,10 +828,26 @@ views.sonno = async (el) => {
       : `<div class="card col center" style="gap:8px">${bean(null, 90)}<div class="h2">Nessun dato del sonno stanotte</div><div class="muted small" style="max-width:300px">Per avere sonno, respirazione e HRV notturna indossa il Watch mentre dormi. Carica il Watch mentre fai colazione o la doccia.</div></div>`}
     ${tonight}
     ${napCard}
-    <div class="card"><div class="row between" style="margin-bottom:8px"><div class="label">Ultimi 7 giorni</div>${nNights ? `<div class="small ${debt < 0 ? "bad" : "good"}" style="font-weight:800">${debt < 0 ? `Debito ${fmtShort(-debt)}` : "In pari"} · base ${fmtMin(need)}</div>` : ""}</div><div class="row" style="gap:2px;align-items:flex-end">${week}</div></div>
+    <div class="card"><div class="row between" style="margin-bottom:8px"><div class="label">Ultimi 7 giorni</div>${nNights ? `<button id="debtWhy" class="small ${debt < 0 ? "bad" : "good"}" style="font-weight:800;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline">${debt < 0 ? `Debito ${fmtShort(-debt)}` : "In pari"} · base ${fmtMin(need)}</button>` : ""}</div><div class="row" style="gap:2px;align-items:flex-end">${week}</div></div>
     ${s && s.sri != null ? `<div class="card soft"><div style="line-height:1.45"><b>Regolarità ${s.sri}/100</b> (Sleep Regularity Index). ${s.sri >= 86 ? "Sei tra il quarto più regolare della popolazione: ottimo." : s.sri >= 74 ? "Nella media della popolazione (mediana 81)." : "Sotto la media della popolazione (mediana 81): orari più costanti aiutano recupero e sonno profondo."}</div></div>`
       : s && s.regolarita_min != null ? `<div class="card soft"><div style="line-height:1.45">Il tuo orario di addormentamento varia di circa <b>${s.regolarita_min} minuti</b> da una sera all'altra. ${s.regolarita_min > 60 ? "Più regolarità di solito significa sonno più profondo." : "Ottima regolarità."}</div></div>` : ""}`;
   el.querySelectorAll("[data-info]").forEach((b) => b.addEventListener("click", () => infoSheet("sonno", d)));
+  // how the debt is made: each of the last 7 sleeps against your need (the same rule as the server)
+  const dw = $("#debtWhy"); if (dw) dw.onclick = () => {
+    let tot = 0;
+    const rows = hist8.slice(-7).map((h) => {
+      const i = hist8.indexOf(h), nap = hist8[i - 1]?.pisolini?.totale_min || 0;
+      if (!h.sonno) return `<div class="item" style="padding:6px 0"><span class="small">${fmtDate(h.giorno, { weekday: "short", day: "numeric" })}</span><span class="small muted">notte non registrata · non conta</span></div>`;
+      const slept = h.sonno.durata_min + nap, diff = Math.max(-60, need - slept);
+      tot += diff;
+      return `<div class="item" style="padding:6px 0"><span class="small">${fmtDate(h.giorno, { weekday: "short", day: "numeric" })}</span><span class="small">${fmtMin(h.sonno.durata_min)}${nap ? ` + pisolino ${fmtShort(nap)}` : ""}${h.sonno.manuale ? " (dichiarato)" : ""} · <b class="${diff > 0 ? "bad" : "good"}">${diff > 0 ? `+${fmtShort(diff)}` : diff < 0 ? `−${fmtShort(-diff)}` : "pari"}</b></span></div>`;
+    }).join("");
+    openSheet(`${sheetHead("Debito di sonno")}
+      <div class="small" style="line-height:1.5;color:var(--text)">Ogni sonno degli ultimi 7 giorni confrontato con la tua base di <b>${fmtMin(need)}</b>: le notti corte aggiungono debito, quelle lunghe lo restituiscono (al massimo 1 ora a notte). Le notti non registrate non contano. Il debito non va mai sotto zero e dopo 7 giorni una notte esce dal conto.</div>
+      <div class="card list">${rows}</div>
+      <div class="row between"><b>Totale</b><b class="${tot > 0 ? "bad" : "good"}">${tot > 0 ? fmtShort(tot) : "in pari"}</b></div>
+      <div class="small muted" style="line-height:1.5">Se la base ti sembra troppo alta, puoi fissarla in Profilo → «Sonno che ti serve».</div>`, "Debito di sonno");
+  };
   $("#napAdd").onclick = () => napSheet();
   el.querySelectorAll("[data-napdel]").forEach((b) => (b.onclick = async () => {
     try { await api(`/api/pisolino?inizio=${encodeURIComponent(b.dataset.napdel)}`, { method: "DELETE" }); toast("Pisolino eliminato"); router(); }

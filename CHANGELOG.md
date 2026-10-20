@@ -2,6 +2,11 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.23.5] — 2026-10-20
+
+### Aggiunto
+- **Come è fatto il debito di sonno**: toccando «Debito … · base …» nella pagina Sonno si vedono gli ultimi 7 sonni uno per uno (notte, pisolino del giorno prima, quanto aggiungono o tolgono rispetto alla base) e il totale. Le notti non registrate sono indicate e non contano.
+
 ## [1.23.4] — 2026-10-20
 
 ### Migliorato
