@@ -2,6 +2,11 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.25.1] — 2026-10-21
+
+### Aggiunto
+- **Riordinare gli esercizi della scheda**: frecce ↑ ↓ accanto a ogni esercizio e numero d'ordine. I due esercizi di una superserie si spostano insieme.
+
 ## [1.25.0] — 2026-10-21
 
 ### Aggiunto

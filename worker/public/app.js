@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.25.0";
+const APP_VERSION = "1.25.1";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -1355,7 +1355,10 @@ views.scheda = async (el) => {
     el.innerHTML = `${header(isNew ? "Nuova scheda" : "Modifica scheda", { back: "palestra", gear: false })}
       <div class="card col" style="gap:10px"><label class="field">Nome<input class="input" id="scNome" value="${esc(sc.nome)}" maxlength="60"></label></div>
       ${sc.esercizi.map((e, i) => `<div class="card col" style="gap:8px">
-        <div class="row" style="gap:8px"><input class="input" data-f="nome" data-i="${i}" value="${esc(e.nome)}" placeholder="Esercizio" maxlength="80"><button class="iconbtn" data-del="${i}" aria-label="Elimina esercizio" style="background:var(--bg)">${ico.close}</button></div>
+        <div class="row" style="gap:6px"><span style="font-weight:800;color:var(--muted);min-width:18px;text-align:center">${i + 1}</span><input class="input" data-f="nome" data-i="${i}" value="${esc(e.nome)}" placeholder="Esercizio" maxlength="80" style="min-width:0">
+          <button class="iconbtn" data-mv="${i}:-1" aria-label="Sposta su" ${i === 0 ? "disabled" : ""} style="width:38px;background:var(--bg);font-size:18px;font-weight:800;${i === 0 ? "opacity:.3" : ""}">↑</button>
+          <button class="iconbtn" data-mv="${i}:1" aria-label="Sposta giù" ${i === sc.esercizi.length - 1 ? "disabled" : ""} style="width:38px;background:var(--bg);font-size:18px;font-weight:800;${i === sc.esercizi.length - 1 ? "opacity:.3" : ""}">↓</button>
+          <button class="iconbtn" data-del="${i}" aria-label="Elimina esercizio" style="width:38px;background:var(--bg)">${ico.close}</button></div>
         ${e.nome.trim() ? musclesLine(e.nome, i) : ""}
         <div class="acts" style="grid-template-columns:repeat(2,minmax(0,1fr))"><button class="choice" data-met="${i}:classico" aria-pressed="${e.metodo !== "top"}" style="font-size:13px;min-height:38px">Serie uguali</button><button class="choice" data-met="${i}:top" aria-pressed="${e.metodo === "top"}" style="font-size:13px;min-height:38px">Pesante + back-off</button></div>
         <div class="row" style="gap:8px"><label class="field" style="flex:1;font-size:13px">${e.metodo === "top" ? "Serie totali" : "Serie"}<input class="input" type="number" inputmode="numeric" min="1" max="10" data-f="serie" data-i="${i}" value="${e.serie}"></label>
@@ -1374,6 +1377,21 @@ views.scheda = async (el) => {
     el.querySelectorAll("[data-drop]").forEach((b) => (b.onclick = () => { const e = sc.esercizi[Number(b.dataset.drop)]; e.drop = !e.drop; draw(); }));
     el.querySelectorAll("[data-ss]").forEach((b) => (b.onclick = () => { const e = sc.esercizi[Number(b.dataset.ss)]; e.superserie = !e.superserie; if (!e.superserie) delete e.superserie; draw(); }));
     el.querySelectorAll("[data-del]").forEach((b) => (b.onclick = () => { sc.esercizi.splice(Number(b.dataset.del), 1); draw(); }));
+    // wrong order: move the exercise up or down (the scheda card scrolls with it)
+    el.querySelectorAll("[data-mv]").forEach((b) => (b.onclick = () => {
+      const [i, d] = b.dataset.mv.split(":").map(Number);
+      // a superset moves as a pair: units are single exercises or the two of a superset
+      const units = [];
+      for (let k = 0; k < sc.esercizi.length; k++) { if (sc.esercizi[k].superserie && sc.esercizi[k + 1]) { units.push([sc.esercizi[k], sc.esercizi[k + 1]]); k++; } else units.push([sc.esercizi[k]]); }
+      const u = units.findIndex((x) => x.includes(sc.esercizi[i])), v = u + d;
+      if (v < 0 || v >= units.length) return;
+      const ex = sc.esercizi[i], card = b.closest(".card"), top = card.getBoundingClientRect().top;
+      [units[u], units[v]] = [units[v], units[u]];
+      sc.esercizi = units.flat();
+      draw();
+      const moved = el.querySelectorAll('[data-f="nome"]')[sc.esercizi.indexOf(ex)]?.closest(".card");
+      if (moved) window.scrollBy(0, moved.getBoundingClientRect().top - top);
+    }));
     el.querySelectorAll('[data-f="nome"]').forEach((inp) => inp.addEventListener("blur", () => loadMuscles(sc.esercizi.map((x) => x.nome)).then((n) => n && draw())));
     el.querySelectorAll("[data-mus-ex]").forEach((sel) => (sel.onchange = async () => {
       try { await api("/api/muscoli", { method: "POST", body: { esercizio: sel.dataset.musEx, muscolo: sel.value } }); delete MUSCLE_INFO[sel.dataset.musEx]; await loadMuscles(sc.esercizi.map((x) => x.nome)); draw(); toast("Muscolo aggiornato"); } catch (err) { toast(err.message); }
