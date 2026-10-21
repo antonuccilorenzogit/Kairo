@@ -109,3 +109,34 @@ test("muscoli riconosciuti dal nome, modificabili e ripristinabili", async () =>
   await call(env, "/api/muscoli", { method: "POST", code: CODE, body: { esercizio: "Esercizio strano", muscolo: "auto" } });
   assert.deepEqual((await get("Esercizio strano")).lista, []);
 });
+
+test("serie uguali: le ripetizioni in più oltre il range fanno salire di più (max +10%)", () => {
+  const ex = { nome: "Croci ai cavi", serie: 2, min: 10, max: 12 };
+  const ses = (...reps) => ({ serie: reps.map((r) => ({ kg: 20, reps: r })), storia: [{ kg: 20, reps: 0, rpe: 9 }] });
+  const kg = (...reps) => proposeClassic(ex, ses(...reps), { incremento: 1.25 }).serie[0].kg;
+  assert.equal(kg(12, 11), 20, "non tutte al massimo: resta");
+  assert.equal(kg(12, 12), 21.25, "range chiuso giusto: +1 salto");
+  assert.equal(kg(13, 15), 22.5, "3 oltre il range: +2 salti");
+  assert.equal(kg(16, 18), 22.5, "molto oltre: comunque +10% al massimo");
+  assert.equal(kg(9, 8), 18.75, "sotto il range: −1 salto");
+  assert.match(proposeClassic(ex, ses(13, 15), { incremento: 1.25 }).consiglio, /15 ripetizioni, 3 oltre il range/);
+});
+
+test("superserie a coppie e storico delle sedute", async () => {
+  const env = makeEnv(); await setup(env);
+  const r = await call(env, "/api/schede", { method: "PUT", code: CODE, body: { schede: [{ id: "a", nome: "Spinta", esercizi: [
+    { nome: "Alzate laterali", serie: 3, min: 10, max: 12, superserie: true }, { nome: "Pushdown", serie: 3, min: 10, max: 12, superserie: true },
+    { nome: "Croci", serie: 3, min: 10, max: 12, superserie: true }] }] } });
+  assert.deepEqual(r.data.schede[0].esercizi.map((e) => !!e.superserie), [true, false, false], "solo coppie; l'ultimo non ha con chi accoppiarsi");
+  const start = "2026-10-20T18:00:00+02:00";
+  await call(env, "/api/forza", { method: "POST", code: CODE, body: { serie: [
+    { start, end: "2026-10-20T19:00:00+02:00", workout: "Spinta", exercise: "Alzate laterali", set_index: 0, set_type: "normal", weight: 5, reps: 12, rpe: 8 },
+    { start, workout: "Spinta", exercise: "Pushdown", set_index: 0, set_type: "top", weight: 20, reps: 8, rpe: 9 }] } });
+  const list = (await call(env, "/api/forza/storico", { code: CODE })).data.sedute;
+  assert.equal(list.length, 1); assert.equal(list[0].nome, "Spinta"); assert.equal(list[0].esercizi, 2);
+  const d = (await call(env, "/api/forza/storico?start=" + encodeURIComponent(start), { code: CODE })).data;
+  assert.deepEqual(d.esercizi.map((e) => e.nome), ["Alzate laterali", "Pushdown"]); assert.equal(d.esercizi[1].serie[0].rir, 1);
+  const e = (await call(env, "/api/forza/storico?esercizio=Pushdown", { code: CODE })).data;
+  assert.equal(e.sedute.length, 1); assert.equal(e.sedute[0].serie[0].kg, 20);
+  assert.equal((await call(env, "/api/schede", { code: CODE })).data.oggi, "a");
+});

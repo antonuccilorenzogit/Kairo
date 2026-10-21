@@ -136,3 +136,42 @@ a { color: var(--orange-ink); }
 select.input { appearance: none; -webkit-appearance: none; }
 input[type="date"].input, input[type="time"].input { color-scheme: dark; }
 ::selection { background: #5A3412; }
+
+/* live workout log (one scrolling list, like the classic gym trackers) */
+.wk-top { position: sticky; top: 0; z-index: 20; background: var(--bg); padding: 8px 16px 10px; margin: -8px -16px 0; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+.wk-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.wk-stats > div { display: flex; flex-direction: column; gap: 1px; }
+.wk-stats .k { font-size: 12px; color: var(--muted); font-weight: 700; }
+.wk-stats .v { font-size: 17px; font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; }
+.wk-stats .v.acc { color: var(--orange-ink); }
+.wk-ex { display: flex; flex-direction: column; gap: 8px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.wk-ex.ss { border-left: 3px solid var(--orange); padding-left: 10px; margin-left: -2px; }
+.wk-name { background: none; border: 0; padding: 0; color: var(--orange-ink); font-size: 17px; font-weight: 800; text-align: left; cursor: pointer; line-height: 1.25; }
+.wk-meta { background: none; border: 0; padding: 0; color: var(--orange-ink); font-size: 14px; font-weight: 700; cursor: pointer; text-align: left; }
+.wk-grid { display: grid; grid-template-columns: 36px minmax(0, 1fr) 70px 58px 42px; gap: 6px; align-items: center; }
+.wk-head { font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; padding: 0 4px; }
+.wk-head > :nth-child(n+3) { text-align: center; }
+.wk-row { padding: 4px; border-radius: 10px; transition: background .2s; }
+.wk-row.done { background: rgba(52, 199, 89, .16); }
+.wk-row.hot .wk-kg { box-shadow: inset 0 0 0 2px var(--orange); }
+.wk-lbl { font-weight: 800; text-align: center; color: var(--ink); background: none; border: 0; font-size: 15px; cursor: pointer; padding: 0; }
+.wk-lbl.top { color: var(--orange-ink); } .wk-lbl.backoff { color: var(--yellow, #E3B341); } .wk-lbl.dropset { color: var(--red, #F2555A); }
+.wk-prev { color: var(--muted); font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: none; border: 0; padding: 0; text-align: left; cursor: pointer; }
+.wk-in { width: 100%; min-height: 38px; border: 0; border-radius: 8px; background: var(--card2, var(--card)); color: var(--ink); font-size: 16px; font-weight: 800; text-align: center; padding: 0 2px; }
+.wk-in:focus { outline: 2px solid var(--orange); }
+.wk-in::placeholder { color: var(--muted); font-weight: 600; font-size: 14px; }
+.wk-in::-webkit-outer-spin-button, .wk-in::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.wk-in[type=number] { -moz-appearance: textfield; }
+.wk-row.done .wk-in { background: transparent; }
+.wk-chk { width: 38px; height: 38px; border-radius: 9px; border: 0; background: var(--card2, var(--card)); color: var(--muted); font-size: 18px; font-weight: 900; cursor: pointer; justify-self: end; }
+.wk-chk[aria-pressed="true"] { background: #34C759; color: #fff; }
+.wk-add { width: 100%; min-height: 40px; border: 0; border-radius: 10px; background: var(--card2, var(--card)); color: var(--ink); font-weight: 800; font-size: 14px; cursor: pointer; }
+.wk-rir { display: flex; gap: 6px; align-items: center; padding: 2px 4px 6px 46px; }
+.wk-rir button { flex: 1; min-height: 36px; border-radius: 9px; border: 1.5px solid var(--line); background: var(--card); color: var(--ink); font-weight: 800; cursor: pointer; }
+.wk-rir button[aria-pressed="true"] { background: var(--orange); border-color: var(--orange); color: var(--on-ink); }
+.wk-bo { display: flex; justify-content: space-between; align-items: center; background: var(--peach); border-radius: 10px; padding: 8px 12px; margin: 0 0 4px 46px; }
+.wk-rest { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--card2, var(--card)); border-top: 1px solid var(--line); padding: 10px 16px calc(12px + var(--safe-bottom, 0px)); box-shadow: 0 -8px 24px rgba(0,0,0,.35); }
+.wk-rest .bar { height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; margin-bottom: 10px; }
+.wk-rest .bar > i { display: block; height: 100%; background: var(--orange); transition: width .5s linear; }
+.wk-rest .row button { min-height: 44px; min-width: 58px; border-radius: 12px; border: 0; background: var(--card); color: var(--ink); font-weight: 800; cursor: pointer; }
+.wk-rest .row button.skip { background: var(--orange); color: var(--on-ink); min-width: 76px; }

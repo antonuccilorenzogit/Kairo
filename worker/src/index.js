@@ -5,7 +5,7 @@ import { ensureSchema, SCHEMA_VERSION } from "./schema.js";
 import { dailyAdvice, chat, testAI, groqModels, weeklyCoach, DEFAULT_GROQ_MODEL, FALLBACK_MODEL } from "./coach.js";
 import { saveSets, strengthSummary, muscleFatigue, unknownExercises, setCustomMuscle, MUSCLES, recoveryCheck, customMuscles, muscleWeights } from "./strength.js";
 import { weeklyReport } from "./report.js";
-import { recommendWorkout, getSchede, saveSchede, lastSets, schedeFromText } from "./workout.js";
+import { recommendWorkout, getSchede, saveSchede, lastSets, schedeFromText, gymHistory, nextScheda } from "./workout.js";
 import { sha256, safeEqual, clientIp, lockedFor, recordFailure, clearFailures, pruneFailures, codeProblem } from "./security.js";
 import { parsePayload, cleanCheckin, cleanNap, MAX_BODY_BYTES } from "./validate.js";
 import { exportData, createBackup, listBackups, readBackup, restoreData } from "./backup.js";
@@ -26,7 +26,7 @@ import { getPlan, savePlan, restartPlan, planToday, planOverview, saveOutcome, b
 import { propose } from "./progression.js";
 import { getVapid, sendPush, validEndpoint } from "./push.js";
 
-const VERSION = "1.24.0";
+const VERSION = "1.25.0";
 
 // No CORS headers: only the Kairo app (same origin) and the Shortcuts app (not a browser) talk to the API.
 const json = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), {
@@ -488,12 +488,18 @@ async function api(req, env, url) {
     const scarico = plan.attivo && plan.inizio ? blockOf(plan, mondayOf(todayLocal(tz))).scarico : false;
     const { incremento } = await getProfile(env.DB);
     const proposte = Object.fromEntries(schede.map((s) => [s.id, s.esercizi.map((e) => propose(e, ultimo[e.nome], { scarico, incremento }))]));
-    return json({ schede, ultimo, proposte, scarico });
+    // today's routine: next in rotation, or the one with the freshest muscles
+    const oggi = schede.length ? (await nextScheda(env.DB, schede)).prossimaScheda?.id ?? null : null;
+    return json({ schede, ultimo, proposte, scarico, oggi });
   }
   if (p === "/api/schede/ia" && req.method === "POST") {
     const b = (await readJson(req)) || {};
     if (!String(b.testo || "").trim()) return json({ errore: "Descrivi i tuoi allenamenti" }, 400);
     return json(await schedeFromText(env, req, b.testo));
+  }
+  if (p === "/api/forza/storico") {
+    const q = url.searchParams;
+    return json(await gymHistory(env.DB, { start: q.get("start"), esercizio: q.get("esercizio") }));
   }
   if (p === "/api/forza") {
     if (req.method === "POST") {

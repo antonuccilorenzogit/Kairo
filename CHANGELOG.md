@@ -2,6 +2,19 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.25.0] — 2026-10-21
+
+### Aggiunto
+- **Nuova schermata di allenamento**, nello stile delle app da palestra classiche: tutti gli esercizi in un'unica lista, per ognuno una tabella SET · PRECEDENTE · KG · RIP · ✓. La serie fatta diventa verde; in alto durata, volume (kg × ripetizioni) e serie fatte, con «Fine» sempre a portata. Toccando i valori «Precedente» li copi nella serie.
+- **Timer di recupero** in basso dopo ogni ✓, con barra, −15/+15 e «Salta»; suona e vibra a fine recupero. Si regola per esercizio («⏱ Recupero»: 2' per pesante + back-off, 1'30" per le altre) e il telefono se lo ricorda.
+- **Pesante + back-off più semplice**: dopo la ✓ della pesante scegli quante ripetizioni avevi ancora (0, 1, 2, 3+) e compare subito il peso delle back-off, già scritto nelle righe B. Le lettere P/B/D indicano pesante, back-off, drop.
+- **Superserie** di due esercizi («⇄ Superserie con il prossimo» nella scheda): nell'allenamento sono segnate e il recupero parte solo dopo il secondo esercizio. Ognuno ha la sua progressione.
+- **Oggi** in Palestra: la scheda da fare oggi (la prossima della rotazione o quella con i muscoli più freschi) con un solo tasto «Inizia».
+- **Storico allenamenti**: sedute passate con durata, volume e ogni serie; toccando il nome di un esercizio vedi le ultime 8 sedute di quell'esercizio.
+
+### Cambiato
+- **Progressione delle serie uguali con le ripetizioni in più**: se chiudi il range e vai oltre (es. range 10–12, fai 13 e 15 con 20 kg), Kairo stima il tuo massimale dalla serie migliore e sale di più (qui 22,5 kg), fino a +10% per volta. Range chiuso giusto: +1 salto; non tutte al massimo: stesso peso; sotto il range: −1 salto.
+
 ## [1.24.0] — 2026-10-21
 
 ### Aggiunto

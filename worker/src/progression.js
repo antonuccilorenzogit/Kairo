@@ -2,7 +2,7 @@
 // for the next session from what you actually did. Two methods per exercise:
 //
 // "classico"  – straight sets: double progression (all sets at the top of the range → more weight; otherwise same
-//               weight and more reps), stall after 3 sessions at the same weight → −10% and build back up.
+//               weight and more reps; reps beyond the range → a bigger jump, up to +10%), stall after 3 sessions at the same weight → −10% and build back up.
 // "top"       – one heavy set (after the warm-up), then back-off sets and an optional drop set. Only the heavy set
 //               drives the progression: its reps and the reps left in reserve (RIR) estimate today's max, which gives
 //               the back-off weight (to failure) and the next heavy set.
@@ -136,9 +136,17 @@ export function proposeClassic(ex, last, { scarico = false, incremento = null } 
   let next = kg, why;
   if (kg && h.length >= 3 && h.every((x) => x.kg === h[0].kg) && h[0].reps != null && h[2].reps != null && h[0].reps <= h[2].reps) { next = roundTo(kg * 0.9, st(kg)); why = `Fermo da 3 sedute allo stesso carico: oggi ${kgTxt(next)} con ripetizioni pulite, poi si risale.`; }
   else if (kg && done.some((x) => x.reps < ex.min - 1)) { next = Math.max(0, kg - st(kg)); why = `Sotto il range: scendi a ${kgTxt(next)} e torna a ${ex.min}–${ex.max}.`; }
-  else if (kg && allTop && rpe != null && rpe >= 9.5) why = `Range chiuso ma al limite: resta a ${kgTxt(kg)} finché non ti sembra più facile.`;
-  else if (kg && allTop && rpe != null && rpe <= 7) { next = kg + 2 * st(kg); why = `Range chiuso con margine: prova ${kgTxt(next)}.`; }
-  else if (kg && allTop) { next = kg + st(kg); why = `Hai chiuso il range: prova ${kgTxt(next)}.`; }
+  else if (kg && allTop) {
+    // extra reps beyond the range = you are stronger than the weight: the best set at that weight (usually the last,
+    // to failure) gives today's max, and the next weight is the one for the middle of the range (+10% at most)
+    const best = Math.max(...done.filter((x) => x.kg === kg).map((x) => x.reps)), extra = best - ex.max, s = st(kg);
+    if (extra >= 1) {
+      const target = weightFor(e1rm(kg, best), (ex.min + ex.max) / 2);
+      next = Math.max(kg + s, Math.min(roundTo(target, s), roundTo(kg * 1.1, s)));
+      why = `${best} ripetizioni, ${extra} oltre il range: sali a ${kgTxt(next)}.`;
+    } else if (rpe != null && rpe <= 7) { next = kg + 2 * s; why = `Range chiuso con margine: prova ${kgTxt(next)}.`; }
+    else { next = kg + s; why = `Hai chiuso il range: prova ${kgTxt(next)}.`; }
+  }
   else why = kg ? `Stesso carico, punta a ${ex.max} ripetizioni.` : "";
   if (scarico && next) { const d = roundTo(next * 0.9, st(next)); return { metodo: "classico", consiglio: `${lastTxt}. Settimana di scarico: ${kgTxt(d)}, una serie in meno, lontano dal cedimento.`, riscaldamento: null, serie: make(d, Math.max(2, ex.serie - 1), false) }; }
   return { metodo: "classico", consiglio: `${lastTxt}. ${why}`.trim(), riscaldamento: null, serie: make(next) };

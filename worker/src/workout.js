@@ -34,8 +34,11 @@ export function cleanSchede(list) {
       if (e?.metodo === "top") { const b = Math.round(Number(e?.backoff)); Object.assign(x, { metodo: "top", backoff: b >= 5 && b <= 30 ? b : 12 }); }
       // drop set to failure at the end: with straight sets too
       if (e?.drop === true) x.drop = true;
+      // superset: this exercise and the next one alternate (pairs only: A1/A2)
+      if (e?.superserie === true && !esercizi[esercizi.length - 1]?.superserie) x.superserie = true;
       esercizi.push(x);
     }
+    if (esercizi.length && esercizi[esercizi.length - 1].superserie) delete esercizi[esercizi.length - 1].superserie; // nothing to pair with
     if (esercizi.length) out.push({ id: clip(s?.id, 40) || `s${Date.now().toString(36)}${i}`, nome, ordine: i, esercizi });
   }
   return { schede: out };
@@ -169,6 +172,31 @@ function ruleBased(ctx) {
 }
 
 // Next routine: rotation order (the one after the last one done), skipping routines whose muscles are still tired
+// Gym history: past sessions (one per start time) and, for one session, every set
+export async function gymHistory(db, { start = null, esercizio = null } = {}) {
+  if (start) {
+    const r = await db.prepare("SELECT exercise, set_index, set_type, weight, reps, rpe, workout, end FROM sets WHERE start = ? ORDER BY rowid").bind(start).all();
+    return { start, nome: r.results[0]?.workout || null, fine: r.results[0]?.end || null, esercizi: groupSets(r.results) };
+  }
+  if (esercizio) {
+    const r = await db.prepare("SELECT start, set_type, weight, reps, rpe FROM sets WHERE exercise = ? AND start IN (SELECT DISTINCT start FROM sets WHERE exercise = ? ORDER BY start DESC LIMIT 8) ORDER BY start DESC, set_index").bind(esercizio, esercizio).all();
+    const by = new Map();
+    for (const x of r.results) { if (!by.has(x.start)) by.set(x.start, []); by.get(x.start).push({ tipo: x.set_type || "normal", kg: x.weight, reps: x.reps, rir: x.set_type === "top" && x.rpe != null ? Math.max(0, Math.round(10 - x.rpe)) : null }); }
+    return { esercizio, sedute: [...by].map(([s, serie]) => ({ start: s, serie })) };
+  }
+  const r = await db.prepare("SELECT start, max(workout) nome, max(end) fine, count(*) serie, count(DISTINCT exercise) esercizi, round(sum(coalesce(weight,0) * coalesce(reps,0))) volume FROM sets WHERE start >= ? GROUP BY start ORDER BY start DESC LIMIT 40").bind(new Date(Date.now() - 180 * 864e5).toISOString().slice(0, 10)).all();
+  return { sedute: r.results };
+}
+const groupSets = (rows) => {
+  const out = [];
+  for (const x of rows) {
+    let e = out.find((y) => y.nome === x.exercise);
+    if (!e) out.push((e = { nome: x.exercise, serie: [] }));
+    e.serie.push({ tipo: x.set_type || "normal", kg: x.weight, reps: x.reps, rir: x.set_type === "top" && x.rpe != null ? Math.max(0, Math.round(10 - x.rpe)) : null });
+  }
+  return out;
+};
+
 export async function nextScheda(db, schede) {
   const last = await db.prepare("SELECT workout FROM sets WHERE workout IS NOT NULL AND workout != '' ORDER BY start DESC LIMIT 1").first();
   const idx = last ? schede.findIndex((s) => s.nome === last.workout) : -1;
