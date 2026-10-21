@@ -85,3 +85,27 @@ test("incremento minimo della palestra: pesi multipli dei dischi più piccoli, b
   const t = proposeTop({ nome: "Triceps pushdown", serie: 2, min: 8, max: 10, metodo: "top", incremento: 2.5 }, top(20, 10, 1), { incremento: 1.25 });
   for (const x of t.serie) if (x.kg != null) assert.equal(x.kg % 2.5, 0, "l'incremento dell'esercizio vince su quello generale");
 });
+
+test("drop set anche con le serie uguali; il drop non sporca la progressione", async () => {
+  const ex = { nome: "Croci ai cavi", serie: 3, min: 10, max: 12, drop: true };
+  const p = proposeClassic(ex, { serie: [{ kg: 20, reps: 12 }, { kg: 20, reps: 12 }, { kg: 20, reps: 12 }, { kg: 15, reps: 15, tipo: "dropset" }], storia: [{ kg: 20, reps: 36, rpe: 8 }] }, { incremento: 1.25 });
+  assert.deepEqual(p.serie.map((x) => x.tipo), ["normal", "normal", "normal", "dropset"]);
+  assert.equal(p.serie[0].kg, 21.25, "range chiuso: si sale di un salto (1,25), il drop a 15 kg non conta");
+  assert.equal(p.serie[3].kg, 16.25, "drop −25% dall'ultima serie");
+  const env = makeEnv(); await setup(env);
+  const r = await call(env, "/api/schede", { method: "PUT", code: CODE, body: { schede: [{ id: "a", nome: "A", esercizi: [ex] }] } });
+  assert.equal(r.data.schede[0].esercizi[0].drop, true);
+});
+
+test("muscoli riconosciuti dal nome, modificabili e ripristinabili", async () => {
+  const env = makeEnv(); await setup(env);
+  const get = async (n) => (await call(env, `/api/muscoli?nomi=${encodeURIComponent(n)}`, { code: CODE })).data.muscoli[n];
+  assert.equal((await get("Pectoral machine")).lista[0][0], "petto", "machine non è «chin» (trazioni)");
+  assert.equal((await get("Alzate laterali al cavo")).lista.length, 1, "le alzate non usano i tricipiti");
+  assert.deepEqual((await get("Esercizio strano")).lista, []);
+  await call(env, "/api/muscoli", { method: "POST", code: CODE, body: { esercizio: "Esercizio strano", muscolo: "glutei" } });
+  const m = await get("Esercizio strano");
+  assert.equal(m.lista[0][0], "glutei"); assert.equal(m.scelto, "glutei");
+  await call(env, "/api/muscoli", { method: "POST", code: CODE, body: { esercizio: "Esercizio strano", muscolo: "auto" } });
+  assert.deepEqual((await get("Esercizio strano")).lista, []);
+});

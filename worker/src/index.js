@@ -3,7 +3,7 @@
 import { computeDay, computeHistory, mergeStages } from "./metrics.js";
 import { ensureSchema, SCHEMA_VERSION } from "./schema.js";
 import { dailyAdvice, chat, testAI, groqModels, weeklyCoach, DEFAULT_GROQ_MODEL, FALLBACK_MODEL } from "./coach.js";
-import { saveSets, strengthSummary, muscleFatigue, unknownExercises, setCustomMuscle, MUSCLES, recoveryCheck } from "./strength.js";
+import { saveSets, strengthSummary, muscleFatigue, unknownExercises, setCustomMuscle, MUSCLES, recoveryCheck, customMuscles, muscleWeights } from "./strength.js";
 import { weeklyReport } from "./report.js";
 import { recommendWorkout, getSchede, saveSchede, lastSets, schedeFromText } from "./workout.js";
 import { sha256, safeEqual, clientIp, lockedFor, recordFailure, clearFailures, pruneFailures, codeProblem } from "./security.js";
@@ -26,7 +26,7 @@ import { getPlan, savePlan, restartPlan, planToday, planOverview, saveOutcome, b
 import { propose } from "./progression.js";
 import { getVapid, sendPush, validEndpoint } from "./push.js";
 
-const VERSION = "1.23.5";
+const VERSION = "1.24.0";
 
 // No CORS headers: only the Kairo app (same origin) and the Shortcuts app (not a browser) talk to the API.
 const json = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), {
@@ -454,6 +454,12 @@ async function api(req, env, url) {
     return json(r, r.errore ? 400 : 200);
   }
   // the person links an exercise Kairo does not know to a muscle
+  // which muscles Kairo thinks an exercise works (to show it in the routine editor)
+  if (p === "/api/muscoli" && req.method === "GET") {
+    const custom = await customMuscles(env.DB);
+    const nomi = String(url.searchParams.get("nomi") || "").split("|").map((x) => x.trim()).filter(Boolean).slice(0, 40);
+    return json({ muscoli: Object.fromEntries(nomi.map((n) => [n, { lista: muscleWeights(n, custom), scelto: custom[n.toLowerCase()] || null }])), elenco: MUSCLES });
+  }
   if (p === "/api/muscoli" && req.method === "POST") {
     const b = (await readJson(req)) || {};
     const r = await setCustomMuscle(env.DB, b.esercizio, b.muscolo);

@@ -31,7 +31,9 @@ export function cleanSchede(list) {
       const x = { nome: n, serie, min, max, note: clip(e?.note, 120) };
       // heavy set + back-off: % lighter for the back-offs and an optional drop set at the end
       if ([0.5, 1, 1.25, 2, 2.5, 5].includes(Number(e?.incremento))) x.incremento = Number(e.incremento);
-      if (e?.metodo === "top") { const b = Math.round(Number(e?.backoff)); Object.assign(x, { metodo: "top", backoff: b >= 5 && b <= 30 ? b : 12, drop: e?.drop === true }); }
+      if (e?.metodo === "top") { const b = Math.round(Number(e?.backoff)); Object.assign(x, { metodo: "top", backoff: b >= 5 && b <= 30 ? b : 12 }); }
+      // drop set to failure at the end: with straight sets too
+      if (e?.drop === true) x.drop = true;
       esercizi.push(x);
     }
     if (esercizi.length) out.push({ id: clip(s?.id, 40) || `s${Date.now().toString(36)}${i}`, nome, ordine: i, esercizi });
@@ -107,7 +109,7 @@ export async function schedeFromText(env, req, text) {
   const t = String(text || "").slice(0, 6000);
   const r = await ask(env, req, [
     { role: "system", content: "Trasformi la descrizione degli allenamenti in palestra di un utente in schede strutturate. Rispondi SOLO con JSON valido, senza testo prima o dopo." },
-    { role: "user", content: `Descrizione dell'utente:\n"""${t}"""\n\nRestituisci {"schede":[{"nome":"Scheda A – Petto e tricipiti","esercizi":[{"nome":"Panca piana con bilanciere","serie":4,"min":8,"max":10,"note":""}]}]}.\nRegole: nomi degli esercizi in italiano, standard e brevi; "min" e "max" sono il range di ripetizioni (se l'utente dà un numero solo, min = max); se per un esercizio l'utente fa una serie pesante (top set) seguita da back-off, aggiungi "metodo":"top" (allora "serie" conta la pesante più le back-off, "min"/"max" sono le ripetizioni della pesante e "backoff" è quanto sono più leggere in %, di solito 10-15) e "drop":true se finisce con un drop set; niente tempi di recupero; massimo 6 schede e 15 esercizi per scheda; non inventare esercizi che l'utente non ha scritto. Se il nome della scheda manca, usa "Scheda A", "Scheda B"…` },
+    { role: "user", content: `Descrizione dell'utente:\n"""${t}"""\n\nRestituisci {"schede":[{"nome":"Scheda A – Petto e tricipiti","esercizi":[{"nome":"Panca piana con bilanciere","serie":4,"min":8,"max":10,"note":""}]}]}.\nRegole: nomi degli esercizi in italiano, standard e brevi; "min" e "max" sono il range di ripetizioni (se l'utente dà un numero solo, min = max); se per un esercizio l'utente fa una serie pesante (top set) seguita da back-off, aggiungi "metodo":"top" (allora "serie" conta la pesante più le back-off, "min"/"max" sono le ripetizioni della pesante e "backoff" è quanto sono più leggere in %, di solito 10-15) e "drop":true se finisce con un drop set (vale anche per le serie uguali); niente tempi di recupero; massimo 6 schede e 15 esercizi per scheda; non inventare esercizi che l'utente non ha scritto. Se il nome della scheda manca, usa "Scheda A", "Scheda B"…` },
   ]);
   const parsed = r.errore ? null : jsonFrom(r.text);
   const ai = parsed ? cleanSchede(parsed.schede) : null;

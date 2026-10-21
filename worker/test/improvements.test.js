@@ -29,12 +29,12 @@ test("esito dell'allenamento salvato e restituito con la proposta", async () => 
 
 test("esercizio non riconosciuto collegato a mano a un muscolo", async () => {
   const env = makeEnv(); await setup(env);
-  await env.DB.prepare("INSERT INTO sets(start,exercise,set_index,weight,reps) VALUES(?,?,0,30,10)").bind(new Date(Date.now() - 36e5).toISOString().slice(0, 19), "Pec deck").run();
+  await env.DB.prepare("INSERT INTO sets(start,exercise,set_index,weight,reps) VALUES(?,?,0,30,10)").bind(new Date(Date.now() - 36e5).toISOString().slice(0, 19), "Macchina strana").run();
   let f = (await call(env, "/api/forza", { code: CODE })).data;
-  assert.ok(f.non_riconosciuti.includes("Pec deck"));
-  assert.equal((await call(env, "/api/muscoli", { method: "POST", code: CODE, body: { esercizio: "Pec deck", muscolo: "naso" } })).status, 400);
-  await call(env, "/api/muscoli", { method: "POST", code: CODE, body: { esercizio: "Pec deck", muscolo: "petto" } });
+  assert.ok(f.non_riconosciuti.includes("Macchina strana"));
+  assert.equal((await call(env, "/api/muscoli", { method: "POST", code: CODE, body: { esercizio: "Macchina strana", muscolo: "naso" } })).status, 400);
+  await call(env, "/api/muscoli", { method: "POST", code: CODE, body: { esercizio: "Macchina strana", muscolo: "petto" } });
   f = (await call(env, "/api/forza", { code: CODE })).data;
-  assert.ok(!f.non_riconosciuti.includes("Pec deck"));
+  assert.ok(!f.non_riconosciuti.includes("Macchina strana"));
   assert.ok((await muscleFatigue(env.DB)).some((m) => m.muscolo === "petto"));
 });

@@ -118,8 +118,14 @@ export function proposeTop(ex, last, { scarico = false, incremento = null } = {}
 // ---------- straight sets (double progression) ----------
 export function proposeClassic(ex, last, { scarico = false, incremento = null } = {}) {
   const inc = ex.incremento || incremento || null;
-  const make = (kg, n = ex.serie) => Array.from({ length: n }, (_, i) => ({ tipo: "normal", kg: kg ?? last?.serie?.[i]?.kg ?? null, min: ex.min, max: ex.max }));
-  const all = (last?.serie || []).filter((x) => x.tipo !== "warmup");
+  // straight sets, plus an optional drop set to failure at the end (−25% from the last set)
+  const make = (kg, n = ex.serie, withDrop = !!ex.drop) => {
+    const sets = Array.from({ length: n }, (_, i) => ({ tipo: "normal", kg: kg ?? last?.serie?.filter((x) => x.tipo !== "dropset")?.[i]?.kg ?? null, min: ex.min, max: ex.max }));
+    const lastKg = sets[sets.length - 1]?.kg;
+    if (withDrop) sets.push({ tipo: "dropset", kg: lastKg ? roundTo(lastKg * 0.75, inc || kgStep(lastKg, ex.nome)) : null, min: null, max: null });
+    return sets;
+  };
+  const all = (last?.serie || []).filter((x) => x.tipo !== "warmup" && x.tipo !== "dropset");
   if (!all.length) return { metodo: "classico", consiglio: "Prima volta: scegli un carico con cui arrivi al range con 2 ripetizioni in riserva.", riscaldamento: null, serie: make(null) };
   const done = all.filter((x) => x.reps != null);
   const kg = Math.max(...all.map((x) => x.kg || 0)) || null;
@@ -134,7 +140,7 @@ export function proposeClassic(ex, last, { scarico = false, incremento = null } 
   else if (kg && allTop && rpe != null && rpe <= 7) { next = kg + 2 * st(kg); why = `Range chiuso con margine: prova ${kgTxt(next)}.`; }
   else if (kg && allTop) { next = kg + st(kg); why = `Hai chiuso il range: prova ${kgTxt(next)}.`; }
   else why = kg ? `Stesso carico, punta a ${ex.max} ripetizioni.` : "";
-  if (scarico && next) { const d = roundTo(next * 0.9, st(next)); return { metodo: "classico", consiglio: `${lastTxt}. Settimana di scarico: ${kgTxt(d)}, una serie in meno, lontano dal cedimento.`, riscaldamento: null, serie: make(d, Math.max(2, ex.serie - 1)) }; }
+  if (scarico && next) { const d = roundTo(next * 0.9, st(next)); return { metodo: "classico", consiglio: `${lastTxt}. Settimana di scarico: ${kgTxt(d)}, una serie in meno, lontano dal cedimento.`, riscaldamento: null, serie: make(d, Math.max(2, ex.serie - 1), false) }; }
   return { metodo: "classico", consiglio: `${lastTxt}. ${why}`.trim(), riscaldamento: null, serie: make(next) };
 }
 

@@ -2,6 +2,15 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.24.0] — 2026-10-21
+
+### Aggiunto
+- **Drop set anche con le serie uguali**: «Drop set finale» si può attivare per ogni esercizio, non solo con pesante + back-off. Il drop è a cedimento, −25% dall'ultima serie, e non entra nel calcolo della progressione.
+- **Muscoli visibili nella scheda**: sotto ogni esercizio Kairo mostra cosa ha capito dal nome («Allena petto · aiutano tricipiti, spalle») e se non lo riconosce lo dice. Il muscolo principale si può cambiare lì, o tornare a «riconosci dal nome».
+
+### Corretto
+- **Esercizi riconosciuti meglio**: «Pectoral machine» veniva letta come schiena (la parola «machine» contiene «chin», le trazioni); le alzate laterali contavano anche i tricipiti; pec deck, croci e butterfly ora sono solo petto; aggiunti chest press, reverse fly, dip, trapezio (scrollate), lombari e avambracci.
+
 ## [1.23.5] — 2026-10-20
 
 ### Aggiunto

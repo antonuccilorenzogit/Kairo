@@ -82,7 +82,7 @@ test("piano dall'app: attivazione, seduta di oggi, test che fissa i ritmi, sedut
   assert.equal(o.config.attivo, true); assert.equal(o.config.inizio, mondayOf(today));
   assert.equal(o.settimana.sedute.length, 7);
   const w = (await call(env, "/api/allenamento/oggi", { method: "POST", code: CODE, body: {} })).data;
-  assert.equal(w.piano, true); assert.equal(w.sedute.length, 1);
+  assert.equal(w.piano, true); assert.ok(w.sedute.length >= 1, "una seduta, o due se una dura dei giorni scorsi è stata spostata a oggi");
   assert.ok(w.sedute[0].struttura.length >= 1 || w.sedute[0].sport === "palestra");
   // a swim test done → CSS saved and used
   const week = mondayOf(today);

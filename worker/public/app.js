@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.23.5";
+const APP_VERSION = "1.24.0";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -1189,7 +1189,7 @@ const localIso = (d = new Date()) => {
 // Weights and reps of the next session come from the server (src/progression.js): the routines stay yours,
 // Kairo decides the loads from what you actually did (heavy set + back-off, or straight sets).
 // "4×8–10" or, for heavy set + back-off, "1×5–7 + 2 back-off"
-const exShort = (e) => `${e.metodo === "top" ? `1×${e.min}${e.max !== e.min ? "–" + e.max : ""} + ${Math.max(0, e.serie - 1)} back-off${e.drop ? " + drop" : ""}` : `${e.serie}×${e.min}${e.max !== e.min ? "–" + e.max : ""}`}`;
+const exShort = (e) => `${e.metodo === "top" ? `1×${e.min}${e.max !== e.min ? "–" + e.max : ""} + ${Math.max(0, e.serie - 1)} back-off${e.drop ? " + drop" : ""}` : `${e.serie}×${e.min}${e.max !== e.min ? "–" + e.max : ""}${e.drop ? " + drop" : ""}`}`;
 const SET_LABEL = { top: "Pesante", backoff: "Back-off", dropset: "Drop", normal: "Serie" };
 // back-off weight from the heavy set just done: reps + reps in reserve → today's max (Epley), then the weight for the
 // back-off reps to failure minus the fatigue left by the heavy set (learned on you, sent by the server)
@@ -1312,31 +1312,55 @@ function aiSchedeSheet(current) {
 }
 
 // Manual editor of one routine
+// Which muscles Kairo recognises from each exercise name (main one first): shown under the name, changeable
+const MUSCLE_INFO = {};
+let MUSCLE_LIST = [];
+async function loadMuscles(names) {
+  const need = [...new Set(names.map((n) => n.trim()).filter((n) => n && !MUSCLE_INFO[n]))];
+  if (!need.length) return false;
+  try { const r = await api(`/api/muscoli?nomi=${encodeURIComponent(need.join("|"))}`); Object.assign(MUSCLE_INFO, r.muscoli); MUSCLE_LIST = r.elenco; return true; } catch (_) { return false; }
+}
+function musclesLine(name, i) {
+  const m = MUSCLE_INFO[name.trim()];
+  if (!m) return "";
+  const main = m.lista[0]?.[0], helpers = m.lista.slice(1).map(([x]) => x);
+  const opts = `<option value="auto" ${!m.scelto ? "selected" : ""}>${m.scelto ? "riconosci dal nome" : main ? `${main} (riconosciuto)` : "scegli…"}</option>${MUSCLE_LIST.map((x) => `<option value="${x}" ${m.scelto === x ? "selected" : ""}>${x}</option>`).join("")}<option value="nessuno" ${m.scelto === "nessuno" ? "selected" : ""}>nessuno (cardio, stretching)</option>`;
+  return `<div class="row between" style="gap:8px"><span class="small ${main ? "muted" : "bad"}" style="line-height:1.4">${main ? `Allena <b style="color:var(--text)">${esc(main)}</b>${helpers.length ? ` · aiutano ${helpers.map(esc).join(", ")}` : ""}` : m.scelto === "nessuno" ? "Non conta per i muscoli" : "Muscolo non riconosciuto: sceglilo"}</span>
+    <select class="input" data-mus-ex="${esc(name.trim())}" style="width:auto;min-height:34px;padding:2px 8px;font-size:13px" aria-label="Muscolo principale di ${esc(name)}">${opts}</select></div>`;
+}
+
 views.scheda = async (el) => {
   const id = new URLSearchParams(location.hash.split("?")[1] || "").get("id");
   const { schede } = await api("/api/schede");
   const isNew = id === "nuova";
   const sc = isNew ? { id: "s" + Date.now().toString(36), nome: `Scheda ${String.fromCharCode(65 + schede.length)}`, esercizi: [{ nome: "", serie: 3, min: 8, max: 10, note: "" }] } : JSON.parse(JSON.stringify(schede.find((x) => x.id === id) || {}));
   if (!sc.esercizi) return route("palestra");
+  await loadMuscles(sc.esercizi.map((x) => x.nome));
   const draw = () => {
     el.innerHTML = `${header(isNew ? "Nuova scheda" : "Modifica scheda", { back: "palestra", gear: false })}
       <div class="card col" style="gap:10px"><label class="field">Nome<input class="input" id="scNome" value="${esc(sc.nome)}" maxlength="60"></label></div>
       ${sc.esercizi.map((e, i) => `<div class="card col" style="gap:8px">
         <div class="row" style="gap:8px"><input class="input" data-f="nome" data-i="${i}" value="${esc(e.nome)}" placeholder="Esercizio" maxlength="80"><button class="iconbtn" data-del="${i}" aria-label="Elimina esercizio" style="background:var(--bg)">${ico.close}</button></div>
+        ${e.nome.trim() ? musclesLine(e.nome, i) : ""}
         <div class="acts" style="grid-template-columns:repeat(2,minmax(0,1fr))"><button class="choice" data-met="${i}:classico" aria-pressed="${e.metodo !== "top"}" style="font-size:13px;min-height:38px">Serie uguali</button><button class="choice" data-met="${i}:top" aria-pressed="${e.metodo === "top"}" style="font-size:13px;min-height:38px">Pesante + back-off</button></div>
         <div class="row" style="gap:8px"><label class="field" style="flex:1;font-size:13px">${e.metodo === "top" ? "Serie totali" : "Serie"}<input class="input" type="number" inputmode="numeric" min="1" max="10" data-f="serie" data-i="${i}" value="${e.serie}"></label>
           <label class="field" style="flex:1;font-size:13px">${e.metodo === "top" ? "Pesante min" : "Rip. min"}<input class="input" type="number" inputmode="numeric" min="1" max="50" data-f="min" data-i="${i}" value="${e.min}"></label>
           <label class="field" style="flex:1;font-size:13px">${e.metodo === "top" ? "Pesante max" : "Rip. max"}<input class="input" type="number" inputmode="numeric" min="1" max="60" data-f="max" data-i="${i}" value="${e.max}"></label></div>
         <label class="field" style="font-size:13px">Salto di peso<select class="input" data-f="incremento" data-i="${i}"><option value="0" ${!e.incremento ? "selected" : ""}>come nel profilo</option>${[0.5, 1, 1.25, 2, 2.5, 5].map((v) => `<option value="${v}" ${e.incremento === v ? "selected" : ""}>${String(v).replace(".", ",")} kg</option>`).join("")}</select></label>
-        ${e.metodo === "top" ? `<button class="choice" data-drop="${i}" aria-pressed="${!!e.drop}" style="min-height:40px;font-size:13px">Drop set finale</button>
-          <span class="hint">1 pesante da ${e.min}–${e.max} con 1–2 ripetizioni in riserva + ${Math.max(0, e.serie - 1)} back-off a cedimento da ${e.min + 2}–${e.max + 2}${e.drop ? " + 1 drop a cedimento" : ""}. Il peso delle back-off lo calcola Kairo da come va la pesante.</span>` : ""}</div>`).join("")}
+        <button class="choice" data-drop="${i}" aria-pressed="${!!e.drop}" style="min-height:40px;font-size:13px">Drop set finale</button>
+        ${e.metodo !== "top" && e.drop ? `<span class="hint">${e.serie} serie da ${e.min}–${e.max} + 1 drop a cedimento (−25% dall'ultima serie).</span>` : ""}
+        ${e.metodo === "top" ? `<span class="hint">1 pesante da ${e.min}–${e.max} con 1–2 ripetizioni in riserva + ${Math.max(0, e.serie - 1)} back-off a cedimento da ${e.min + 2}–${e.max + 2}${e.drop ? " + 1 drop a cedimento" : ""}. Il peso delle back-off lo calcola Kairo da come va la pesante.</span>` : ""}</div>`).join("")}
       <button class="btn ghost" id="addEx">+ Aggiungi esercizio</button>
       <button class="btn primary" id="saveSc">Salva scheda</button>
       ${isNew ? "" : `<button class="btn danger" id="delSc">Elimina scheda</button>`}`;
     el.querySelectorAll("[data-f]").forEach((inp) => (inp.oninput = inp.onchange = () => { const e = sc.esercizi[Number(inp.dataset.i)]; e[inp.dataset.f] = inp.dataset.f === "nome" ? inp.value : Number(inp.value); }));
-    el.querySelectorAll("[data-met]").forEach((b) => (b.onclick = () => { const [i, m] = b.dataset.met.split(":"), e = sc.esercizi[Number(i)]; if (m === "top") Object.assign(e, { metodo: "top", drop: !!e.drop }); else { delete e.metodo; delete e.backoff; delete e.drop; } draw(); }));
+    el.querySelectorAll("[data-met]").forEach((b) => (b.onclick = () => { const [i, m] = b.dataset.met.split(":"), e = sc.esercizi[Number(i)]; if (m === "top") Object.assign(e, { metodo: "top" }); else { delete e.metodo; delete e.backoff; } draw(); }));
     el.querySelectorAll("[data-drop]").forEach((b) => (b.onclick = () => { const e = sc.esercizi[Number(b.dataset.drop)]; e.drop = !e.drop; draw(); }));
     el.querySelectorAll("[data-del]").forEach((b) => (b.onclick = () => { sc.esercizi.splice(Number(b.dataset.del), 1); draw(); }));
+    el.querySelectorAll('[data-f="nome"]').forEach((inp) => inp.addEventListener("blur", () => loadMuscles(sc.esercizi.map((x) => x.nome)).then((n) => n && draw())));
+    el.querySelectorAll("[data-mus-ex]").forEach((sel) => (sel.onchange = async () => {
+      try { await api("/api/muscoli", { method: "POST", body: { esercizio: sel.dataset.musEx, muscolo: sel.value } }); delete MUSCLE_INFO[sel.dataset.musEx]; await loadMuscles(sc.esercizi.map((x) => x.nome)); draw(); toast("Muscolo aggiornato"); } catch (err) { toast(err.message); }
+    }));
     $("#scNome").oninput = (e) => (sc.nome = e.target.value);
     $("#addEx").onclick = () => { sc.esercizi.push({ nome: "", serie: 3, min: 8, max: 10, note: "" }); draw(); };
     $("#saveSc").onclick = async () => {

@@ -60,18 +60,26 @@ export async function strengthSummary(db, today) {
 // Exercise name → muscles worked (primary first). Italian and English names, the most common gym exercises.
 // Each muscle has a weight: the main one counts 1, the helpers only a fraction of a set.
 const MUSCLE_MAP = [
-  [/stacc|deadlift|rdl|good morning/i, [["femorali", 1], ["glutei", 0.5], ["schiena", 0.3]]],
-  [/squat|pressa|leg press|affond|lunge|hack|bulgar|step.?up/i, [["quadricipiti", 1], ["glutei", 0.4]]],
+  // order matters: the first match wins (e.g. "leg curl" before "curl", "reverse fly" before "fly")
+  [/stacc|deadlift|\brdl\b|good morning/i, [["femorali", 1], ["glutei", 0.5], ["lombari", 0.3]]],
+  [/squat|pressa|leg press|affond|lunge|\bhack|bulgar|step.?up/i, [["quadricipiti", 1], ["glutei", 0.4]]],
   [/leg ext|estension.*gamb|quadricip/i, [["quadricipiti", 1]]],
   [/leg curl|curl.*gamb|femoral|nordic/i, [["femorali", 1]]],
-  [/hip thrust|ponte|glute|abdu|kickback/i, [["glutei", 1]]],
+  [/hip thrust|ponte|glute|abdu|\bkickback.*glut/i, [["glutei", 1]]],
   [/polpacc|calf|punte/i, [["polpacci", 1]]],
-  [/panca|bench|chest press|pettoral|croci|fly|dip|piegament|push.?up/i, [["petto", 1], ["tricipiti", 0.3], ["spalle", 0.2]]],
-  [/lento|military|overhead|shoulder press|alzat|lateral|face pull|deltoid|spall|arnold/i, [["spalle", 1], ["tricipiti", 0.2]]],
-  [/trazion|pull.?up|chin|lat|pulldown|rematore|row|pulley|dorsal|schiena/i, [["schiena", 1], ["bicipiti", 0.3]]],
-  [/curl|bicipit|hammer/i, [["bicipiti", 1]]],
-  [/french|tricipit|push.?down|skull|kick.?back.*tric|estension.*tric/i, [["tricipiti", 1]]],
-  [/crunch|plank|addom|abs|core|russian|leg raise|ab wheel/i, [["addome", 1]]],
+  [/reverse fly|rear delt|croci invers|posterior|face pull/i, [["spalle", 1], ["schiena", 0.3]]],
+  [/\bdip/i, [["petto", 1], ["tricipiti", 0.5]]],
+  [/croci|\bfly|pec ?deck|\bpec\b|pectoral machine|butterfly/i, [["petto", 1]]],
+  [/panca|bench|chest|pector|pettoral|piegament|push.?up/i, [["petto", 1], ["tricipiti", 0.3], ["spalle", 0.2]]],
+  [/lento|military|overhead|shoulder press|arnold|spinte?.*spall/i, [["spalle", 1], ["tricipiti", 0.3]]],
+  [/alzat|lateral raise|laterali|front raise|frontal|deltoid|spall/i, [["spalle", 1]]],
+  [/shrug|scrollat|trapez/i, [["trapezio", 1]]],
+  [/trazion|pull.?up|\bchin|\blat\b|lat ?machine|pulldown|rematore|\brow|pulley|dorsal|schiena|t.?bar/i, [["schiena", 1], ["bicipiti", 0.3]]],
+  [/hyperext|iperestens|lombar|back ext/i, [["lombari", 1]]],
+  [/french|tricipit|tricep|push.?down|skull|kick.?back|estension.*tric|\bjm press/i, [["tricipiti", 1]]],
+  [/curl|bicipit|bicep|hammer/i, [["bicipiti", 1], ["avambracci", 0.2]]],
+  [/wrist|polso|avambracc|forearm/i, [["avambracci", 1]]],
+  [/crunch|plank|addom|\babs?\b|core|russian|leg raise|ab wheel|sit.?up/i, [["addome", 1]]],
 ];
 export const MUSCLES = ["petto", "schiena", "spalle", "bicipiti", "tricipiti", "quadricipiti", "femorali", "glutei", "polpacci", "addome", "trapezio", "lombari", "avambracci"];
 // custom: { "nome esercizio in minuscolo": "muscolo" | "nessuno" } chosen by the person in Palestra
@@ -87,8 +95,9 @@ export async function customMuscles(db) {
 }
 export async function setCustomMuscle(db, esercizio, muscolo) {
   const name = String(esercizio || "").toLowerCase().trim().slice(0, 80);
-  if (!name || !(MUSCLES.includes(muscolo) || muscolo === "nessuno")) return { errore: "Esercizio o muscolo non valido" };
-  const c = await customMuscles(db); c[name] = muscolo;
+  if (!name || !(MUSCLES.includes(muscolo) || muscolo === "nessuno" || muscolo === "auto")) return { errore: "Esercizio o muscolo non valido" };
+  const c = await customMuscles(db);
+  if (muscolo === "auto") delete c[name]; else c[name] = muscolo; // "auto": back to what Kairo recognises from the name
   await db.prepare("INSERT INTO settings(key,value) VALUES('muscoli_custom',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(JSON.stringify(c)).run();
   return { ok: true };
 }
