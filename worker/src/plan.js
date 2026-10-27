@@ -134,15 +134,85 @@ export function scheduleWeek(plan, week, refs) {
   for (const x of list.filter((y) => y.tipo === "lungo")) if (!place(x, weekend.length ? weekend : days) && !place(x, days)) skip(x);
   for (const x of list.filter((y) => y.tipo !== "lungo" && y.peso >= 2)) if (!place(x, days)) skip(x);
   for (const x of list.filter((y) => y.peso < 2)) if (!place(x, days)) skip(x);
+  improve(at, days, pos, plan.doppie ? 2 : 1);
   const sedute = [];
   for (const d of days) at[d].forEach((x, i) => sedute.push({ id: `${week}-${x.sport}-${pos(d)}${i}`, giorno: addDay(week, pos(d)), sport: x.sport, tipo: x.tipo }));
   sedute.sort((a, b) => a.giorno.localeCompare(b.giorno) || HARD[b.tipo] - HARD[a.tipo]);
-  return { settimana: week, blocco, n_settimana: settimana, scarico, sedute, escluse };
+  return { settimana: week, blocco, n_settimana: settimana, scarico, sedute, escluse, v: 2 };
 }
 
-export async function getWeek(db, plan, week, refs) {
+// The greedy placement above spaces the hard sessions but can leave the same sport on two days in a row
+// (gym Wednesday and Thursday with Friday free). This pass looks at the whole week and swaps or moves sessions
+// while the week gets better: never the same sport on consecutive days (if there is room), hard days apart,
+// long sessions at the weekend, one session a day when there are free days.
+export function weekCost(at, days, pos) {
+  const byPos = {};
+  for (const d of days) byPos[pos(d)] = at[d];
+  const hard = (x) => x.peso >= 2.5, load = (x) => x.peso >= 2;
+  const weekend = days.some((d) => d === 6 || d === 0);
+  let c = 0;
+  for (const d of days) {
+    const l = at[d];
+    if (l.filter(hard).length > 1) c += 60;
+    if (l.length > 1) c += 12;
+    if (weekend) c += l.filter((x) => x.tipo === "lungo" && d !== 6 && d !== 0).length * 25;
+  }
+  for (let p = 0; p < 7; p++) {
+    const a = byPos[p] || [], b = byPos[(p + 1) % 7] || [], wrap = p === 6; // Sunday → next Monday counts less
+    const same = a.filter((x) => b.some((y) => y.sport === x.sport)).length;
+    c += same * (wrap ? 40 : 100);
+    if (a.some(hard) && b.some(hard)) c += wrap ? 12 : 30;
+    if (a.some(load) && b.some(load)) c += wrap ? 3 : 8;
+    const n = byPos[(p + 2) % 7] || [];
+    if (!wrap && p < 5 && a.some(load) && b.some(load) && n.some(load)) c += 10; // three loading days in a row
+  }
+  return c;
+}
+function improve(at, days, pos, cap, movable = days) {
+  const ok = (l) => l.length <= cap && new Set(l.map((x) => x.sport)).size === l.length;
+  let best = weekCost(at, days, pos);
+  // one improving move or swap at a time, until nothing helps (a week has few sessions: this is instant)
+  const step = () => {
+    for (const a of movable) for (const b of movable) {
+      if (a === b) continue;
+      for (let i = 0; i < at[a].length; i++) for (let j = -1; j < at[b].length; j++) {
+        const A = [...at[a]], B = [...at[b]], x = A[i];
+        if (j < 0) { A.splice(i, 1); B.push(x); } else { A[i] = B[j]; B[j] = x; }
+        if (!ok(A) || !ok(B)) continue;
+        const keepA = at[a], keepB = at[b];
+        at[a] = A; at[b] = B;
+        const c = weekCost(at, days, pos);
+        if (c < best) { best = c; return true; }
+        at[a] = keepA; at[b] = keepB;
+      }
+    }
+    return false;
+  };
+  for (let n = 0; n < 200 && step(); n++);
+}
+
+// A week saved by the older calendar (before 1.25.2) could have the same sport on consecutive days:
+// the days after `day` are rearranged once; past days and today stay as they are.
+export function repackRest(w, plan, day) {
+  const order = [1, 2, 3, 4, 5, 6, 0], pos = (d) => order.indexOf(d);
+  const at = Object.fromEntries(order.map((d) => [d, []]));
+  for (const s of w.sedute) { s.peso = HARD[s.tipo] ?? 1; at[dow(s.giorno)].push(s); }
+  const movable = order.filter((d) => plan.giorni.includes(d) && addDay(w.settimana, pos(d)) > day);
+  improve(at, order, pos, plan.doppie ? 2 : 1, movable);
+  for (const d of movable) for (const s of at[d]) s.giorno = addDay(w.settimana, pos(d));
+  for (const s of w.sedute) delete s.peso;
+  w.sedute.sort((a, b) => a.giorno.localeCompare(b.giorno) || HARD[b.tipo] - HARD[a.tipo]);
+  w.v = 2;
+  return w;
+}
+
+export async function getWeek(db, plan, week, refs, day = null) {
   const r = await db.prepare("SELECT dati FROM piano_settimane WHERE settimana = ?").bind(week).first();
-  if (r) try { return JSON.parse(r.dati); } catch (_) {}
+  if (r) try {
+    const w = JSON.parse(r.dati);
+    if (!w.v && day) { repackRest(w, plan, day); await saveWeek(db, w); }
+    return w;
+  } catch (_) {}
   const w = scheduleWeek(plan, week, refs);
   await saveWeek(db, w);
   return w;
@@ -338,7 +408,7 @@ export async function planToday(env, { day, tz, profile, today }) {
   if (!plan.attivo) return null;
   const week = mondayOf(day);
   const { refs } = await references(db);
-  const w = await getWeek(db, plan, week, refs);
+  const w = await getWeek(db, plan, week, refs, day);
   const hist = await history(db, addDay(day, -120), day, tz);
   const doneIds = new Set(hist.filter((h) => h.fatta || h.saltata).map((h) => h.id));
   let changed = false;
@@ -346,8 +416,11 @@ export async function planToday(env, { day, tz, profile, today }) {
   // 1. key sessions missed on past days → next day without a hard session
   for (const s of w.sedute) {
     if (s.giorno >= day || doneIds.has(s.id) || !hard(s) || s.spostata_da || s.persa) continue;
-    const target = [0, 1, 2, 3, 4, 5, 6].map((i) => addDay(week, i)).filter((g) => g >= day && plan.giorni.includes(dow(g)))
-      .find((g) => !w.sedute.some((x) => x.giorno === g && hard(x)) && w.sedute.filter((x) => x.giorno === g).length < 2);
+    const cands = [0, 1, 2, 3, 4, 5, 6].map((i) => addDay(week, i)).filter((g) => g >= day && plan.giorni.includes(dow(g)))
+      .filter((g) => !w.sedute.some((x) => x.giorno === g && hard(x)) && w.sedute.filter((x) => x.giorno === g).length < 2);
+    // not next to the same sport, if possible (bike Tuesday and bike Wednesday is not a plan)
+    const near = (g) => w.sedute.some((x) => x !== s && x.sport === s.sport && x.tipo !== "facile" && [addDay(g, -1), addDay(g, 1)].includes(x.giorno));
+    const target = cands.find((g) => !near(g)) || cands[0];
     if (!target) { s.persa = true; changed = true; continue; }
     // an easy session of the same sport on that day makes room
     const easy = w.sedute.findIndex((x) => x.giorno === target && x.sport === s.sport && x.tipo === "facile");
@@ -428,7 +501,7 @@ export async function planOverview(env, { day, tz, profile }) {
   const out = { config: plan, riferimenti: refs, test: storia, pausa: !!profile.infortunio?.attivo };
   if (!plan.attivo) return out;
   const week = mondayOf(day);
-  const w = await getWeek(db, plan, week, refs);
+  const w = await getWeek(db, plan, week, refs, day);
   const hist = await history(db, addDay(day, -120), addDay(week, 6), tz);
   const ctx = { plan, hist, refs, hrmax: hrMax(profile) };
   out.settimana = { ...w, sedute: w.sedute.map((s) => {

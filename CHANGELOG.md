@@ -2,6 +2,13 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.25.2] — 2026-10-27
+
+### Corretto
+- **Piano: lo stesso sport due giorni di fila** (es. palestra mercoledì e giovedì con venerdì libero, o bici facile il giorno prima del lungo). Il calendario distanziava solo le sedute dure; ora guarda la settimana intera e sposta le sedute finché lo stesso sport non è più su giorni consecutivi (quando c'è spazio), tenendo distanziate le sedute dure e il lungo nel weekend. La settimana in corso si riordina una volta da domani in poi; i giorni passati e oggi restano com'erano.
+- Una seduta dura saltata viene spostata, se possibile, in un giorno non attaccato a un'altra seduta dello stesso sport.
+- Due test dipendevano dall'ora legale (+02:00 scritto a mano): ora funzionano tutto l'anno.
+
 ## [1.25.1] — 2026-10-21
 
 ### Aggiunto

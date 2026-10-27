@@ -1,10 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeEnv, call, setup, CODE, checkinToday } from "./helpers.js";
-import { cleanPlan, scheduleWeek, levelOf, sessionDetail, blockOf, mondayOf, planToday } from "../src/plan.js";
+import { cleanPlan, scheduleWeek, levelOf, sessionDetail, blockOf, mondayOf, planToday, repackRest } from "../src/plan.js";
 import { classify, sessionsWithSport } from "../src/sessions.js";
 
 const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Rome" }).format(new Date());
+// Rome offset today (+1 in winter, +2 in summer): the iPhone sends hourly values in local time
+const OFF = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Rome", hour: "2-digit", hourCycle: "h23" }).format(new Date(`${today}T12:00:00Z`))) - 12;
+const loc = (utcHour) => `${today}T${String(utcHour + OFF).padStart(2, "0")}:00:00+0${OFF}:00`;
 const addDay = (d, n) => new Date(Date.parse(d + "T12:00:00Z") + n * 86400e3).toISOString().slice(0, 10);
 const FULL = { attivo: true, sedute: { palestra: 3, nuoto: 2, corsa: 1, bici: 1 }, giorni: [0, 1, 2, 3, 4, 5, 6] };
 const HARD = new Set(["soglia", "velocita", "test", "lungo"]);
@@ -18,6 +21,29 @@ test("settimana: un solo sport al giorno, lunghi nel weekend, sedute dure distan
   // two endurance hard sessions of the same sport are never on consecutive days
   const hardDays = (sp) => w.sedute.filter((s) => s.sport === sp && HARD.has(s.tipo)).map((s) => Date.parse(s.giorno) / 864e5);
   for (const sp of ["nuoto", "corsa"]) { const d = hardDays(sp); for (let i = 1; i < d.length; i++) assert.ok(d[i] - d[i - 1] >= 2, sp); }
+});
+
+test("settimana: mai lo stesso sport due giorni di fila quando c'è spazio (es. bici + palestra)", () => {
+  const combos = [{ bici: 2, palestra: 2 }, { bici: 2, palestra: 3 }, { bici: 3, palestra: 3 }, { bici: 1, palestra: 3 }, { corsa: 2, palestra: 3 }, { nuoto: 2, bici: 2, palestra: 2 }];
+  for (const sedute of combos) for (const week of ["2026-10-19", "2026-10-26", "2026-11-02"]) {
+    const plan = cleanPlan({ attivo: true, inizio: "2026-10-12", sedute, giorni: [0, 1, 2, 3, 4, 5, 6] });
+    const w = scheduleWeek(plan, week, { bici: { lthr: 160 }, corsa: { soglia_skm: 300 }, nuoto: { css: 100 } });
+    assert.deepEqual(w.escluse, []);
+    for (const a of w.sedute) for (const b of w.sedute) if (a !== b && a.sport === b.sport)
+      assert.ok(Math.abs(Date.parse(a.giorno) - Date.parse(b.giorno)) >= 2 * 864e5, `${JSON.stringify(sedute)} ${week}: ${a.sport} ${a.giorno} e ${b.giorno}`);
+  }
+});
+
+test("settimana già salvata con lo stesso sport di fila: i giorni che restano si riordinano una volta", () => {
+  const plan = cleanPlan({ attivo: true, inizio: "2026-10-12", sedute: { bici: 2, palestra: 3 }, giorni: [0, 1, 2, 3, 4, 5, 6] });
+  const s = (giorno, sport, tipo) => ({ id: `${giorno}-${sport}`, giorno, sport, tipo });
+  const w = { settimana: "2026-10-26", sedute: [s("2026-10-26", "palestra", "palestra"), s("2026-10-27", "bici", "soglia"), s("2026-10-28", "palestra", "palestra"), s("2026-10-29", "palestra", "palestra"), s("2026-10-31", "bici", "lungo")] };
+  repackRest(w, plan, "2026-10-27");
+  assert.equal(w.v, 2);
+  assert.deepEqual(w.sedute.slice(0, 2).map((x) => x.giorno), ["2026-10-26", "2026-10-27"], "passato e oggi restano");
+  const gym = w.sedute.filter((x) => x.sport === "palestra").map((x) => Date.parse(x.giorno) / 864e5);
+  for (let i = 1; i < gym.length; i++) assert.ok(gym[i] - gym[i - 1] >= 2, w.sedute.map((x) => x.giorno + x.sport).join(" "));
+  assert.equal(new Set(w.sedute.map((x) => x.id)).size, 5, "stesse sedute, stessi id");
 });
 
 test("settimana: troppe sedute per i giorni disponibili → le più facili restano fuori e lo dice", () => {
@@ -147,7 +173,7 @@ test("il backup contiene palestra, piano e test", async () => {
 test("sedute riconosciute dal database con distanze orarie", async () => {
   const env = makeEnv(); await setup(env);
   await env.DB.prepare("INSERT INTO sessioni(start,day,end,minuti,fc_media,trimp) VALUES(?,?,?,?,?,?)").bind(`${today}T16:00:00Z`, today, `${today}T16:50:00Z`, 50, 140, 80).run();
-  await call(env, "/api/ingest", { method: "POST", code: CODE, body: { dist_nuoto_ora_valori: "2000;0", dist_nuoto_ora_date: `${today}T18:00:00+02:00;${today}T19:00:00+02:00` } });
+  await call(env, "/api/ingest", { method: "POST", code: CODE, body: { dist_nuoto_ora_valori: "2000;0", dist_nuoto_ora_date: `${loc(16)};${loc(17)}` } });
   const s = await sessionsWithSport(env.DB, today, today, "Europe/Rome");
   assert.equal(s[0].sport, "nuoto"); assert.equal(s[0].distanza_m, 2000); assert.equal(s[0].passo_s100, 150);
 });
@@ -187,7 +213,7 @@ test("la seduta di oggi mostra cosa ha registrato il Watch", async () => {
   const wk = { settimana: week, blocco: 1, n_settimana: 2, scarico: false, escluse: [], sedute: [{ id: `${week}-nuoto-x`, giorno: today, sport: "nuoto", tipo: "facile" }] };
   await env.DB.prepare("INSERT OR REPLACE INTO piano_settimane(settimana,dati,created) VALUES(?,?,?)").bind(week, JSON.stringify(wk), "x").run();
   await env.DB.prepare("INSERT INTO sessioni(start,day,end,minuti,fc_media,trimp) VALUES(?,?,?,?,?,?)").bind(`${today}T05:00:00Z`, today, `${today}T05:40:00Z`, 40, 135, 60).run();
-  await call(env, "/api/ingest", { method: "POST", code: CODE, body: { dist_nuoto_ora_valori: "1600", dist_nuoto_ora_date: `${today}T07:00:00+02:00` } });
+  await call(env, "/api/ingest", { method: "POST", code: CODE, body: { dist_nuoto_ora_valori: "1600", dist_nuoto_ora_date: loc(5) } });
   const r = await planToday(env, { day: today, tz: "Europe/Rome", profile: { eta: 21 }, today: {} });
   assert.equal(r.sedute[0].registrato.distanza_m, 1600); assert.equal(r.sedute[0].registrato.passo_s100, 150);
 });
