@@ -2,6 +2,13 @@
 
 Tutte le modifiche rilevanti di Kairo. Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [1.25.3] — 2026-10-27
+
+### Cambiato
+- **Check-in con 5 parole invece dei numeri**: «Come ti senti?» (molto stanco · stanco · normale · attivo · super attivo), «Umore» (giù · così così · normale · bene · alla grande), «Indolenzimento» (niente · poco · medio · tanto · molto). Nella pagina Oggi compaiono le parole.
+- **Fatica dell'allenamento con 5 scelte** invece della scala da 1 a 10, nel check-in e alla fine della seduta in palestra: molto facile · facile · medio · duro · al limite. Si salvano come RPE 3 · 5 · 6 · 8 · 10, così il carico (durata × fatica) resta confrontabile con lo storico.
+- Serie uguali: il salto doppio a range chiuso arriva solo se la seduta è stata «facile» o «molto facile» (prima bastava un RPE fino a 7, cioè anche «medio»).
+
 ## [1.25.2] — 2026-10-27
 
 ### Corretto

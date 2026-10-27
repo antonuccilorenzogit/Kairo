@@ -144,7 +144,7 @@ export function proposeClassic(ex, last, { scarico = false, incremento = null } 
       const target = weightFor(e1rm(kg, best), (ex.min + ex.max) / 2);
       next = Math.max(kg + s, Math.min(roundTo(target, s), roundTo(kg * 1.1, s)));
       why = `${best} ripetizioni, ${extra} oltre il range: sali a ${kgTxt(next)}.`;
-    } else if (rpe != null && rpe <= 7) { next = kg + 2 * s; why = `Range chiuso con margine: prova ${kgTxt(next)}.`; }
+    } else if (rpe != null && rpe <= 5) { next = kg + 2 * s; why = `Range chiuso con margine: prova ${kgTxt(next)}.`; }
     else { next = kg + s; why = `Hai chiuso il range: prova ${kgTxt(next)}.`; }
   }
   else why = kg ? `Stesso carico, punta a ${ex.max} ripetizioni.` : "";

@@ -3,7 +3,7 @@
  * device's localStorage and are sent as headers on each request. */
 "use strict";
 
-const APP_VERSION = "1.25.2";
+const APP_VERSION = "1.25.3";
 // Public repository (used for the update check and the "open source" links).
 const GITHUB_REPO = "antonuccilorenzogit/Kairo";
 const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
@@ -686,7 +686,7 @@ views.recupero = async (el) => {
   if (S.stabilita_hrv?.z != null && S.stabilita_hrv.z <= -1.5) alarms.push("HRV molto instabile negli ultimi 7 giorni: spesso succede con stress, poco sonno o un malanno in arrivo.");
   if (S.ossigeno?.z != null && S.ossigeno.z <= -1.5) alarms.push(`Ossigeno notturno sotto il tuo solito (${fmtNum(S.ossigeno.valore, 1)}%): se ti senti giù, riposa.`);
   const ci = d.checkin;
-  const feel = ci?.energia != null ? `<div class="card row between" style="gap:10px"><div class="col" style="gap:2px"><div class="label">Come ti senti oggi</div><div class="small muted">dal check-in · non entra nello score</div></div><div style="font-weight:800;text-align:right">energia ${ci.energia}/5${ci.dolori != null ? `<br><span class="small muted" style="font-weight:600">indolenzimento ${ci.dolori}/5</span>` : ""}</div></div>` : "";
+  const feel = ci?.energia != null ? `<div class="card row between" style="gap:10px"><div class="col" style="gap:2px"><div class="label">Come ti senti oggi</div><div class="small muted">dal check-in · non entra nello score</div></div><div style="font-weight:800;text-align:right">${FEEL.energia[ci.energia - 1] || ci.energia}${ci.umore != null ? `<br><span class="small muted" style="font-weight:600">umore: ${(FEEL.umore[ci.umore - 1] || ci.umore).toLowerCase()}</span>` : ""}${ci.dolori != null ? `<br><span class="small muted" style="font-weight:600">indolenzimento: ${(FEEL.dolori[ci.dolori - 1] || ci.dolori).toLowerCase()}</span>` : ""}</div></div>` : "";
   const compRow = ([k, name, val, c]) => {
     // ogni contributo vale 0-100; 60 = come al solito: la barra mostra quanto si discosta
     const z = c.punteggio == null ? 0 : (c.punteggio - 60) / 20;
@@ -1602,16 +1602,15 @@ views.storico = async (el) => {
 
 // End of session: how hard was it (session RPE), then send — or keep it queued without connection
 function finishSheet(ses) {
-  let rpe = 7;
+  let rpe = 6;
   let vol = 0, n = 0;
   for (const e of ses.esercizi) for (const x of e.serie) if (x.fatto) { n++; vol += (x.kg || 0) * (x.reps || 0); }
   const w = openSheet(`${sheetHead("Fine allenamento")}
     <div class="wk-stats card" style="padding:12px 14px"><div><span class="k">Durata</span><span class="v">${durTxt(Date.now() - ses.inizioMs)}</span></div><div><span class="k">Volume</span><span class="v">${fmtNum(vol)} kg</span></div><div><span class="k">Serie</span><span class="v">${n}</span></div></div>
-    <div class="col" style="gap:6px"><label class="row between" for="rpeF" style="font-weight:800"><span>Quanto è stato duro?</span><span id="rpeV" style="color:var(--orange-ink)">7/10</span></label>
-      <input id="rpeF" type="range" min="1" max="10" value="7"><div class="row between small muted"><span>1 facilissimo</span><span>10 al limite</span></div></div>
+    <div class="col" style="gap:8px"><div style="font-weight:800">Quanto è stato duro?</div><div id="rpeF">${pick5("data-rpe", rpe, RPE5, "Fatica")}</div></div>
     <div class="small muted" style="line-height:1.5">Serve a calcolare il carico della seduta (durata × fatica, metodo di Foster).</div>
     <button class="btn primary block" id="sendF">Salva allenamento</button>`, "Fine allenamento");
-  w.querySelector("#rpeF").oninput = (e) => { rpe = Number(e.target.value); w.querySelector("#rpeV").textContent = rpe + "/10"; };
+  w.querySelectorAll("#rpeF [data-rpe]").forEach((b) => (b.onclick = () => { rpe = Number(b.dataset.rpe); w.querySelectorAll("#rpeF [data-rpe]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); }));
   w.querySelector("#sendF").onclick = async () => {
     const end = localIso();
     // the heavy set keeps how it felt (its own RPE): it decides the next weight
@@ -1628,6 +1627,16 @@ function finishSheet(ses) {
 }
 
 /* ---------- check-in ---------- */
+// Five words instead of numbers: quicker to answer and the same every day
+const FEEL = {
+  energia: ["Molto stanco", "Stanco", "Normale", "Attivo", "Super attivo"],
+  umore: ["Giù", "Così così", "Normale", "Bene", "Alla grande"],
+  dolori: ["Niente", "Poco", "Medio", "Tanto", "Molto"],
+};
+// how hard a session was: 5 choices saved as RPE (1–10) for the training load (duration × RPE, Foster)
+const RPE5 = [[3, "Molto facile"], [5, "Facile"], [6, "Medio"], [8, "Duro"], [10, "Al limite"]];
+const rpeNear = (v) => RPE5.reduce((b, x) => (Math.abs(x[0] - v) < Math.abs(b[0] - v) ? x : b))[0];
+const pick5 = (attr, cur, opts, label) => `<div class="scale" role="group" aria-label="${label}">${opts.map(([v, t]) => `<button class="choice" ${attr}="${v}" aria-pressed="${cur === v}" style="font-size:12px;line-height:1.15;min-height:52px;padding:4px 2px">${t}</button>`).join("")}</div>`;
 function checkinSheet(existing, askSleep = false, detected = [], askRespira = false) {
   // training sessions the Watch detected yesterday (from heart rate): duration and sport prefilled
   const detMin = detected.reduce((a, x) => a + x.minuti, 0), detSport = detected.map((x) => x.sport).find(Boolean);
@@ -1637,18 +1646,18 @@ function checkinSheet(existing, askSleep = false, detected = [], askRespira = fa
     tag: new Set((existing?.tag || "").split(",").filter(Boolean)) };
   const altri = cfg().profilo.altri_sport?.length ? cfg().profilo.altri_sport : ["calcio"];
   const ACTS = [...["palestra", "nuoto", "bici", "corsa", ...altri].map((k) => [k, cap(k)]), ["camminata", "Camminata"], ["altro", "Altro"], ["riposo", "Riposo"]];
-  const scale = (k, label, hint) => `<div class="col"><div class="row between"><div style="font-weight:800">${label}</div><div class="small muted">${hint}</div></div>
-    <div class="scale" role="group" aria-label="${label}">${[1, 2, 3, 4, 5].map((n) => `<button class="choice" data-k="${k}" data-v="${n}" aria-pressed="${s[k] === n}">${n}</button>`).join("")}</div></div>`;
+  const scale = (k, label) => `<div class="col"><div style="font-weight:800">${label}</div>
+    <div class="scale" role="group" aria-label="${label}">${FEEL[k].map((t, i) => `<button class="choice" data-k="${k}" data-v="${i + 1}" aria-pressed="${s[k] === i + 1}" style="font-size:12px;line-height:1.15;min-height:52px;padding:4px 2px">${t}</button>`).join("")}</div></div>`;
   const draw = () => {
     const sport = [...s.act].some((a) => a !== "riposo");
     w.querySelector(".sheet").innerHTML = `<div class="grab"></div>${sheetHead("Check-in")}
       <div class="muted">Com'è andata ieri, e come ti senti oggi?</div>
       ${askRespira && !existing ? `<div class="card soft small" style="line-height:1.45">⌚ Non l'hai ancora fatto? <b>1 minuto di Respira</b> sul Watch prima di salvare: lo score sarà più preciso.</div>` : ""}
       ${askSleep ? `<div class="card col"><label class="row between" for="slp" style="font-weight:800"><span>Quanto hai dormito? <span class="small muted" style="font-weight:600">(senza Watch)</span></span><span style="color:var(--orange-ink)">${fmtMin(s.sonno)}</span></label><input id="slp" type="range" min="180" max="720" step="15" value="${s.sonno}"></div>` : ""}
-      ${scale("energia", "Energia", "1 a terra · 5 al top")}${scale("dolori", "Indolenzimento", "1 niente · 5 tanto")}${scale("umore", "Umore", "1 giù · 5 alle stelle")}
+      ${scale("energia", "Come ti senti?")}${scale("umore", "Umore")}${scale("dolori", "Indolenzimento")}
       ${detMin ? `<div class="card soft small" style="line-height:1.45">⌚ Il Watch ha rilevato ieri <b>${detMin} min</b> di allenamento${detected.length > 1 ? ` in ${detected.length} sessioni` : ""} · FC media ${Math.round(detected.reduce((a, x) => a + x.fc_media * x.minuti, 0) / detMin)}${detSport ? ` · probabilmente <b>${esc(detSport)}</b>` : ""}. Dimmi cos'era.</div>` : ""}
       <div class="col"><div style="font-weight:800">Cosa hai fatto ieri</div><div class="acts" style="grid-template-columns:repeat(4,minmax(0,1fr))">${ACTS.map(([k, l]) => `<button class="choice" data-a="${esc(k)}" aria-pressed="${s.act.has(k)}">${esc(l)}</button>`).join("")}</div></div>
-      ${sport ? `<div class="card col"><label class="row between" for="rpe" style="font-weight:800"><span>Quanto è stata dura?</span><span style="color:var(--orange-ink)">RPE ${s.rpe}</span></label><input id="rpe" type="range" min="1" max="10" value="${s.rpe}">
+      ${sport ? `<div class="card col"><div style="font-weight:800">Quanto è stata dura?</div>${pick5("data-rpe", rpeNear(s.rpe), RPE5, "Fatica")}
         <label class="row between" for="dur" style="font-weight:800"><span>Durata</span><span class="muted">${s.durata} min</span></label><input id="dur" type="range" min="10" max="240" step="5" value="${s.durata}"></div>` : ""}
       <div class="col"><div style="font-weight:800">Ieri sera o stanotte <span class="small muted" style="font-weight:600">(facoltativo)</span></div><div class="acts" style="grid-template-columns:repeat(3,minmax(0,1fr))">${["alcol", "malanno", "viaggio", "stress", "cena tardi", "allenamento serale"].map((k) => `<button class="choice" data-tag="${k}" aria-pressed="${s.tag.has(k)}" style="font-size:13px">${k[0].toUpperCase() + k.slice(1)}</button>`).join("")}</div><span class="hint">Spiegano un recupero diverso dal solito; alcol, malanno e viaggio non entrano nelle tue medie.</span></div>
       <button class="btn primary block" id="save">Salva check-in</button>`;
@@ -1660,14 +1669,14 @@ function checkinSheet(existing, askSleep = false, detected = [], askRespira = fa
       else { s.act.delete("riposo"); s.act.has(k) ? s.act.delete(k) : s.act.add(k); }
       draw();
     }));
-    const rpe = w.querySelector("#rpe"); if (rpe) rpe.addEventListener("input", (e) => { s.rpe = Number(e.target.value); e.target.previousElementSibling.lastElementChild.textContent = "RPE " + s.rpe; });
+    w.querySelectorAll("[data-rpe]").forEach((b) => b.addEventListener("click", () => { s.rpe = Number(b.dataset.rpe); draw(); }));
     const slp = w.querySelector("#slp"); if (slp) slp.addEventListener("input", (e) => { s.sonno = Number(e.target.value); e.target.previousElementSibling.lastElementChild.textContent = fmtMin(s.sonno); });
     const dur = w.querySelector("#dur"); if (dur) dur.addEventListener("input", (e) => { s.durata = Number(e.target.value); e.target.previousElementSibling.lastElementChild.textContent = s.durata + " min"; });
     w.querySelector("#save").addEventListener("click", async (e) => {
       e.target.disabled = true;
       try {
         const sportNow = [...s.act].some((a) => a !== "riposo");
-        await api("/api/checkin", { method: "POST", body: { day: todayStr(), energia: s.energia, dolori: s.dolori, umore: s.umore, attivita: [...s.act].join(","), rpe: sportNow ? s.rpe : null, durata_min: sportNow ? s.durata : null, sonno_min: askSleep ? s.sonno : existing?.sonno_min ?? null, tag: [...s.tag].join(",") } });
+        await api("/api/checkin", { method: "POST", body: { day: todayStr(), energia: s.energia, dolori: s.dolori, umore: s.umore, attivita: [...s.act].join(","), rpe: sportNow ? rpeNear(s.rpe) : null, durata_min: sportNow ? s.durata : null, sonno_min: askSleep ? s.sonno : existing?.sonno_min ?? null, tag: [...s.tag].join(",") } });
         closeSheet(); toast("Check-in salvato"); router();
       } catch (err) { e.target.disabled = false; toast(err.message); }
     });
